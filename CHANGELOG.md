@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0] - 2026-03-04
+
+### Added
+- Nested recursive type support — containers wrapping containers containing `Self` (e.g. `Option[List[Self]]`, `Option[Map[String, Self]]`)
+
+### Changed
+- Refactored container codec construction into reusable `buildContainerDecoder`/`buildContainerEncoder` helpers
+
 ## [0.3.1] - 2026-03-04
 
 ### Added
