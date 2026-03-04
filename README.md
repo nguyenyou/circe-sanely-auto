@@ -193,6 +193,20 @@ Requires [Mill](https://mill-build.org/) 1.1.2+.
 
 This entire library — every macro, every test, every line of build config, and this README — was written by [Claude Code](https://claude.com/claude-code) with Claude Opus 4.6. 100% vibe coded.
 
+## Contributing
+
+Since this project is 100% vibe coded, I follow a strict test-driven workflow to make sure everything actually works: **every change starts with a test**. Write the test first, then write the code that makes it pass.
+
+If you find a bug:
+
+1. **Open an issue** — even just reporting the problem is really appreciated
+2. **Submit a PR with a failing test** — this is the best way to describe a bug precisely
+3. **Submit a PR with the fix too** — even better! Add the failing test and the code that makes it pass
+
+All contributions are welcome — issues, bug reports, feature requests, PRs. Even a quick "hey this didn't work for me" helps.
+
+Thanks for trying this library. I love open source and have relied on open source projects throughout my career. This is my way of giving back and having fun. Welcome to the project!
+
 ## License
 
 MIT
