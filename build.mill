@@ -8,7 +8,7 @@ val scala3Version = "3.8.2"
 object sanely extends ScalaModule with SonatypeCentralPublishModule {
   def scalaVersion = scala3Version
   def artifactName = "circe-sanely-auto"
-  def publishVersion = "0.1.0"
+  def publishVersion = "0.2.0"
 
   def pomSettings = PomSettings(
     description = "Drop-in replacement for circe's auto-derivation using sanely-automatic Scala 3 macros",
