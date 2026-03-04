@@ -628,13 +628,15 @@ object SanelyAutoSuite extends TestSuite:
     }
 
     test("Single-field product with extreme values") {
-      val v = Wub(Long.MaxValue)
-      val decoded = decode[Wub](v.asJson.noSpaces)
-      assert(decoded == Right(v))
+      // Long.MaxValue/MinValue lose precision on Scala.js due to JSON number representation
+      if !Platform.isJS then
+        val v = Wub(Long.MaxValue)
+        val decoded = decode[Wub](v.asJson.noSpaces)
+        assert(decoded == Right(v))
 
-      val v2 = Wub(Long.MinValue)
-      val decoded2 = decode[Wub](v2.asJson.noSpaces)
-      assert(decoded2 == Right(v2))
+        val v2 = Wub(Long.MinValue)
+        val decoded2 = decode[Wub](v2.asJson.noSpaces)
+        assert(decoded2 == Right(v2))
 
       val v3 = Wub(0L)
       val decoded3 = decode[Wub](v3.asJson.noSpaces)
