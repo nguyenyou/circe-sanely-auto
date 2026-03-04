@@ -65,7 +65,7 @@ object SanelyConfiguredEncoder:
       val cases = resolveFields[Types, Labels](selfRef)
 
       // Only flatten sub-traits when no user-provided encoder exists
-      val ignoreSymbols = collectIgnoreSymbols
+      val ignoreSymbols = cachedIgnoreSymbols
       val casesWithSubTrait = cases.map { case (label, tpe, enc) =>
         val isSub = tpe match
           case '[t] =>
@@ -155,7 +155,7 @@ object SanelyConfiguredEncoder:
       if containsType(tpe, selfType) then
         return constructRecursiveEncoder[T](tpe, selfRef)
 
-      val ignoreSymbols = collectIgnoreSymbols
+      val ignoreSymbols = cachedIgnoreSymbols
       Expr.summonIgnoring[Encoder[T]](ignoreSymbols*) match
         case Some(enc) => enc
         case None =>
@@ -178,7 +178,7 @@ object SanelyConfiguredEncoder:
         case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
 
-    private def collectIgnoreSymbols: List[Symbol] =
+    private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]
       buf += Symbol.requiredModule("sanely.auto").methodMember("autoEncoder").head
       try
@@ -200,7 +200,7 @@ object SanelyConfiguredEncoder:
       tpe: TypeRepr,
       selfRef: Expr[Encoder.AsObject[A]]
     ): Expr[Encoder[T]] =
-      val ignoreSymbols = collectIgnoreSymbols
+      val ignoreSymbols = cachedIgnoreSymbols
       def trySummon: Option[Expr[Encoder[T]]] = Expr.summonIgnoring[Encoder[T]](ignoreSymbols*)
 
       tpe match

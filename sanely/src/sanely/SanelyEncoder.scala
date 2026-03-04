@@ -80,12 +80,11 @@ object SanelyEncoder:
       // Detect which variants are themselves sum types (sub-traits).
       // Only flatten when no user-provided encoder exists — a custom Encoder
       // (e.g. string-based) can't be cast to AsObject for flattening.
-      val ignoreSymbols = collectIgnoreSymbols("autoEncoder", "deriveEncoder", "importedEncoder", "importedAsObjectEncoder")
       val casesWithSubTrait = cases.map { case (label, tpe, enc) =>
         val isSub = tpe match
           case '[t] =>
             Expr.summon[Mirror.SumOf[t]].isDefined &&
-            Expr.summonIgnoring[Encoder[t]](ignoreSymbols*).isEmpty
+            Expr.summonIgnoring[Encoder[t]](cachedIgnoreSymbols*).isEmpty
         (label, tpe, enc, isSub)
       }
 
@@ -133,8 +132,7 @@ object SanelyEncoder:
         return constructRecursiveEncoder[T](tpe, selfRef)
 
       // Safe path: no recursion risk
-      val ignoreSymbols = collectIgnoreSymbols("autoEncoder", "deriveEncoder", "importedEncoder", "importedAsObjectEncoder")
-      Expr.summonIgnoring[Encoder[T]](ignoreSymbols*) match
+      Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*) match
         case Some(enc) => enc
         case None =>
           Expr.summon[Mirror.Of[T]] match
@@ -156,16 +154,16 @@ object SanelyEncoder:
         case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
 
-    private def collectIgnoreSymbols(sanelyAutoMethod: String, genericAutoMethod: String, importedMethods: String*): List[Symbol] =
+    private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]
-      buf += Symbol.requiredModule("sanely.auto").methodMember(sanelyAutoMethod).head
+      buf += Symbol.requiredModule("sanely.auto").methodMember("autoEncoder").head
       // io.circe.generic.auto alias
       try
         val genericAuto = Symbol.requiredModule("io.circe.generic.auto")
-        genericAuto.methodMember(genericAutoMethod).foreach(buf += _)
+        genericAuto.methodMember("deriveEncoder").foreach(buf += _)
       catch case _: Exception => ()
       // circe-core imported* unwrappers
-      for method <- importedMethods do
+      for method <- List("importedEncoder", "importedAsObjectEncoder") do
         try
           val encoderCompanion = Symbol.requiredModule("io.circe.Encoder")
           encoderCompanion.methodMember(method).foreach(buf += _)
@@ -180,8 +178,7 @@ object SanelyEncoder:
       tpe: TypeRepr,
       selfRef: Expr[Encoder.AsObject[A]]
     ): Expr[Encoder[T]] =
-      val ignoreSymbols = collectIgnoreSymbols("autoEncoder", "deriveEncoder", "importedEncoder", "importedAsObjectEncoder")
-      def trySummon: Option[Expr[Encoder[T]]] = Expr.summonIgnoring[Encoder[T]](ignoreSymbols*)
+      def trySummon: Option[Expr[Encoder[T]]] = Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*)
 
       tpe match
         case AppliedType(tycon, List(arg)) if arg =:= selfType =>

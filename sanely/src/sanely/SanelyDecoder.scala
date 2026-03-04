@@ -73,12 +73,11 @@ object SanelyDecoder:
       // Detect which variants are themselves sum types (sub-traits).
       // Only flatten when no user-provided decoder exists — a custom Decoder
       // may not handle the sub-dispatching that flattening requires.
-      val ignoreSymbols = collectIgnoreSymbols("autoDecoder", "deriveDecoder", "importedDecoder")
       val casesWithSubTrait = cases.map { case (label, tpe, dec) =>
         val isSub = tpe match
           case '[t] =>
             Expr.summon[Mirror.SumOf[t]].isDefined &&
-            Expr.summonIgnoring[Decoder[t]](ignoreSymbols*).isEmpty
+            Expr.summonIgnoring[Decoder[t]](cachedIgnoreSymbols*).isEmpty
         (label, tpe, dec, isSub)
       }
 
@@ -146,8 +145,7 @@ object SanelyDecoder:
         return constructRecursiveDecoder[T](tpe, selfRef)
 
       // Safe path: no recursion risk
-      val ignoreSymbols = collectIgnoreSymbols("autoDecoder", "deriveDecoder", "importedDecoder")
-      Expr.summonIgnoring[Decoder[T]](ignoreSymbols*) match
+      Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*) match
         case Some(dec) => dec
         case None =>
           Expr.summon[Mirror.Of[T]] match
@@ -169,16 +167,16 @@ object SanelyDecoder:
         case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
 
-    private def collectIgnoreSymbols(sanelyAutoMethod: String, genericAutoMethod: String, importedMethods: String*): List[Symbol] =
+    private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]
-      buf += Symbol.requiredModule("sanely.auto").methodMember(sanelyAutoMethod).head
+      buf += Symbol.requiredModule("sanely.auto").methodMember("autoDecoder").head
       // io.circe.generic.auto alias
       try
         val genericAuto = Symbol.requiredModule("io.circe.generic.auto")
-        genericAuto.methodMember(genericAutoMethod).foreach(buf += _)
+        genericAuto.methodMember("deriveDecoder").foreach(buf += _)
       catch case _: Exception => ()
       // circe-core imported* unwrappers
-      for method <- importedMethods do
+      for method <- List("importedDecoder") do
         try
           val decoderCompanion = Symbol.requiredModule("io.circe.Decoder")
           decoderCompanion.methodMember(method).foreach(buf += _)
@@ -196,8 +194,7 @@ object SanelyDecoder:
       // Try summoning a user-provided decoder first — handles custom generic containers
       // (e.g. CustomEnum[Self]) that have their own polymorphic givens.
       // We use a targeted ignore list to avoid finding circe-core's Decoder.derived.
-      val ignoreSymbols = collectIgnoreSymbols("autoDecoder", "deriveDecoder", "importedDecoder")
-      def trySummon: Option[Expr[Decoder[T]]] = Expr.summonIgnoring[Decoder[T]](ignoreSymbols*)
+      def trySummon: Option[Expr[Decoder[T]]] = Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)
 
       tpe match
         case AppliedType(tycon, List(arg)) if arg =:= selfType =>
