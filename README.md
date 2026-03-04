@@ -159,22 +159,38 @@ Semiauto calls (`deriveEncoder`, `deriveDecoder`, `deriveCodec`) work identicall
 - **Scala 3 only** — no Scala 2 support, requires 3.8.2+
 - **No Shapeless** — uses Scala 3 `Mirror` + `Expr.summonIgnoring`
 
-## Compile-time benchmark
+## Compile-time benchmarks
 
-The benchmark compiles the same source (~300 types across 9 files) against both libraries:
+Two benchmark suites compare compile times against circe's native derivation:
 
-```
-bash bench.sh 5   # 5 iterations, reports median
+```bash
+bash bench.sh 5              # auto derivation (~300 types)
+bash bench.sh --configured 5 # configured derivation (~230 types)
 ```
 
 Results on M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
 
+### Auto derivation
+
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **3.77s** | |
-| **circe-generic** | **6.07s** | 1.6x slower |
+| **circe-sanely-auto** | **3.82s** | |
+| **circe-generic** | **6.14s** | 1.6x slower |
 
-The benchmark includes nested products, sealed trait hierarchies, generic instantiations, wide case classes (22 fields x 8), and cross-domain compositions.
+### Configured derivation
+
+| | Median compile time | |
+|---|---|---|
+| **circe-sanely-auto** | **2.76s** | |
+| **circe-core** | **2.69s** | ~same |
+
+### Why the difference?
+
+The speedup only applies to **auto derivation**. With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
+
+**Configured derivation** uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object). There's no implicit search — you're telling the compiler exactly what to derive. Both implementations end up doing similar inline macro expansion, so compile times converge.
+
+In short: sanely's advantage is specifically in eliminating implicit search overhead, which only affects auto derivation.
 
 ## Building
 
