@@ -4,7 +4,7 @@
 
 Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Faster compile times. No Shapeless. No circe-generic.
 
-**Scala 3.8.2+ | JVM + Scala.js | 274 tests**
+**Scala 3.8.2+ | JVM + Scala.js | 275 tests**
 
 ## Motivation
 
@@ -137,7 +137,7 @@ Supports hierarchical sealed traits with diamond inheritance.
 
 ```diff
 - mvn"io.circe::circe-generic:0.14.x"
-+ mvn"io.github.nguyenyou::circe-sanely-auto:0.4.0"
++ mvn"io.github.nguyenyou::circe-sanely-auto:0.4.1"
 ```
 
 ### Step 2: Update imports
