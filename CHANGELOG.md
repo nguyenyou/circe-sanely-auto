@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0] - 2026-03-04
 
 ### Added
 - **Nested recursive container types** — support for `Option[List[Self]]`, `Option[Map[String, Self]]`, `List[Option[Self]]`, and other multi-level container nesting in recursive types (both configured and unconfigured derivation)
