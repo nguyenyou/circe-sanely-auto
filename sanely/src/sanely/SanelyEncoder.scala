@@ -87,12 +87,20 @@ object SanelyEncoder:
         val enc = resolveOneEncoder[t]
         (labelStr, Type.of[t], enc) :: resolveFields[ts, ls]
 
+  /** Resolve an Encoder for type T using the "sanely-automatic" approach:
+    * Use Expr.summonIgnoring to skip our own auto-given, so that only user-provided
+    * or standard library encoders are found. If none exists, derive internally within
+    * this same macro expansion — avoiding separate implicit search chains.
+    */
   private def resolveOneEncoder[T: Type](using Quotes): Expr[Encoder[T]] =
     import quotes.reflect.*
 
-    Expr.summon[Encoder[T]] match
+    // Exclude our own auto-given so Expr.summon doesn't trigger a separate macro expansion
+    val autoEncoderSymbol = Symbol.requiredModule("sanely.auto").methodMember("autoEncoder").head
+    Expr.summonIgnoring[Encoder[T]](autoEncoderSymbol) match
       case Some(enc) => enc
       case None =>
+        // No user-provided encoder found — derive internally in this macro expansion
         Expr.summon[Mirror.Of[T]] match
           case Some(mirrorExpr) =>
             mirrorExpr match
