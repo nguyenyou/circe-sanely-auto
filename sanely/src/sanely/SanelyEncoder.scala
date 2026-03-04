@@ -64,22 +64,33 @@ object SanelyEncoder:
     ): Expr[Encoder.AsObject[S]] =
       val cases = resolveFields[Types, Labels](selfRef)
 
-      def buildBranch(a: Expr[S], label: String, tpe: Type[?], enc: Expr[Encoder[?]]): Expr[JsonObject] =
+      def buildBranch(a: Expr[S], label: String, tpe: Type[?], enc: Expr[Encoder[?]], isSubTrait: Boolean): Expr[JsonObject] =
         tpe match
           case '[t] =>
             val typedEnc = enc.asInstanceOf[Expr[Encoder.AsObject[t]]]
-            val labelExpr = Expr(label)
-            '{ JsonObject.singleton($labelExpr, Json.fromJsonObject($typedEnc.encodeObject($a.asInstanceOf[t]))) }
+            if isSubTrait then
+              // Sub-trait: use encoder directly (it already wraps with variant name)
+              '{ $typedEnc.encodeObject($a.asInstanceOf[t]) }
+            else
+              val labelExpr = Expr(label)
+              '{ JsonObject.singleton($labelExpr, Json.fromJsonObject($typedEnc.encodeObject($a.asInstanceOf[t]))) }
+
+      // Detect which variants are themselves sum types (sub-traits)
+      val casesWithSubTrait = cases.map { case (label, tpe, enc) =>
+        val isSub = tpe match
+          case '[t] => Expr.summon[Mirror.SumOf[t]].isDefined
+        (label, tpe, enc, isSub)
+      }
 
       '{
         new Encoder.AsObject[S]:
           def encodeObject(a: S): JsonObject =
             val ord = $mirror.ordinal(a)
             ${
-              cases.zipWithIndex.foldRight('{ throw new MatchError(ord) }: Expr[JsonObject]) {
-                case (((label, tpe, enc), idx), elseExpr) =>
+              casesWithSubTrait.zipWithIndex.foldRight('{ throw new MatchError(ord) }: Expr[JsonObject]) {
+                case (((label, tpe, enc, isSub), idx), elseExpr) =>
                   val idxExpr = Expr(idx)
-                  val branch = buildBranch('a, label, tpe, enc)
+                  val branch = buildBranch('a, label, tpe, enc, isSub)
                   '{ if ord == $idxExpr then $branch else $elseExpr }
               }
             }

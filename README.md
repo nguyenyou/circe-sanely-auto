@@ -122,12 +122,12 @@ Self-referencing types. The macro breaks recursion using lazy val self-reference
 
 Stress tests and unusual patterns.
 
-- [ ] Large product — `LongClass` with 33 `String` fields *(may need `-Xmax-inlines` bump)*
-- [ ] Large sum — `LongSum` with 33 case variants
-- [ ] Large enum — `LongEnum` with 33 nullary cases
-- [ ] Sub-trait flattening — `ADTWithSubTraitExample` *(sealed trait → sealed sub-trait → case class)*
+- [x] Large product — `LongClass` with 33 `String` fields
+- [x] Large sum — `LongSum` with 33 case variants
+- [x] Large enum — `LongEnum` with 33 nullary cases
+- [x] Sub-trait flattening — `ADTWithSubTraitExample` *(sealed trait → sealed sub-trait → case class)*
 - [ ] Tagged type members — `ProductWithTaggedMember(x: TaggedString)` where `TaggedString = String with Tag`
-- [ ] Superfluous JSON keys ignored — decoder for `Adt1` handles `{"extraField":true,"Class1":{"int":3}}`
+- [x] Superfluous JSON keys ignored — decoder for `Adt1` handles `{"extraField":true,"Adt1Class1":{"int":3}}`
 
 ### Phase 8 — Error Cases
 
