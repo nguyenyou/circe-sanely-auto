@@ -88,7 +88,7 @@ object MyType:
 - **Faster compile times** — single macro expansion instead of implicit search chains
 - **Scala 3 only** — no Scala 2 support, requires 3.8.2+
 - **No Shapeless dependency** — uses Scala 3 `Mirror` + `Expr.summonIgnoring`
-- **`derives` keyword** — not supported (circe-core owns `Encoder.AsObject.derived`/`Decoder.derived`); use `import io.circe.generic.auto.given` or semiauto instead
+- **`derives` keyword** — works as-is via circe-core (no migration needed); `Encoder.AsObject.derived`/`Decoder.derived` are defined in circe-core itself, independent of circe-generic
 
 ## Building
 
@@ -213,6 +213,6 @@ All circe auto-derivation roundtrip tests are ported and passing (52/52). The li
 ### Out of scope
 
 - ~~**Publish under `io.github.nguyenyou`**~~ — infrastructure task, not a code port
-- ~~**`derives` keyword support**~~ — `Encoder.AsObject.derived`/`Decoder.derived` are defined in circe-core itself; can't override another library's companion methods
+- ~~**`derives` keyword support**~~ — works out of the box via circe-core; no action needed from this library
 - ~~**`Either[E, Self]` recursive container**~~ — circe doesn't test this; `disjunctionCodecs` requires explicit import and string keys
 - ~~**Compile error message quality**~~ — not testable in utest (compile errors can't be asserted at runtime)
