@@ -5,46 +5,9 @@ import mill._, scalalib._, publish._
 val circeVersion = "0.14.13"
 val scala3Version = "3.8.2"
 
-object sanely extends ScalaModule with SonatypeCentralPublishModule {
-  def scalaVersion = scala3Version
-  def artifactName = "circe-sanely-auto"
-  def publishVersion = "0.2.0"
-
-  def pomSettings = PomSettings(
-    description = "Drop-in replacement for circe's auto-derivation using sanely-automatic Scala 3 macros",
-    organization = "io.github.nguyenyou",
-    url = "https://github.com/nguyenyou/circe-sanely-auto",
-    licenses = Seq(License.MIT),
-    versionControl = VersionControl.github("nguyenyou", "circe-sanely-auto"),
-    developers = Seq(Developer("nguyenyou", "Tu Nguyen", "https://github.com/nguyenyou")),
-  )
-
-  def mvnDeps = Task {
-    super.mvnDeps() ++ Seq(
-      mvn"io.circe::circe-core:$circeVersion"
-    )
-  }
-  def scalacOptions = Task {
-    super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
-  }
-
-  object test extends ScalaTests with TestModule.Utest {
-    def mvnDeps = Task {
-      super.mvnDeps() ++ Seq(
-        mvn"io.circe::circe-core:$circeVersion",
-        mvn"io.circe::circe-parser:$circeVersion",
-        mvn"com.lihaoyi::utest:0.10.0-RC1"
-      )
-    }
-    def scalacOptions = Task {
-      super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
-    }
-  }
-}
-
 object compat extends ScalaModule {
   def scalaVersion = scala3Version
-  def moduleDeps = Seq(sanely)
+  def moduleDeps = Seq(sanely.jvm)
   def mvnDeps = Task {
     super.mvnDeps() ++ Seq(
       mvn"io.circe::circe-core:$circeVersion",
@@ -69,7 +32,7 @@ object compat extends ScalaModule {
 
 object demo extends ScalaModule {
   def scalaVersion = scala3Version
-  def moduleDeps = Seq(sanely)
+  def moduleDeps = Seq(sanely.jvm)
   def mvnDeps = Task {
     super.mvnDeps() ++ Seq(
       mvn"io.circe::circe-core:$circeVersion",

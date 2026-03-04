@@ -10,7 +10,7 @@ object `package` extends mill.Module {
     def scalacOptions = Task {
       super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
     }
-    def moduleDeps = Seq(build.sanely)
+    def moduleDeps = Seq(build.sanely.jvm)
     def mvnDeps = Task {
       super.mvnDeps() ++ Seq(
         mvn"io.circe::circe-core:${build.circeVersion}",
