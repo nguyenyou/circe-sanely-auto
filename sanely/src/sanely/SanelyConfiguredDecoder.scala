@@ -55,18 +55,36 @@ object SanelyConfiguredDecoder:
                 defaultOpt match
                   case Some(defaultExpr) =>
                     val typedDefault = defaultExpr.asInstanceOf[Expr[t]]
-                    '{
-                      val fieldName = $conf.transformMemberNames($labelExpr)
-                      val cursor = $c.downField(fieldName)
-                      val result: Decoder.Result[t] =
-                        if $conf.useDefaults && (cursor.failed || cursor.focus.exists(_.isNull)) then
-                          Right($typedDefault)
-                        else
-                          $typedDec.tryDecode(cursor)
-                      result match
-                        case Right(v) => ${ buildDecodeChain(c, rest, fieldIdx + 1, 'v :: acc) }
-                        case Left(e)  => Left(e)
-                    }
+                    // For Option types, null should decode normally as None, not trigger default
+                    val isOptionType = TypeRepr.of[t].dealias match
+                      case AppliedType(tycon, _) => tycon.typeSymbol.fullName == "scala.Option"
+                      case _ => false
+                    if isOptionType then
+                      '{
+                        val fieldName = $conf.transformMemberNames($labelExpr)
+                        val cursor = $c.downField(fieldName)
+                        val result: Decoder.Result[t] =
+                          if $conf.useDefaults && cursor.failed then
+                            Right($typedDefault)
+                          else
+                            $typedDec.tryDecode(cursor)
+                        result match
+                          case Right(v) => ${ buildDecodeChain(c, rest, fieldIdx + 1, 'v :: acc) }
+                          case Left(e)  => Left(e)
+                      }
+                    else
+                      '{
+                        val fieldName = $conf.transformMemberNames($labelExpr)
+                        val cursor = $c.downField(fieldName)
+                        val result: Decoder.Result[t] =
+                          if $conf.useDefaults && (cursor.failed || cursor.focus.exists(_.isNull)) then
+                            Right($typedDefault)
+                          else
+                            $typedDec.tryDecode(cursor)
+                        result match
+                          case Right(v) => ${ buildDecodeChain(c, rest, fieldIdx + 1, 'v :: acc) }
+                          case Left(e)  => Left(e)
+                      }
                   case None =>
                     '{
                       $typedDec.tryDecode($c.downField($conf.transformMemberNames($labelExpr))) match
