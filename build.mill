@@ -16,7 +16,7 @@ object sanely extends ScalaModule with SonatypeCentralPublishModule {
     url = "https://github.com/nguyenyou/circe-sanely-auto",
     licenses = Seq(License.MIT),
     versionControl = VersionControl.github("nguyenyou", "circe-sanely-auto"),
-    developers = Seq(Developer("nguyenyou", "Nguyen Tu", "https://github.com/nguyenyou")),
+    developers = Seq(Developer("nguyenyou", "Tu Nguyen", "https://github.com/nguyenyou")),
   )
 
   def mvnDeps = Task {
