@@ -19,17 +19,22 @@ Mill 1.1.2 build. Run from repo root:
 ./mill sanely.test              # run tests (utest)
 ./mill demo.run                 # run demo (product + sum round-trips)
 ./mill sanely.test.compile      # compile tests only
+./mill benchmark.sanely.compile # compile benchmark (our library)
+./mill benchmark.generic.compile # compile benchmark (circe-generic)
+bash bench.sh 5                 # run timed compile comparison (N iterations)
 ```
 
 **Do NOT run** `./mill __.compile` or bare `./mill` — use targeted module commands to avoid cache invalidation.
 
 ## Architecture
 
-Three Mill modules:
+Five Mill modules:
 
 - **`sanely/`** — Core library. Macro-based Encoder.AsObject and Decoder derivation.
 - **`sanely/test/`** — utest suite. Import `sanely.auto.given` to get instances.
 - **`demo/`** — Runnable examples. Depends on `sanely`.
+- **`benchmark/sanely`** — Compile-time benchmark using our library.
+- **`benchmark/generic`** — Compile-time benchmark using circe-generic (same source).
 
 ### Core source files (`sanely/src/sanely/`)
 
@@ -81,6 +86,13 @@ Circe test sources live at:
 - `circe/modules/tests/shared/src/main/scala/io/circe/tests/examples/package.scala` — shared test data types
 
 See `README.md` "Test Porting Plan" for the full 9-phase breakdown with expected challenges.
+
+## Mill: Shared Sources via `package.mill`
+
+`benchmark/package.mill` defines two modules sharing `benchmark/shared/src/` via `override def moduleDir = super.moduleDir / os.up / "shared"`. Key gotchas:
+- Mill 1.x: override `moduleDir` (public API), not `millSourcePath` (internal, will error)
+- `Task.Sources` can't use computed paths — sandbox restriction blocks `PathRef` creation
+- Nested modules inside plain `object` don't register; parent must `extends Module` or use `package.mill`
 
 ## Reference Repositories
 

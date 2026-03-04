@@ -1,0 +1,35 @@
+package build.benchmark
+
+import mill.*, scalalib.*
+
+object `package` extends mill.Module {
+
+  object sanely extends ScalaModule {
+    def scalaVersion = build.scala3Version
+    override def moduleDir = super.moduleDir / os.up / "shared"
+    def scalacOptions = Task {
+      super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+    }
+    def moduleDeps = Seq(build.sanely)
+    def mvnDeps = Task {
+      super.mvnDeps() ++ Seq(
+        mvn"io.circe::circe-core:${build.circeVersion}",
+        mvn"io.circe::circe-parser:${build.circeVersion}",
+      )
+    }
+  }
+
+  object generic extends ScalaModule {
+    def scalaVersion = build.scala3Version
+    override def moduleDir = super.moduleDir / os.up / "shared"
+    def scalacOptions = Task {
+      super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+    }
+    def mvnDeps = Task {
+      super.mvnDeps() ++ Seq(
+        mvn"io.circe::circe-generic:${build.circeVersion}",
+        mvn"io.circe::circe-parser:${build.circeVersion}",
+      )
+    }
+  }
+}
