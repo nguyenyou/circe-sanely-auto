@@ -70,6 +70,63 @@ case class NestedAdtExample(r: RecursiveAdtExample) extends RecursiveAdtExample
 
 case class RecursiveWithOptionExample(o: Option[RecursiveWithOptionExample])
 
+// Phase 7 types — large types & edge cases
+
+case class LongClass(
+  v1: String, v2: String, v3: String, v4: String, v5: String,
+  v6: String, v7: String, v8: String, v9: String, v10: String,
+  v11: String, v12: String, v13: String, v14: String, v15: String,
+  v16: String, v17: String, v18: String, v19: String, v20: String,
+  v21: String, v22: String, v23: String, v24: String, v25: String,
+  v26: String, v27: String, v28: String, v29: String, v30: String,
+  v31: String, v32: String, v33: String
+)
+
+enum LongSum:
+  case V1(str: String)
+  case V2(str: String)
+  case V3(str: String)
+  case V4(str: String)
+  case V5(str: String)
+  case V6(str: String)
+  case V7(str: String)
+  case V8(str: String)
+  case V9(str: String)
+  case V10(str: String)
+  case V11(str: String)
+  case V12(str: String)
+  case V13(str: String)
+  case V14(str: String)
+  case V15(str: String)
+  case V16(str: String)
+  case V17(str: String)
+  case V18(str: String)
+  case V19(str: String)
+  case V20(str: String)
+  case V21(str: String)
+  case V22(str: String)
+  case V23(str: String)
+  case V24(str: String)
+  case V25(str: String)
+  case V26(str: String)
+  case V27(str: String)
+  case V28(str: String)
+  case V29(str: String)
+  case V30(str: String)
+  case V31(str: String)
+  case V32(str: String)
+  case V33(str: String)
+
+enum LongEnum:
+  case V1, V2, V3, V4, V5, V6, V7, V8, V9, V10,
+    V11, V12, V13, V14, V15, V16, V17, V18, V19, V20,
+    V21, V22, V23, V24, V25, V26, V27, V28, V29, V30,
+    V31, V32, V33
+
+sealed trait ADTWithSubTraitExample
+sealed trait SubTrait extends ADTWithSubTraitExample
+case class TheClass(a: Int) extends SubTrait
+
 object SanelyAutoSuite extends TestSuite:
   val tests = Tests {
     test("Simple product round-trip") {
@@ -366,6 +423,70 @@ object SanelyAutoSuite extends TestSuite:
       val json = v.asJson
       val decoded = decode[RecursiveWithOptionExample](json.noSpaces)
       assert(decoded == Right(v))
+    }
+
+    // --- Phase 7: Large Types & Edge Cases ---
+
+    test("Large product round-trip (LongClass with 33 fields)") {
+      val v = LongClass(
+        "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10",
+        "a11", "a12", "a13", "a14", "a15", "a16", "a17", "a18", "a19", "a20",
+        "a21", "a22", "a23", "a24", "a25", "a26", "a27", "a28", "a29", "a30",
+        "a31", "a32", "a33"
+      )
+      val json = v.asJson
+      // Spot-check a few fields
+      assert(json.hcursor.downField("v1").as[String] == Right("a1"))
+      assert(json.hcursor.downField("v33").as[String] == Right("a33"))
+      val decoded = decode[LongClass](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Large sum round-trip (LongSum with 33 variants)") {
+      val v1: LongSum = LongSum.V1("hello")
+      val json1 = v1.asJson
+      assert(json1 == Json.obj("V1" -> Json.obj("str" -> Json.fromString("hello"))))
+      val decoded1 = decode[LongSum](json1.noSpaces)
+      assert(decoded1 == Right(v1))
+
+      val v33: LongSum = LongSum.V33("last")
+      val json33 = v33.asJson
+      assert(json33 == Json.obj("V33" -> Json.obj("str" -> Json.fromString("last"))))
+      val decoded33 = decode[LongSum](json33.noSpaces)
+      assert(decoded33 == Right(v33))
+    }
+
+    test("Large enum round-trip (LongEnum with 33 nullary cases)") {
+      val v1: LongEnum = LongEnum.V1
+      val json1 = v1.asJson
+      assert(json1 == Json.obj("V1" -> Json.obj()))
+      val decoded1 = decode[LongEnum](json1.noSpaces)
+      assert(decoded1 == Right(v1))
+
+      val v33: LongEnum = LongEnum.V33
+      val json33 = v33.asJson
+      assert(json33 == Json.obj("V33" -> Json.obj()))
+      val decoded33 = decode[LongEnum](json33.noSpaces)
+      assert(decoded33 == Right(v33))
+    }
+
+    test("Sub-trait flattening (ADTWithSubTraitExample)") {
+      // TheClass extends SubTrait extends ADTWithSubTraitExample
+      // Should encode as {"TheClass":{"a":0}}, NOT {"SubTrait":{"TheClass":{"a":0}}}
+      val v: ADTWithSubTraitExample = TheClass(0)
+      val json = v.asJson
+      val expected = Json.obj("TheClass" -> Json.obj("a" -> Json.fromInt(0)))
+      assert(json == expected)
+      val decoded = decode[ADTWithSubTraitExample](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Decoder ignores superfluous JSON keys") {
+      val expected = Right(Adt1Class1(3): Adt1)
+      assert(decode[Adt1]("""{"Adt1Class1":{"int":3}}""") == expected)
+      assert(decode[Adt1]("""{"extraField":true,"Adt1Class1":{"int":3}}""") == expected)
+      assert(decode[Adt1]("""{"extraField":true,"extraField2":15,"Adt1Class1":{"int":3}}""") == expected)
+      assert(decode[Adt1]("""{"Adt1Class1":{"int":3},"extraField":true}""") == expected)
     }
 
     // --- Phase 1 extras ---

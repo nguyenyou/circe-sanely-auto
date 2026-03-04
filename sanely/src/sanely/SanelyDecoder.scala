@@ -69,9 +69,25 @@ object SanelyDecoder:
     ): Expr[Decoder[S]] =
       val cases = resolveFields[Types, Labels](selfRef)
 
+      // Detect which variants are themselves sum types (sub-traits)
+      val casesWithSubTrait = cases.map { case (label, tpe, dec) =>
+        val isSub = tpe match
+          case '[t] => Expr.summon[Mirror.SumOf[t]].isDefined
+        (label, tpe, dec, isSub)
+      }
+
       def buildMatch(c: Expr[HCursor], key: Expr[String]): Expr[Decoder.Result[S]] =
-        cases.foldRight('{ Left(DecodingFailure("Unknown variant", $c.history)) }: Expr[Decoder.Result[S]]) {
-          case ((label, tpe, dec), elseExpr) =>
+        casesWithSubTrait.foldRight('{ Left(DecodingFailure("Unknown variant", $c.history)) }: Expr[Decoder.Result[S]]) {
+          case ((label, tpe, dec, true), elseExpr) =>
+            // Sub-trait: try its decoder directly on the cursor (it handles its own key matching)
+            tpe match
+              case '[t] =>
+                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
+                '{ $typedDec.tryDecode($c) match
+                    case Right(v) => Right(v.asInstanceOf[S])
+                    case Left(_)  => $elseExpr
+                }
+          case ((label, tpe, dec, false), elseExpr) =>
             tpe match
               case '[t] =>
                 val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
@@ -79,12 +95,17 @@ object SanelyDecoder:
                 '{ if $key == $labelExpr then $typedDec.tryDecode($c.downField($labelExpr)).asInstanceOf[Decoder.Result[S]] else $elseExpr }
         }
 
+      // Collect only non-sub-trait labels for key matching
+      val directLabels = casesWithSubTrait.collect { case (label, _, _, false) => label }
+      val directLabelsExpr = Expr(directLabels)
+
       '{
         new Decoder[S]:
+          private val _knownLabels: Set[String] = $directLabelsExpr.toSet
           def apply(c: HCursor): Decoder.Result[S] =
             c.keys match
               case Some(keys) =>
-                val key = keys.head
+                val key = keys.find(_knownLabels.contains).getOrElse("")
                 ${ buildMatch('c, 'key) }
               case None =>
                 Left(DecodingFailure("Expected JSON object for sum type", c.history))
