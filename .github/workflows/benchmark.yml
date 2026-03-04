@@ -1,0 +1,124 @@
+name: Benchmark
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - run: mkdir -p results
+
+      # --- PR branch benchmarks ---
+      - name: Benchmark PR (auto derivation)
+        run: bash bench.sh 5 | tee results/pr-auto.txt
+
+      - name: Benchmark PR (configured derivation)
+        run: bash bench.sh 5 --configured | tee results/pr-configured.txt
+
+      # --- Base branch benchmarks ---
+      - name: Checkout base branch
+        if: github.event_name == 'pull_request'
+        run: git checkout ${{ github.event.pull_request.base.sha }}
+
+      - name: Benchmark base (auto derivation)
+        if: github.event_name == 'pull_request'
+        run: bash bench.sh 5 | tee results/base-auto.txt
+
+      - name: Benchmark base (configured derivation)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: bash bench.sh 5 --configured | tee results/base-configured.txt
+
+      # --- Compare and report ---
+      - name: Compare results
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 << 'PYTHON'
+          import re, os, sys
+
+          def parse_medians(filepath):
+              results = {}
+              try:
+                  with open(filepath) as f:
+                      for line in f:
+                          m = re.match(r'(\S+) median: ([\d.]+)s', line)
+                          if m:
+                              results[m.group(1)] = float(m.group(2))
+              except FileNotFoundError:
+                  pass
+              return results
+
+          pr_auto = parse_medians('results/pr-auto.txt')
+          pr_conf = parse_medians('results/pr-configured.txt')
+          base_auto = parse_medians('results/base-auto.txt')
+          base_conf = parse_medians('results/base-configured.txt')
+
+          rows = []
+          for label, pr_val, base_val in [
+              ('Auto / sanely', pr_auto.get('benchmark.sanely'), base_auto.get('benchmark.sanely')),
+              ('Auto / generic', pr_auto.get('benchmark.generic'), base_auto.get('benchmark.generic')),
+              ('Configured / sanely', pr_conf.get('benchmark-configured.sanely'), base_conf.get('benchmark-configured.sanely')),
+              ('Configured / generic', pr_conf.get('benchmark-configured.generic'), base_conf.get('benchmark-configured.generic')),
+          ]:
+              if pr_val is None:
+                  continue
+              if base_val is not None:
+                  pct = (pr_val - base_val) / base_val * 100
+                  icon = ' 🔴' if pct > 10 else ' 🟢' if pct < -5 else ''
+                  rows.append(f'| {label} | {base_val:.2f}s | {pr_val:.2f}s | {pct:+.1f}%{icon} |')
+              else:
+                  rows.append(f'| {label} | N/A | {pr_val:.2f}s | — |')
+
+          if not rows:
+              print('No benchmark data found')
+              sys.exit(0)
+
+          table = '| Benchmark | Base | PR | Change |\n|---|---|---|---|\n' + '\n'.join(rows)
+          body = f'## Compile-time Benchmark\n\n{table}\n\n' \
+                 f'<sub>5 iterations, median. 🔴 >10% regression, 🟢 >5% improvement</sub>'
+
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write(body + '\n')
+
+          with open('results/comment.md', 'w') as f:
+              f.write('<!-- benchmark -->\n' + body)
+
+          print(body)
+          PYTHON
+
+          # Remove previous benchmark comment if exists
+          gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+            --jq '.[] | select(.body | contains("<!-- benchmark -->")) | .id' \
+          | while read -r id; do
+            gh api -X DELETE "repos/${{ github.repository }}/issues/comments/$id"
+          done
+
+          # Post new comment
+          gh pr comment "$PR_NUMBER" --body-file results/comment.md
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-results
+          path: results/
