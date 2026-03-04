@@ -106,7 +106,7 @@ When publishing a new version:
    gh release create v0.X.0 --title "v0.X.0" --notes "changelog here"
    ```
 
-The changelog should summarize new features, bug fixes, and breaking changes since the last release. Use `git log --oneline vPREV..HEAD` to gather commits.
+The changelog in `CHANGELOG.md` must also be updated with new features, bug fixes, and breaking changes. Use `git log --oneline vPREV..HEAD` to gather commits.
 
 ## Known Issues
 
