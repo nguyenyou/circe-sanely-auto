@@ -63,3 +63,26 @@ Both encoder/decoder follow the same pattern:
 
 `-Xmax-inlines 64` is set on both main and test modules — required for macro expansion depth.
 
+## Workflow: Test-First Porting
+
+We follow a strict **port test → implement → pass → next** cycle:
+
+1. Pick the next phase from `README.md` test plan (Phase 1–9, easiest to hardest)
+2. Port the corresponding test from circe's `DerivesSuite` / `SemiautoDerivationSuite` into `sanely/test/`
+3. Run `./mill sanely.test` — expect failures
+4. Implement in `SanelyEncoder.scala` / `SanelyDecoder.scala` / `auto.scala` until tests pass
+5. Do NOT move to the next phase until all current tests are green
+
+Circe test sources live at:
+- `circe/modules/tests/shared/src/test/scala-3/io/circe/DerivesSuite.scala` — `derives` keyword tests
+- `circe/modules/tests/shared/src/test/scala-3/io/circe/SemiautoDerivationSuite.scala` — explicit `.derived` tests
+- `circe/modules/tests/shared/src/main/scala/io/circe/tests/examples/package.scala` — shared test data types
+
+See `README.md` "Test Porting Plan" for the full 9-phase breakdown with expected challenges.
+
+## Reference Repositories
+
+Configured as additional working directories:
+- `/Users/tunguyen/Documents/GitHub/circe` — upstream circe (test suite to match)
+- `/Users/tunguyen/Documents/GitHub/scala3` — Scala 3 compiler source
+- `/Users/tunguyen/Documents/GitHub/mill` — Mill build tool source
