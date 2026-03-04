@@ -2,7 +2,7 @@
 
 Drop-in replacement for circe's automatic Encoder/Decoder derivation, built with Scala 3 macros. No Shapeless. No circe-generic.
 
-Based on the [sanely-automatic derivation](https://kubuszok.com/2025/sanely-automatic-derivation/) approach: a single macro expansion recursively derives all nested instances at compile time, avoiding the implicit search chains that make circe-generic slow to compile.
+Based on the [sanely-automatic derivation](https://kubuszok.com/2025/sanely-automatic-derivation/) approach: uses `Expr.summonIgnoring` (Scala 3.7+) to exclude the auto-given from implicit search, then recursively derives all nested instances internally within a single macro expansion — avoiding the implicit search chains that make circe-generic slow to compile.
 
 **Scala 3.8.2+ only.**
 
@@ -56,7 +56,7 @@ Each test is a roundtrip: `encode(a) |> decode == Right(a)`. Circe uses property
 
 ### Phase 1 — Simple Products *(already working)*
 
-Basic case classes with primitive/standard-library fields. Our macro already handles these via `Mirror.ProductOf` + `resolveOneEncoder`/`resolveOneDecoder` with `Expr.summon`.
+Basic case classes with primitive/standard-library fields. Our macro handles these via `Mirror.ProductOf` + `resolveOneEncoder`/`resolveOneDecoder` with `Expr.summonIgnoring`.
 
 - [x] Multi-field product — `Simple(i: Int, s: String)`
 - [x] Single-field product — `Wub(x: Long)`
@@ -88,7 +88,7 @@ Case objects have no fields → should encode as `{}` inside the wrapper. Requir
 
 ### Phase 4 — User-Provided Instances Respected
 
-When a type already has an implicit `Encoder`/`Decoder`, our macro's `Expr.summon` should find it instead of re-deriving. This is core to the "sanely-automatic" approach.
+When a type already has an implicit `Encoder`/`Decoder`, our macro's `Expr.summonIgnoring` finds it (since it only excludes our own auto-given, not user-provided instances) instead of re-deriving. This is core to the "sanely-automatic" approach.
 
 - [ ] `Foo` with custom-encoded children — `Bar` has `Encoder.forProduct2`, `Baz` encodes as JSON array (not object)
 - [ ] `Outer(a: Option[Inner[String]])` — should use `Inner`'s derived encoder, not re-derive
@@ -151,7 +151,7 @@ Explicit `SanelyEncoder.derived[A]` / `SanelyDecoder.derived[A]` calls (already 
 | 1 | None — already works |
 | 2 | None — already works for case-class-only sums |
 | 3 | Case objects: `Mirror.ProductOf` with `EmptyTuple`, singleton encoding |
-| 4 | Priority: `Expr.summon` must find user instances over auto-derived ones |
+| 4 | `Expr.summonIgnoring` already skips auto-given; verify user instances are found |
 | 5 | Type params: macro must resolve `Encoder[A]` when `A` is abstract |
 | 6 | Recursion: break infinite macro expansion, likely needs lazy wrapper |
 | 7 | Inline budget for 33 fields/variants; sub-trait Mirror flattening |

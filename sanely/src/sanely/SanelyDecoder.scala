@@ -93,12 +93,20 @@ object SanelyDecoder:
         val dec = resolveOneDecoder[t]
         (labelStr, Type.of[t], dec) :: resolveFields[ts, ls]
 
+  /** Resolve a Decoder for type T using the "sanely-automatic" approach:
+    * Use Expr.summonIgnoring to skip our own auto-given, so that only user-provided
+    * or standard library decoders are found. If none exists, derive internally within
+    * this same macro expansion — avoiding separate implicit search chains.
+    */
   private def resolveOneDecoder[T: Type](using Quotes): Expr[Decoder[T]] =
     import quotes.reflect.*
 
-    Expr.summon[Decoder[T]] match
+    // Exclude our own auto-given so Expr.summon doesn't trigger a separate macro expansion
+    val autoDecoderSymbol = Symbol.requiredModule("sanely.auto").methodMember("autoDecoder").head
+    Expr.summonIgnoring[Decoder[T]](autoDecoderSymbol) match
       case Some(dec) => dec
       case None =>
+        // No user-provided decoder found — derive internally in this macro expansion
         Expr.summon[Mirror.Of[T]] match
           case Some(mirrorExpr) =>
             mirrorExpr match

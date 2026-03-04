@@ -43,10 +43,12 @@ Three Mill modules:
 
 Both encoder/decoder follow the same pattern:
 
-1. `auto.scala` provides `inline given` that delegates to `SanelyEncoder.derived` / `SanelyDecoder.derived`
+1. `auto.scala` provides named `inline given autoEncoder`/`autoDecoder` that delegate to `SanelyEncoder.derived` / `SanelyDecoder.derived`
 2. `derived` is an `inline def` that splices a macro (`deriveMacro`)
 3. The macro pattern-matches the `Mirror` to dispatch to `deriveProduct` or `deriveSum`
-4. **Recursive resolution** (`resolveOneEncoder`/`resolveOneDecoder`): first tries `Expr.summon[Encoder[T]]` for an existing given, then falls back to recursive macro derivation via the `Mirror`. This is the key "sanely-automatic" trick — nested types are derived inside the same macro expansion, not via implicit search chains.
+4. **Recursive resolution** (`resolveOneEncoder`/`resolveOneDecoder`): uses `Expr.summonIgnoring` (Scala 3.7+) to search for an existing `Encoder[T]`/`Decoder[T]` **while excluding our own auto-given symbol**. This ensures only user-provided or standard library instances are found. If none exists, the macro falls back to recursive internal derivation via the `Mirror` — deriving nested types inside the same macro expansion, not via implicit search chains. This is the core "sanely-automatic" trick from [kubuszok.com](https://kubuszok.com/2025/sanely-automatic-derivation/).
+
+The givens in `auto.scala` are named (`autoEncoder`/`autoDecoder`) specifically so the macros can reference their symbols to pass to `Expr.summonIgnoring`.
 
 ### Encoding format
 
