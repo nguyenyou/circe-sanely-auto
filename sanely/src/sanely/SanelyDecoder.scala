@@ -70,10 +70,15 @@ object SanelyDecoder:
     ): Expr[Decoder[S]] =
       val cases = resolveFields[Types, Labels](selfRef)
 
-      // Detect which variants are themselves sum types (sub-traits)
+      // Detect which variants are themselves sum types (sub-traits).
+      // Only flatten when no user-provided decoder exists — a custom Decoder
+      // may not handle the sub-dispatching that flattening requires.
+      val ignoreSymbols = collectIgnoreSymbols("autoDecoder", "deriveDecoder", "importedDecoder")
       val casesWithSubTrait = cases.map { case (label, tpe, dec) =>
         val isSub = tpe match
-          case '[t] => Expr.summon[Mirror.SumOf[t]].isDefined
+          case '[t] =>
+            Expr.summon[Mirror.SumOf[t]].isDefined &&
+            Expr.summonIgnoring[Decoder[t]](ignoreSymbols*).isEmpty
         (label, tpe, dec, isSub)
       }
 
@@ -188,12 +193,21 @@ object SanelyDecoder:
       tpe: TypeRepr,
       selfRef: Expr[Decoder[A]]
     ): Expr[Decoder[T]] =
+      // Try summoning a user-provided decoder first — handles custom generic containers
+      // (e.g. CustomEnum[Self]) that have their own polymorphic givens.
+      // We use a targeted ignore list to avoid finding circe-core's Decoder.derived.
+      val ignoreSymbols = collectIgnoreSymbols("autoDecoder", "deriveDecoder", "importedDecoder")
+      def trySummon: Option[Expr[Decoder[T]]] = Expr.summonIgnoring[Decoder[T]](ignoreSymbols*)
+
       tpe match
         case AppliedType(tycon, List(arg)) if arg =:= selfType =>
           arg.asType match
             case '[a] =>
               val innerDec = selfRef.asInstanceOf[Expr[Decoder[a]]]
-              buildContainerDecoder[T, a](tycon, innerDec)
+              buildContainerDecoder[T, a](tycon, innerDec) match
+                case Some(dec) => dec
+                case None => trySummon.getOrElse(
+                  report.errorAndAbort(s"Cannot derive Decoder for recursive type in container ${tycon.typeSymbol.fullName}[${Type.show[a]}]"))
         case AppliedType(tycon, List(keyArg, valArg)) if valArg =:= selfType =>
           (keyArg.asType, valArg.asType) match
             case ('[k], '[v]) =>
@@ -208,7 +222,10 @@ object SanelyDecoder:
           arg.asType match
             case '[a] =>
               val innerDec = constructRecursiveDecoder[a](arg, selfRef)
-              buildContainerDecoder[T, a](tycon, innerDec)
+              buildContainerDecoder[T, a](tycon, innerDec) match
+                case Some(dec) => dec
+                case None => trySummon.getOrElse(
+                  report.errorAndAbort(s"Cannot derive Decoder for recursive type in container ${tycon.typeSymbol.fullName}[${Type.show[a]}]"))
         case AppliedType(tycon, List(keyArg, valArg)) if containsType(valArg, selfType) =>
           (keyArg.asType, valArg.asType) match
             case ('[k], '[v]) =>
@@ -220,32 +237,32 @@ object SanelyDecoder:
                   report.errorAndAbort(s"Cannot derive Decoder for Map: no KeyDecoder for ${Type.show[k]}")
             case _ => report.errorAndAbort(s"Unexpected type pattern in Map recursive decoder")
         case _ =>
-          report.errorAndAbort(s"Cannot derive Decoder for recursive type application: ${Type.show[T]}")
+          trySummon.getOrElse(
+            report.errorAndAbort(s"Cannot derive Decoder for recursive type application: ${Type.show[T]}"))
 
     private def buildContainerDecoder[T: Type, A: Type](
       tycon: TypeRepr,
       innerDec: Expr[Decoder[A]]
-    ): Expr[Decoder[T]] =
+    ): Option[Expr[Decoder[T]]] =
       tycon.typeSymbol.fullName match
         case "scala.Option" =>
-          '{ Decoder.decodeOption[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeOption[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case s if s.endsWith(".List") =>
-          '{ Decoder.decodeList[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeList[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case s if s.endsWith(".Vector") =>
-          '{ Decoder.decodeVector[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeVector[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case s if s.endsWith(".Set") =>
-          '{ Decoder.decodeSet[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeSet[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case s if s.endsWith(".Seq") =>
-          '{ Decoder.decodeSeq[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeSeq[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case "cats.data.Chain" =>
-          '{ Decoder.decodeChain[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeChain[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case "cats.data.NonEmptyList" =>
-          '{ Decoder.decodeNonEmptyList[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeNonEmptyList[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case "cats.data.NonEmptyVector" =>
-          '{ Decoder.decodeNonEmptyVector[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeNonEmptyVector[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case "cats.data.NonEmptySeq" =>
-          '{ Decoder.decodeNonEmptySeq[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+          Some('{ Decoder.decodeNonEmptySeq[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
         case "cats.data.NonEmptyChain" =>
-          '{ Decoder.decodeNonEmptyChain[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-        case other =>
-          report.errorAndAbort(s"Cannot derive Decoder for recursive type in container ${other}[${Type.show[A]}]")
+          Some('{ Decoder.decodeNonEmptyChain[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]])
+        case _ => None

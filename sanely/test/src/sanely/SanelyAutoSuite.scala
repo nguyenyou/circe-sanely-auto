@@ -146,6 +146,29 @@ case class RecursiveWithOptionList(children: Option[List[RecursiveWithOptionList
 case class RecursiveWithOptionMap(properties: Option[Map[String, RecursiveWithOptionMap]], name: String)
 case class RecursiveWithListOption(items: List[Option[RecursiveWithListOption]], value: String)
 
+// Sum type variant with user-provided custom codec (non-AsObject)
+sealed trait EventWithCustomVariant
+case class NormalEvent(value: String) extends EventWithCustomVariant
+sealed abstract class SingletonEvent extends EventWithCustomVariant
+object SingletonEvent extends SingletonEvent:
+  given Codec[SingletonEvent] = Codec.from(
+    Decoder.decodeString.emap(s => if s == "SingletonEvent" then Right(SingletonEvent) else Left("bad")),
+    Encoder.encodeString.contramap(_ => "SingletonEvent")
+  )
+
+// Custom generic container with user-provided codec containing Self in type param
+sealed abstract class MyEnum[C]
+object MyEnum:
+  case object Foo extends MyEnum[Nothing]
+  case object Bar extends MyEnum[Nothing]
+  given [C]: Encoder[MyEnum[C]] = Encoder.encodeString.contramap(_.getClass.getSimpleName.stripSuffix("$"))
+  given [C]: Decoder[MyEnum[C]] = Decoder.decodeString.emap {
+    case "Foo" => Right(Foo.asInstanceOf[MyEnum[C]])
+    case "Bar" => Right(Bar.asInstanceOf[MyEnum[C]])
+    case other => Left(s"Unknown: $other")
+  }
+case class WithCustomEnum(name: String, kind: MyEnum[WithCustomEnum])
+
 // Tagged type member
 case class ProductWithTaggedMember(x: ProductWithTaggedMember.TaggedString)
 object ProductWithTaggedMember:
@@ -725,6 +748,31 @@ object SanelyAutoSuite extends TestSuite:
       val json = branch.asJson
       val decoded = decode[RecursiveWithListOption](json.noSpaces)
       assert(decoded == Right(branch))
+    }
+
+    // --- Sum variant with user-provided custom codec ---
+
+    test("Sum type with user-provided non-AsObject codec variant") {
+      val normal: EventWithCustomVariant = NormalEvent("hello")
+      val singleton: EventWithCustomVariant = SingletonEvent
+      val normalJson = normal.asJson
+      val singletonJson = singleton.asJson
+      assert(normalJson == Json.obj("NormalEvent" -> Json.obj("value" -> Json.fromString("hello"))))
+      assert(singletonJson == Json.obj("SingletonEvent" -> Json.fromString("SingletonEvent")))
+      val decodedNormal = decode[EventWithCustomVariant](normalJson.noSpaces)
+      val decodedSingleton = decode[EventWithCustomVariant](singletonJson.noSpaces)
+      assert(decodedNormal == Right(normal))
+      assert(decodedSingleton == Right(singleton))
+    }
+
+    // --- Custom generic container with Self in type param ---
+
+    test("Custom generic container with Self in type param") {
+      val v = WithCustomEnum("test", MyEnum.Foo.asInstanceOf[MyEnum[WithCustomEnum]])
+      val json = v.asJson
+      assert(json == Json.obj("name" -> Json.fromString("test"), "kind" -> Json.fromString("Foo")))
+      val decoded = decode[WithCustomEnum](json.noSpaces)
+      assert(decoded == Right(v))
     }
 
     // --- Tagged type member ---

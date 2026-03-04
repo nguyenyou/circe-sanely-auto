@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1] - 2026-03-04
+
+### Fixed
+- **Sub-trait flattening with user-provided custom codecs** — sealed trait variants with user-provided non-`AsObject` codecs (e.g. string-based singletons) are no longer incorrectly flattened, which caused `encodeObject` crashes on encoder side and silent decode failures on decoder side
+- **Custom generic containers with Self in type param** — types like `MyEnum[Self]` with user-provided polymorphic givens are now correctly resolved instead of failing with "unknown container" errors. The macro now tries summoning a user-provided instance before falling back to recursive container construction.
+
+### Added
+- 2 new tests: sum variant with custom non-AsObject codec, custom generic container with Self in type param
+
 ## [0.4.0] - 2026-03-04
 
 ### Added
