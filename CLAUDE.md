@@ -90,6 +90,24 @@ Threads `Expr[Configuration]` through the macro. At runtime:
 
 `-Xmax-inlines 64` — required for macro expansion depth. Set on all modules.
 
+## Publishing
+
+When publishing a new version:
+
+1. Bump `publishVersion` in `sanely/package.mill`
+2. Update version in `README.md`
+3. Run all tests (`sanely.jvm.test`, `sanely.js.test`, `compat.test`)
+4. Publish both platforms: `./mill sanely.jvm.publishSonatypeCentral` and `./mill sanely.js.publishSonatypeCentral`
+5. Commit the version bump, push, and create a PR
+6. After merge, create a git tag and GitHub release with a changelog:
+   ```bash
+   git tag v0.X.0
+   git push origin v0.X.0
+   gh release create v0.X.0 --title "v0.X.0" --notes "changelog here"
+   ```
+
+The changelog in `CHANGELOG.md` must also be updated with new features, bug fixes, and breaking changes. Use `git log --oneline vPREV..HEAD` to gather commits.
+
 ## Known Issues
 
 - `Long.MaxValue`/`Long.MinValue` lose precision on Scala.js due to JSON number representation. Skipped via `Platform.isJS` (platform-specific sources in `test/src-jvm/` and `test/src-js/`).
