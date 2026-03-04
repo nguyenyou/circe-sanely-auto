@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Nested recursive container types** — support for `Option[List[Self]]`, `Option[Map[String, Self]]`, `List[Option[Self]]`, and other multi-level container nesting in recursive types (both configured and unconfigured derivation)
+- GitHub Actions release workflow (`.github/workflows/release.yml`) — automated publish on `v*` tag push
+- 5 new recursive type tests covering nested containers
+
 ## [0.3.1] - 2026-03-04
 
 ### Added
