@@ -1,102 +1,111 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Project
 
-## Project Goal
+Drop-in replacement for circe's auto/semi-auto/configured derivation. Scala 3.8.2+ only. Uses the "sanely-automatic" approach — Scala 3 macros with `Expr.summonIgnoring` to derive all instances in a single macro expansion, avoiding implicit search chains.
 
-Drop-in replacement for circe's auto-derivation (Scala 3 only, targeting 3.8.2+) using the "sanely-automatic" derivation approach from [kubuszok.com/2025/sanely-automatic-derivation](https://kubuszok.com/2025/sanely-automatic-derivation/). The technique uses Scala 3 macros to recursively derive Encoder/Decoder instances at compile time in a single macro expansion — avoiding the implicit search chains that make circe-generic slow to compile.
-
-**Success metric**: Pass all circe auto-derivation tests. API compatibility with `io.circe` is the ultimate goal — only the implementation changes, not the user-facing API.
-
-**Scope**: Scala 3 only. No Scala 2 support.
+**Goal**: Full API compatibility with circe's derivation. Pass all circe tests. Only the implementation changes, not the user-facing API.
 
 ## Build Commands
 
-Mill 1.1.2 build. Run from repo root:
+Mill 1.1.2. Run from repo root:
 
 ```bash
-./mill sanely.compile          # compile core library
-./mill sanely.test              # run tests (utest)
-./mill demo.run                 # run demo (product + sum round-trips)
-./mill sanely.test.compile      # compile tests only
-./mill benchmark.sanely.compile # compile benchmark (our library)
-./mill benchmark.generic.compile # compile benchmark (circe-generic)
-bash bench.sh 5                 # run timed compile comparison (N iterations)
+./mill sanely.jvm.compile       # compile (JVM)
+./mill sanely.js.compile        # compile (Scala.js)
+./mill sanely.jvm.test          # unit tests - JVM (109 tests, utest)
+./mill sanely.js.test           # unit tests - Scala.js (109 tests, utest)
+./mill compat.test              # circe compat tests (160 tests, munit + discipline)
+./mill demo.run                 # run demo
+./mill benchmark.sanely.compile # benchmark: our library
+./mill benchmark.generic.compile # benchmark: circe-generic
+bash bench.sh 5                 # timed compile comparison
 ```
 
 **Do NOT run** `./mill __.compile` or bare `./mill` — use targeted module commands to avoid cache invalidation.
 
-## Architecture
+## Modules
 
-Five Mill modules:
+| Module | Purpose |
+|---|---|
+| `sanely/` | Core library. Cross-compiled JVM + Scala.js via `PlatformScalaModule` |
+| `sanely/test/` | Unit tests (utest). Platform-specific sources in `test/src-jvm/` and `test/src-js/` |
+| `compat/` | Circe compatibility tests (munit + discipline). Uses circe's own `CodecTests` |
+| `demo/` | Runnable examples |
+| `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
 
-- **`sanely/`** — Core library. Macro-based Encoder.AsObject and Decoder derivation.
-- **`sanely/test/`** — utest suite. Import `sanely.auto.given` to get instances.
-- **`demo/`** — Runnable examples. Depends on `sanely`.
-- **`benchmark/sanely`** — Compile-time benchmark using our library.
-- **`benchmark/generic`** — Compile-time benchmark using circe-generic (same source).
+## Source Files
 
-### Core source files (`sanely/src/sanely/`)
+### Core (`sanely/src/sanely/`)
 
 | File | Purpose |
 |---|---|
-| `auto.scala` | Entry point. Provides `inline given` instances via `import sanely.auto.given` |
-| `SanelyEncoder.scala` | Macro that derives `Encoder.AsObject[A]` for products and sum types |
-| `SanelyDecoder.scala` | Macro that derives `Decoder[A]` for products and sum types |
+| `auto.scala` | Entry point. `inline given autoEncoder`/`autoDecoder` via `import sanely.auto.given` |
+| `SanelyEncoder.scala` | Macro: `Encoder.AsObject[A]` for products and sum types |
+| `SanelyDecoder.scala` | Macro: `Decoder[A]` for products and sum types |
+| `SanelyCodec.scala` | Composes encoder + decoder into `Codec.AsObject[A]` |
+| `SanelyConfiguredEncoder.scala` | Configured encoder with `Configuration` support |
+| `SanelyConfiguredDecoder.scala` | Configured decoder (most complex: defaults, strict, discriminator) |
+| `SanelyConfiguredCodec.scala` | Composes configured encoder + decoder |
+| `SanelyEnumCodec.scala` | Singleton enum string codec with hierarchical sealed trait support |
 
-### How derivation works
+### Drop-in API (`sanely/src/io/circe/generic/`)
 
-Both encoder/decoder follow the same pattern:
+| File | Purpose |
+|---|---|
+| `auto.scala` | `io.circe.generic.auto.given` — drop-in alias for `sanely.auto.given` via `Exported` |
+| `semiauto.scala` | `deriveEncoder`, `deriveDecoder`, `deriveCodec`, `deriveConfigured*`, `deriveEnumCodec` |
 
-1. `auto.scala` provides named `inline given autoEncoder`/`autoDecoder` that delegate to `SanelyEncoder.derived` / `SanelyDecoder.derived`
-2. `derived` is an `inline def` that splices a macro (`deriveMacro`)
-3. The macro pattern-matches the `Mirror` to dispatch to `deriveProduct` or `deriveSum`
-4. **Recursive resolution** (`resolveOneEncoder`/`resolveOneDecoder`): uses `Expr.summonIgnoring` (Scala 3.7+) to search for an existing `Encoder[T]`/`Decoder[T]` **while excluding our own auto-given symbol**. This ensures only user-provided or standard library instances are found. If none exists, the macro falls back to recursive internal derivation via the `Mirror` — deriving nested types inside the same macro expansion, not via implicit search chains. This is the core "sanely-automatic" trick from [kubuszok.com](https://kubuszok.com/2025/sanely-automatic-derivation/).
+## How It Works
 
-The givens in `auto.scala` are named (`autoEncoder`/`autoDecoder`) specifically so the macros can reference their symbols to pass to `Expr.summonIgnoring`.
+1. `auto.scala` provides named `inline given autoEncoder`/`autoDecoder` → delegates to `SanelyEncoder.derived`/`SanelyDecoder.derived`
+2. `derived` is `inline def` that splices a macro (`deriveMacro`)
+3. Macro pattern-matches `Mirror` → dispatches to `deriveProduct` or `deriveSum`
+4. **Recursive resolution** (`resolveOneEncoder`/`resolveOneDecoder`): `Expr.summonIgnoring` searches for existing instances while excluding our auto-given symbol. If none found, derives internally via `Mirror` — all within the same macro expansion. This is the core trick.
+
+The givens are named (`autoEncoder`/`autoDecoder`) so macros can reference their symbols for `Expr.summonIgnoring`.
+
+### Configured derivation
+
+Threads `Expr[Configuration]` through the macro. At runtime:
+- `transformMemberNames`/`transformConstructorNames` — wraps labels with transform functions
+- `useDefaults` — companion `$lessinit$greater$default$N` methods looked up at compile time; fallback when field missing (or null for non-Option types)
+- `discriminator` — `None` → external tagging, `Some(d)` → flat with discriminator field
+- `strictDecoding` — post-decode key validation; for sum types, rejects multi-key objects
 
 ### Encoding format
 
-- **Products**: `{"field1": ..., "field2": ...}` — flat JSON object keyed by field names
-- **Sum types**: `{"VariantName": {...}}` — single-key wrapper with variant's fields inside
+- **Products**: `{"field1": ..., "field2": ...}`
+- **Sum types**: `{"VariantName": {...}}` (external tagging) or `{"type": "VariantName", ...}` (discriminator)
+- **Enums**: `"VariantName"` (string codec)
 
 ## Dependencies
 
-- `io.circe::circe-core:0.14.13` (main)
-- `io.circe::circe-parser:0.14.13` (test/demo only)
-- `com.lihaoyi::utest:0.10.0-RC1` (test only)
+- `io.circe::circe-core:0.14.15` (main)
+- `io.circe::circe-parser:0.14.15` (test/demo)
+- `com.lihaoyi::utest:0.10.0-RC1` (unit tests)
+- `io.circe::circe-testing:0.14.15` + `org.typelevel::discipline-munit:2.0.0` (compat tests)
 
 ## Compiler Options
 
-`-Xmax-inlines 64` is set on both main and test modules — required for macro expansion depth.
+`-Xmax-inlines 64` — required for macro expansion depth. Set on all modules.
 
-## Workflow: Test-First Porting
+## Known Issues
 
-We follow a strict **port test → implement → pass → next** cycle:
+- `Long.MaxValue`/`Long.MinValue` lose precision on Scala.js due to JSON number representation. Skipped via `Platform.isJS` (platform-specific sources in `test/src-jvm/` and `test/src-js/`).
+- `inline def derived` inside utest `test {}` blocks may not expand for generic types. Workaround: derive in a helper object outside the test block.
 
-1. Pick the next phase from `README.md` test plan (Phase 1–9, easiest to hardest)
-2. Port the corresponding test from circe's `DerivesSuite` / `SemiautoDerivationSuite` into `sanely/test/`
-3. Run `./mill sanely.test` — expect failures
-4. Implement in `SanelyEncoder.scala` / `SanelyDecoder.scala` / `auto.scala` until tests pass
-5. Do NOT move to the next phase until all current tests are green
+## Circe Reference
 
-Circe test sources live at:
-- `circe/modules/tests/shared/src/test/scala-3/io/circe/DerivesSuite.scala` — `derives` keyword tests
-- `circe/modules/tests/shared/src/test/scala-3/io/circe/SemiautoDerivationSuite.scala` — explicit `.derived` tests
-- `circe/modules/tests/shared/src/main/scala/io/circe/tests/examples/package.scala` — shared test data types
+Test sources to match:
+- `circe/modules/tests/shared/src/test/scala-3/io/circe/DerivesSuite.scala`
+- `circe/modules/tests/shared/src/test/scala-3/io/circe/SemiautoDerivationSuite.scala`
+- `circe/modules/tests/shared/src/test/scala-3/io/circe/ConfiguredDerivesSuite.scala`
+- `circe/modules/tests/shared/src/test/scala-3/io/circe/ConfiguredEnumDerivesSuites.scala`
+- `circe/modules/tests/shared/src/main/scala/io/circe/tests/examples/package.scala`
 
-See `README.md` "Test Porting Plan" for the full 9-phase breakdown with expected challenges.
+## Mill Notes
 
-## Mill: Shared Sources via `package.mill`
-
-`benchmark/package.mill` defines two modules sharing `benchmark/shared/src/` via `override def moduleDir = super.moduleDir / os.up / "shared"`. Key gotchas:
-- Mill 1.x: override `moduleDir` (public API), not `millSourcePath` (internal, will error)
-- `Task.Sources` can't use computed paths — sandbox restriction blocks `PathRef` creation
-- Nested modules inside plain `object` don't register; parent must `extends Module` or use `package.mill`
-
-## Reference Repositories
-
-Configured as additional working directories:
-- `/Users/tunguyen/Documents/GitHub/circe` — upstream circe (test suite to match)
-- `/Users/tunguyen/Documents/GitHub/scala3` — Scala 3 compiler source
-- `/Users/tunguyen/Documents/GitHub/mill` — Mill build tool source
+- `benchmark/package.mill`: two modules share `benchmark/shared/src/` via `override def moduleDir`
+- Mill 1.x: override `moduleDir` (public API), not `millSourcePath` (internal)
+- `sanely/package.mill`: cross-compile via `PlatformScalaModule` with `jvm` and `js` sub-modules
