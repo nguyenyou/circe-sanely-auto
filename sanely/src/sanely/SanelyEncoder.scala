@@ -67,13 +67,15 @@ object SanelyEncoder:
       def buildBranch(a: Expr[S], label: String, tpe: Type[?], enc: Expr[Encoder[?]], isSubTrait: Boolean): Expr[JsonObject] =
         tpe match
           case '[t] =>
-            val typedEnc = enc.asInstanceOf[Expr[Encoder.AsObject[t]]]
             if isSubTrait then
-              // Sub-trait: use encoder directly (it already wraps with variant name)
+              // Sub-trait: use AsObject encoder directly (it already wraps with variant name)
+              val typedEnc = enc.asInstanceOf[Expr[Encoder.AsObject[t]]]
               '{ $typedEnc.encodeObject($a.asInstanceOf[t]) }
             else
+              // Regular variant: use Encoder[t].apply() — may not be AsObject
+              val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
               val labelExpr = Expr(label)
-              '{ JsonObject.singleton($labelExpr, Json.fromJsonObject($typedEnc.encodeObject($a.asInstanceOf[t]))) }
+              '{ JsonObject.singleton($labelExpr, $typedEnc($a.asInstanceOf[t])) }
 
       // Detect which variants are themselves sum types (sub-traits)
       val casesWithSubTrait = cases.map { case (label, tpe, enc) =>

@@ -60,7 +60,8 @@ object SanelyDecoder:
       '{
         new Decoder[P]:
           def apply(c: HCursor): Decoder.Result[P] =
-            ${ buildDecodeChain('c, fields, Nil) }
+            if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
+            else ${ buildDecodeChain('c, fields, Nil) }
       }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
