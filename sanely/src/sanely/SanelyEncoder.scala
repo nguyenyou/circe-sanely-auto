@@ -11,102 +11,147 @@ object SanelyEncoder:
     ${ deriveMacro[A]('m) }
 
   private def deriveMacro[A: Type](mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[Encoder.AsObject[A]] =
+    val helper = new EncoderDerivation[A]
+    helper.derive(mirror)
+
+  private class EncoderDerivation[A: Type](using val quotes: Quotes):
     import quotes.reflect.*
 
-    mirror match
-      case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-        deriveProduct[A, types, labels](m)
+    val selfType: TypeRepr = TypeRepr.of[A]
 
-      case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-        deriveSum[A, types, labels](m)
+    def derive(mirror: Expr[Mirror.Of[A]]): Expr[Encoder.AsObject[A]] =
+      // Wrap in lazy val for recursive self-reference support
+      '{
+        lazy val _selfEnc: Encoder.AsObject[A] = ${
+          val selfRef: Expr[Encoder.AsObject[A]] = '{ _selfEnc }
+          mirror match
+            case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+              deriveProduct[A, types, labels](m, selfRef)
+            case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+              deriveSum[A, types, labels](m, selfRef)
+        }
+        _selfEnc
+      }
 
-  private def deriveProduct[A: Type, Types: Type, Labels: Type](
-    mirror: Expr[Mirror.ProductOf[A]]
-  )(using Quotes): Expr[Encoder.AsObject[A]] =
-    import quotes.reflect.*
+    private def deriveProduct[P: Type, Types: Type, Labels: Type](
+      mirror: Expr[Mirror.ProductOf[P]],
+      selfRef: Expr[Encoder.AsObject[A]]
+    ): Expr[Encoder.AsObject[P]] =
+      val fields = resolveFields[Types, Labels](selfRef)
 
-    val fields = resolveFields[Types, Labels]
+      def addField(base: Expr[JsonObject], product: Expr[Product], label: String, idx: Int, tpe: Type[?], enc: Expr[Encoder[?]]): Expr[JsonObject] =
+        tpe match
+          case '[t] =>
+            val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
+            val labelExpr = Expr(label)
+            val idxExpr = Expr(idx)
+            '{ $base.add($labelExpr, $typedEnc($product.productElement($idxExpr).asInstanceOf[t])) }
 
-    def addField(base: Expr[JsonObject], product: Expr[Product], label: String, idx: Int, tpe: Type[?], enc: Expr[Encoder[?]])(using Quotes): Expr[JsonObject] =
-      tpe match
-        case '[t] =>
-          val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
-          val labelExpr = Expr(label)
-          val idxExpr = Expr(idx)
-          '{ $base.add($labelExpr, $typedEnc($product.productElement($idxExpr).asInstanceOf[t])) }
-
-    '{
-      new Encoder.AsObject[A]:
-        def encodeObject(a: A): JsonObject =
-          ${
-            val product = '{ a.asInstanceOf[Product] }
-            fields.zipWithIndex.foldLeft('{ JsonObject.empty }) { case (acc, ((label, tpe, enc), idx)) =>
-              addField(acc, product, label, idx, tpe, enc)
+      '{
+        new Encoder.AsObject[P]:
+          def encodeObject(a: P): JsonObject =
+            ${
+              val product = '{ a.asInstanceOf[Product] }
+              fields.zipWithIndex.foldLeft('{ JsonObject.empty }) { case (acc, ((label, tpe, enc), idx)) =>
+                addField(acc, product, label, idx, tpe, enc)
+              }
             }
-          }
-    }
+      }
 
-  private def deriveSum[A: Type, Types: Type, Labels: Type](
-    mirror: Expr[Mirror.SumOf[A]]
-  )(using Quotes): Expr[Encoder.AsObject[A]] =
-    import quotes.reflect.*
+    private def deriveSum[S: Type, Types: Type, Labels: Type](
+      mirror: Expr[Mirror.SumOf[S]],
+      selfRef: Expr[Encoder.AsObject[A]]
+    ): Expr[Encoder.AsObject[S]] =
+      val cases = resolveFields[Types, Labels](selfRef)
 
-    val cases = resolveFields[Types, Labels]
+      def buildBranch(a: Expr[S], label: String, tpe: Type[?], enc: Expr[Encoder[?]]): Expr[JsonObject] =
+        tpe match
+          case '[t] =>
+            val typedEnc = enc.asInstanceOf[Expr[Encoder.AsObject[t]]]
+            val labelExpr = Expr(label)
+            '{ JsonObject.singleton($labelExpr, Json.fromJsonObject($typedEnc.encodeObject($a.asInstanceOf[t]))) }
 
-    def buildBranch(a: Expr[A], label: String, tpe: Type[?], enc: Expr[Encoder[?]])(using Quotes): Expr[JsonObject] =
-      tpe match
-        case '[t] =>
-          val typedEnc = enc.asInstanceOf[Expr[Encoder.AsObject[t]]]
-          val labelExpr = Expr(label)
-          '{ JsonObject.singleton($labelExpr, Json.fromJsonObject($typedEnc.encodeObject($a.asInstanceOf[t]))) }
-
-    '{
-      new Encoder.AsObject[A]:
-        def encodeObject(a: A): JsonObject =
-          val ord = $mirror.ordinal(a)
-          ${
-            cases.zipWithIndex.foldRight('{ throw new MatchError(ord) }: Expr[JsonObject]) {
-              case (((label, tpe, enc), idx), elseExpr) =>
-                val idxExpr = Expr(idx)
-                val branch = buildBranch('a, label, tpe, enc)
-                '{ if ord == $idxExpr then $branch else $elseExpr }
+      '{
+        new Encoder.AsObject[S]:
+          def encodeObject(a: S): JsonObject =
+            val ord = $mirror.ordinal(a)
+            ${
+              cases.zipWithIndex.foldRight('{ throw new MatchError(ord) }: Expr[JsonObject]) {
+                case (((label, tpe, enc), idx), elseExpr) =>
+                  val idxExpr = Expr(idx)
+                  val branch = buildBranch('a, label, tpe, enc)
+                  '{ if ord == $idxExpr then $branch else $elseExpr }
+              }
             }
-          }
-    }
+      }
 
-  private def resolveFields[Types: Type, Labels: Type](using Quotes): List[(String, Type[?], Expr[Encoder[?]])] =
-    import quotes.reflect.*
-    (Type.of[Types], Type.of[Labels]) match
-      case ('[EmptyTuple], '[EmptyTuple]) => Nil
-      case ('[t *: ts], '[label *: ls]) =>
-        val labelStr = Type.of[label] match
-          case '[l] =>
-            Type.valueOfConstant[l].getOrElse(
-              report.errorAndAbort(s"Expected literal string type")
-            ).toString
-        val enc = resolveOneEncoder[t]
-        (labelStr, Type.of[t], enc) :: resolveFields[ts, ls]
+    private def resolveFields[Types: Type, Labels: Type](
+      selfRef: Expr[Encoder.AsObject[A]]
+    ): List[(String, Type[?], Expr[Encoder[?]])] =
+      (Type.of[Types], Type.of[Labels]) match
+        case ('[EmptyTuple], '[EmptyTuple]) => Nil
+        case ('[t *: ts], '[label *: ls]) =>
+          val labelStr = Type.of[label] match
+            case '[l] =>
+              Type.valueOfConstant[l].getOrElse(
+                report.errorAndAbort(s"Expected literal string type")
+              ).toString
+          val enc = resolveOneEncoder[t](selfRef)
+          (labelStr, Type.of[t], enc) :: resolveFields[ts, ls](selfRef)
 
-  /** Resolve an Encoder for type T using the "sanely-automatic" approach:
-    * Use Expr.summonIgnoring to skip our own auto-given, so that only user-provided
-    * or standard library encoders are found. If none exists, derive internally within
-    * this same macro expansion — avoiding separate implicit search chains.
-    */
-  private def resolveOneEncoder[T: Type](using Quotes): Expr[Encoder[T]] =
-    import quotes.reflect.*
+    private def resolveOneEncoder[T: Type](
+      selfRef: Expr[Encoder.AsObject[A]]
+    ): Expr[Encoder[T]] =
+      val tpe = TypeRepr.of[T]
 
-    // Exclude our own auto-given so Expr.summon doesn't trigger a separate macro expansion
-    val autoEncoderSymbol = Symbol.requiredModule("sanely.auto").methodMember("autoEncoder").head
-    Expr.summonIgnoring[Encoder[T]](autoEncoderSymbol) match
-      case Some(enc) => enc
-      case None =>
-        // No user-provided encoder found — derive internally in this macro expansion
-        Expr.summon[Mirror.Of[T]] match
-          case Some(mirrorExpr) =>
-            mirrorExpr match
-              case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                deriveProduct[T, types, labels](m)
-              case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                deriveSum[T, types, labels](m)
-          case None =>
-            report.errorAndAbort(s"Cannot derive Encoder for ${Type.show[T]}: no implicit Encoder and no Mirror available")
+      // Direct recursion: T is the same type we're currently deriving
+      if tpe =:= selfType then
+        return selfRef.asInstanceOf[Expr[Encoder[T]]]
+
+      // Check if T contains the recursive type in its type params (e.g., Option[A], List[A])
+      // Must check BEFORE Expr.summonIgnoring to avoid exponential implicit search
+      if containsType(tpe, selfType) then
+        return constructRecursiveEncoder[T](tpe, selfRef)
+
+      // Safe path: no recursion risk
+      val autoEncoderSymbol = Symbol.requiredModule("sanely.auto").methodMember("autoEncoder").head
+      Expr.summonIgnoring[Encoder[T]](autoEncoderSymbol) match
+        case Some(enc) => enc
+        case None =>
+          Expr.summon[Mirror.Of[T]] match
+            case Some(mirrorExpr) =>
+              mirrorExpr match
+                case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                  deriveProduct[T, types, labels](m, selfRef)
+                case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                  deriveSum[T, types, labels](m, selfRef)
+            case None =>
+              report.errorAndAbort(s"Cannot derive Encoder for ${Type.show[T]}: no implicit Encoder and no Mirror available")
+
+    private def containsType(tpe: TypeRepr, target: TypeRepr): Boolean =
+      tpe match
+        case AppliedType(_, args) => args.exists(arg => (arg =:= target) || containsType(arg, target))
+        case _ => false
+
+    private def constructRecursiveEncoder[T: Type](
+      tpe: TypeRepr,
+      selfRef: Expr[Encoder.AsObject[A]]
+    ): Expr[Encoder[T]] =
+      tpe match
+        case AppliedType(tycon, List(arg)) if arg =:= selfType =>
+          arg.asType match
+            case '[a] =>
+              val innerEnc = selfRef.asInstanceOf[Expr[Encoder[a]]]
+              tycon.typeSymbol.fullName match
+                case "scala.Option" =>
+                  '{ Encoder.encodeOption[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case s if s.endsWith(".List") =>
+                  '{ Encoder.encodeList[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case s if s.endsWith(".Vector") =>
+                  '{ Encoder.encodeVector[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case s if s.endsWith(".Set") =>
+                  '{ Encoder.encodeSet[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case other =>
+                  report.errorAndAbort(s"Cannot derive Encoder for recursive type in container ${other}[${Type.show[a]}]")
+        case _ =>
+          report.errorAndAbort(s"Cannot derive Encoder for recursive type application: ${Type.show[T]}")
