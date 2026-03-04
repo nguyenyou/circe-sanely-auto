@@ -90,6 +90,32 @@ object MyType:
 - **No Shapeless dependency** — uses Scala 3 `Mirror` + `Expr.summonIgnoring`
 - **`derives` keyword** — works as-is via circe-core (no migration needed); `Encoder.AsObject.derived`/`Decoder.derived` are defined in circe-core itself, independent of circe-generic
 
+## Compile-Time Benchmark
+
+The whole point of this library is faster compile times. The benchmark compiles the same source code (~300 types across 9 files) against both `circe-sanely-auto` and `circe-generic`:
+
+```bash
+bash bench.sh 5   # 5 iterations per module, reports median
+```
+
+Results on an M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
+
+| | Median compile time | |
+|---|---|---|
+| **circe-sanely-auto** | **3.77s** | |
+| **circe-generic** | **6.07s** | 1.6× slower |
+
+The benchmark includes: nested products, sealed trait hierarchies, generic type instantiations, wide case classes (22 fields × 8), and cross-domain compositions — representative of a real-world codebase. Times include Mill/JVM overhead.
+
+You can also compile and run each module individually:
+
+```bash
+./mill benchmark.sanely.compile   # compile with our library
+./mill benchmark.generic.compile  # compile with circe-generic
+./mill benchmark.sanely.run       # verify round-trips pass
+./mill benchmark.generic.run      # verify round-trips pass
+```
+
 ## Building
 
 Requires [Mill](https://mill-build.org/) (bootstrapped via `./mill` wrapper).
@@ -212,7 +238,6 @@ All circe auto-derivation roundtrip tests are ported and passing (52/52). The li
 
 ### Out of scope
 
-- ~~**Publish under `io.github.nguyenyou`**~~ — infrastructure task, not a code port
 - ~~**`derives` keyword support**~~ — works out of the box via circe-core; no action needed from this library
 - ~~**`Either[E, Self]` recursive container**~~ — circe doesn't test this; `disjunctionCodecs` requires explicit import and string keys
 - ~~**Compile error message quality**~~ — not testable in utest (compile errors can't be asserted at runtime)
