@@ -124,7 +124,7 @@ object SanelyConfiguredDecoder:
       val cases = resolveFields[Types, Labels](selfRef)
 
       // Only flatten sub-traits when no user-provided decoder exists
-      val ignoreSymbols = collectIgnoreSymbols
+      val ignoreSymbols = cachedIgnoreSymbols
       val casesWithSubTrait = cases.map { case (label, tpe, dec) =>
         val isSub = tpe match
           case '[t] =>
@@ -260,7 +260,7 @@ object SanelyConfiguredDecoder:
 
       if containsType(tpe, selfType) then
         return constructRecursiveDecoder[T](tpe, selfRef)
-      val ignoreSymbols = collectIgnoreSymbols
+      val ignoreSymbols = cachedIgnoreSymbols
       Expr.summonIgnoring[Decoder[T]](ignoreSymbols*) match
         case Some(dec) => dec
         case None =>
@@ -283,7 +283,7 @@ object SanelyConfiguredDecoder:
         case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
 
-    private def collectIgnoreSymbols: List[Symbol] =
+    private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]
       buf += Symbol.requiredModule("sanely.auto").methodMember("autoDecoder").head
       try
@@ -305,7 +305,7 @@ object SanelyConfiguredDecoder:
       tpe: TypeRepr,
       selfRef: Expr[Decoder[A]]
     ): Expr[Decoder[T]] =
-      val ignoreSymbols = collectIgnoreSymbols
+      val ignoreSymbols = cachedIgnoreSymbols
       def trySummon: Option[Expr[Decoder[T]]] = Expr.summonIgnoring[Decoder[T]](ignoreSymbols*)
 
       tpe match
