@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0] - 2026-03-04
+
+### Performance
+- **Cache `collectIgnoreSymbols` as lazy val** — the `cachedIgnoreSymbols` list (used by `Expr.summonIgnoring`) is now computed once per macro expansion instead of on every field/variant resolution
+- **Cache resolved Encoder/Decoder Exprs by type** — a `mutable.Map[String, Expr[?]]` keyed by `TypeRepr.dealias.show` avoids redundant implicit searches and re-derivation when multiple fields share the same type (e.g., 11 `String` fields, repeated `Money` types)
+
+### Added
+- **Configured derivation benchmark** — `bash bench.sh --configured 5` compares configured derivation compile times (~230 types)
+- Contributing section in README
+
 ## [0.4.1] - 2026-03-04
 
 ### Fixed
