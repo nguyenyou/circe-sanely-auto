@@ -96,21 +96,29 @@ Threads `Expr[Configuration]` through the macro. At runtime:
 
 ## Publishing
 
-When publishing a new version:
+Automated via GitHub Actions (`.github/workflows/release.yml`). Triggered on `v*` tag push. Runs all tests, then publishes JVM + Scala.js to Sonatype Central.
+
+**Release steps:**
 
 1. Bump `publishVersion` in `sanely/package.mill`
 2. Update version in `README.md`
-3. Run all tests (`sanely.jvm.test`, `sanely.js.test`, `compat.test`)
-4. Publish both platforms: `./mill sanely.jvm.publishSonatypeCentral` and `./mill sanely.js.publishSonatypeCentral`
-5. Commit the version bump, push, and create a PR
-6. After merge, create a git tag and GitHub release with a changelog:
+3. Run all tests locally (`sanely.jvm.test`, `sanely.js.test`, `compat.test`)
+4. Commit, push, merge PR
+5. Tag and push — CI handles publishing:
    ```bash
    git tag v0.X.0
    git push origin v0.X.0
+   ```
+6. Create GitHub release:
+   ```bash
    gh release create v0.X.0 --title "v0.X.0" --notes "changelog here"
    ```
 
-The changelog in `CHANGELOG.md` must also be updated with new features, bug fixes, and breaking changes. Use `git log --oneline vPREV..HEAD` to gather commits.
+**Manual publish** (if needed): `./mill sanely.jvm.publishSonatypeCentral` and `./mill sanely.js.publishSonatypeCentral` — requires env vars: `MILL_SONATYPE_USERNAME`, `MILL_SONATYPE_PASSWORD`, `MILL_PGP_PASSPHRASE`, `MILL_PGP_SECRET_BASE64`.
+
+**GitHub secrets:** same 4 env vars configured as repo secrets for the release workflow.
+
+Update `CHANGELOG.md` with new features, bug fixes, and breaking changes. Use `git log --oneline vPREV..HEAD` to gather commits.
 
 ## Known Issues
 
