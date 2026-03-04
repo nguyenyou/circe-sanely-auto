@@ -84,6 +84,10 @@ object HierarchicalEnum:
 // Generic class with defaults (mirrors circe's GenericFoo)
 case class GenericFoo[T](a: List[T] = List.empty, b: String = "b")
 
+// Recursive types with nested containers (real-world patterns)
+case class ConfigRecursiveOptionList(children: Option[List[ConfigRecursiveOptionList]] = None, value: String = "")
+case class ConfigRecursiveOptionMap(properties: Option[Map[String, ConfigRecursiveOptionMap]] = None, name: String = "")
+
 object GenericFooHelper:
   given Configuration = Configuration.default.withDefaults
   val genericFooIntDecoder: Decoder[GenericFoo[Int]] = SanelyConfiguredDecoder.derived
@@ -793,5 +797,36 @@ object SanelyConfiguredSuite extends TestSuite:
 
       assert(Color.Red.asJson == Json.fromString("Red"))
       assert(Json.fromString("Blue").as[Color] == Right(Color.Blue))
+    }
+
+    // === Recursive types with nested containers ===
+
+    test("configured - recursive with Option[List[Self]]") {
+      given Configuration = Configuration.default.withDefaults
+      given Codec.AsObject[ConfigRecursiveOptionList] = SanelyConfiguredCodec.derived
+
+      val leaf = ConfigRecursiveOptionList(None, "leaf")
+      val branch = ConfigRecursiveOptionList(Some(List(leaf, leaf)), "branch")
+      val root = ConfigRecursiveOptionList(Some(List(branch)), "root")
+      val json = root.asJson
+      val decoded = json.as[ConfigRecursiveOptionList]
+      assert(decoded == Right(root))
+
+      // None terminates recursion
+      val leafJson = leaf.asJson
+      val decodedLeaf = leafJson.as[ConfigRecursiveOptionList]
+      assert(decodedLeaf == Right(leaf))
+    }
+
+    test("configured - recursive with Option[Map[String, Self]]") {
+      given Configuration = Configuration.default.withDefaults
+      given Codec.AsObject[ConfigRecursiveOptionMap] = SanelyConfiguredCodec.derived
+
+      val leaf = ConfigRecursiveOptionMap(None, "leaf")
+      val branch = ConfigRecursiveOptionMap(Some(Map("a" -> leaf, "b" -> leaf)), "branch")
+      val root = ConfigRecursiveOptionMap(Some(Map("child" -> branch)), "root")
+      val json = root.asJson
+      val decoded = json.as[ConfigRecursiveOptionMap]
+      assert(decoded == Right(root))
     }
   }

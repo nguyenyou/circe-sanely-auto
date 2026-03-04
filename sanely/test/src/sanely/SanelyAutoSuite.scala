@@ -141,6 +141,11 @@ case class RecursiveWithSeq(children: Seq[RecursiveWithSeq], value: String)
 // Recursive with Map
 case class RecursiveWithMap(children: Map[String, RecursiveWithMap], value: String)
 
+// Recursive with nested containers (Option[List[Self]], Option[Map[String, Self]])
+case class RecursiveWithOptionList(children: Option[List[RecursiveWithOptionList]], value: String)
+case class RecursiveWithOptionMap(properties: Option[Map[String, RecursiveWithOptionMap]], name: String)
+case class RecursiveWithListOption(items: List[Option[RecursiveWithListOption]], value: String)
+
 // Tagged type member
 case class ProductWithTaggedMember(x: ProductWithTaggedMember.TaggedString)
 object ProductWithTaggedMember:
@@ -689,6 +694,37 @@ object SanelyAutoSuite extends TestSuite:
       val json = v.asJson
       val decoded = decode[RecursiveWithMap](json.noSpaces)
       assert(decoded == Right(v))
+    }
+
+    // --- Recursive with nested containers ---
+
+    test("Recursive with Option[List[Self]] round-trip") {
+      val leaf = RecursiveWithOptionList(None, "leaf")
+      val branch = RecursiveWithOptionList(Some(List(leaf, leaf)), "branch")
+      val root = RecursiveWithOptionList(Some(List(branch)), "root")
+      val json = root.asJson
+      val decoded = decode[RecursiveWithOptionList](json.noSpaces)
+      assert(decoded == Right(root))
+      // Also test None case
+      val decoded2 = decode[RecursiveWithOptionList](leaf.asJson.noSpaces)
+      assert(decoded2 == Right(leaf))
+    }
+
+    test("Recursive with Option[Map[String, Self]] round-trip") {
+      val leaf = RecursiveWithOptionMap(None, "leaf")
+      val branch = RecursiveWithOptionMap(Some(Map("a" -> leaf, "b" -> leaf)), "branch")
+      val root = RecursiveWithOptionMap(Some(Map("child" -> branch)), "root")
+      val json = root.asJson
+      val decoded = decode[RecursiveWithOptionMap](json.noSpaces)
+      assert(decoded == Right(root))
+    }
+
+    test("Recursive with List[Option[Self]] round-trip") {
+      val leaf = RecursiveWithListOption(List(None), "leaf")
+      val branch = RecursiveWithListOption(List(Some(leaf), None), "branch")
+      val json = branch.asJson
+      val decoded = decode[RecursiveWithListOption](json.noSpaces)
+      assert(decoded == Right(branch))
     }
 
     // --- Tagged type member ---

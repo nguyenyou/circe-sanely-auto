@@ -180,29 +180,7 @@ object SanelyEncoder:
           arg.asType match
             case '[a] =>
               val innerEnc = selfRef.asInstanceOf[Expr[Encoder[a]]]
-              tycon.typeSymbol.fullName match
-                case "scala.Option" =>
-                  '{ Encoder.encodeOption[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case s if s.endsWith(".List") =>
-                  '{ Encoder.encodeList[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case s if s.endsWith(".Vector") =>
-                  '{ Encoder.encodeVector[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case s if s.endsWith(".Set") =>
-                  '{ Encoder.encodeSet[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case s if s.endsWith(".Seq") =>
-                  '{ Encoder.encodeSeq[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case "cats.data.Chain" =>
-                  '{ Encoder.encodeChain[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case "cats.data.NonEmptyList" =>
-                  '{ Encoder.encodeNonEmptyList[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case "cats.data.NonEmptyVector" =>
-                  '{ Encoder.encodeNonEmptyVector[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case "cats.data.NonEmptySeq" =>
-                  '{ Encoder.encodeNonEmptySeq[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case "cats.data.NonEmptyChain" =>
-                  '{ Encoder.encodeNonEmptyChain[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
-                case other =>
-                  report.errorAndAbort(s"Cannot derive Encoder for recursive type in container ${other}[${Type.show[a]}]")
+              buildContainerEncoder[T, a](tycon, innerEnc)
         case AppliedType(tycon, List(keyArg, valArg)) if valArg =:= selfType =>
           (keyArg.asType, valArg.asType) match
             case ('[k], '[v]) =>
@@ -213,5 +191,48 @@ object SanelyEncoder:
                 case None =>
                   report.errorAndAbort(s"Cannot derive Encoder for Map: no KeyEncoder for ${Type.show[k]}")
             case _ => report.errorAndAbort(s"Unexpected type pattern in Map recursive encoder")
+        case AppliedType(tycon, List(arg)) if containsType(arg, selfType) =>
+          arg.asType match
+            case '[a] =>
+              val innerEnc = constructRecursiveEncoder[a](arg, selfRef)
+              buildContainerEncoder[T, a](tycon, innerEnc)
+        case AppliedType(tycon, List(keyArg, valArg)) if containsType(valArg, selfType) =>
+          (keyArg.asType, valArg.asType) match
+            case ('[k], '[v]) =>
+              val innerEnc = constructRecursiveEncoder[v](valArg, selfRef)
+              Expr.summon[io.circe.KeyEncoder[k]] match
+                case Some(keyEnc) =>
+                  '{ Encoder.encodeMap[k, v](using $keyEnc, $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case None =>
+                  report.errorAndAbort(s"Cannot derive Encoder for Map: no KeyEncoder for ${Type.show[k]}")
+            case _ => report.errorAndAbort(s"Unexpected type pattern in Map recursive encoder")
         case _ =>
           report.errorAndAbort(s"Cannot derive Encoder for recursive type application: ${Type.show[T]}")
+
+    private def buildContainerEncoder[T: Type, A: Type](
+      tycon: TypeRepr,
+      innerEnc: Expr[Encoder[A]]
+    ): Expr[Encoder[T]] =
+      tycon.typeSymbol.fullName match
+        case "scala.Option" =>
+          '{ Encoder.encodeOption[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case s if s.endsWith(".List") =>
+          '{ Encoder.encodeList[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case s if s.endsWith(".Vector") =>
+          '{ Encoder.encodeVector[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case s if s.endsWith(".Set") =>
+          '{ Encoder.encodeSet[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case s if s.endsWith(".Seq") =>
+          '{ Encoder.encodeSeq[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case "cats.data.Chain" =>
+          '{ Encoder.encodeChain[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case "cats.data.NonEmptyList" =>
+          '{ Encoder.encodeNonEmptyList[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case "cats.data.NonEmptyVector" =>
+          '{ Encoder.encodeNonEmptyVector[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case "cats.data.NonEmptySeq" =>
+          '{ Encoder.encodeNonEmptySeq[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case "cats.data.NonEmptyChain" =>
+          '{ Encoder.encodeNonEmptyChain[A](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+        case other =>
+          report.errorAndAbort(s"Cannot derive Encoder for recursive type in container ${other}[${Type.show[A]}]")
