@@ -104,7 +104,7 @@ Type-parameterized case classes: `Box[A](a: A)`, `Qux[A](i: Int, a: A, j: Int)`.
 - [x] `Box[Wub]` — generic wrapping product
 - [x] `Qux[Long]` — generic with mixed fields
 - [x] `Box[Foo]` — generic wrapping sum type
-- [ ] `Bar(foo: Box[Foo])` — nested generic
+- [x] `Bar(foo: Box[Foo])` — nested generic
 
 **What to test**: type parameter resolution at macro expansion time, nested generics.
 
@@ -114,7 +114,7 @@ Self-referencing types. The macro breaks recursion using lazy val self-reference
 
 - [x] Recursive sealed trait — `RecursiveAdtExample(Base(a: String) | Nested(r: RecursiveAdtExample))`
 - [x] Recursive with Option — `RecursiveWithOptionExample(o: Option[RecursiveWithOptionExample])`
-- [ ] Recursive enum — `RecursiveEnumAdt(Base(a: String) | Nested(r: RecursiveEnumAdt))`
+- [x] Recursive enum — `RecursiveEnumAdt(Base(a: String) | Nested(r: RecursiveEnumAdt))`
 
 **What to test**: encode/decode trees of depth 0–3, `None` terminates recursion.
 
@@ -126,7 +126,7 @@ Stress tests and unusual patterns.
 - [x] Large sum — `LongSum` with 33 case variants
 - [x] Large enum — `LongEnum` with 33 nullary cases
 - [x] Sub-trait flattening — `ADTWithSubTraitExample` *(sealed trait → sealed sub-trait → case class)*
-- [ ] Tagged type members — `ProductWithTaggedMember(x: TaggedString)` where `TaggedString = String with Tag`
+- [x] Tagged type members — `ProductWithTaggedMember(x: TaggedString)` where `TaggedString = String & Tag`
 - [x] Superfluous JSON keys ignored — decoder for `Adt1` handles `{"extraField":true,"Adt1Class1":{"int":3}}`
 
 ### Phase 8 — Error Cases
@@ -146,36 +146,37 @@ Explicit `SanelyEncoder.derived[A]` / `SanelyDecoder.derived[A]` calls (already 
 
 ## TODO — Toward Full Drop-in Replacement
 
-The core derivation engine is solid (41/41 tests, Phases 1–9). The remaining work is API surface alignment, broader type support, and missing test coverage.
+The core derivation engine is solid (52/52 tests, Phases 1–9). The remaining work is publishing and `derives` keyword support.
 
 ### API Surface
 
 - [ ] **Publish under `io.github.nguyenyou`** — publish to Maven Central under `io.github.nguyenyou::circe-sanely-auto`
-- [ ] **Provide `io.circe.generic.auto` alias** — add an `io.circe.generic.auto` object that re-exports `sanely.auto.given`, so users keep `import io.circe.generic.auto.given`
+- [x] **Provide `io.circe.generic.auto` alias** — `io.circe.generic.auto` object using `Exported` wrapper pattern
+- [x] **Provide `io.circe.generic.semiauto` alias** — `deriveEncoder`/`deriveDecoder`/`deriveCodec`
 - [ ] **Wire into `Encoder.AsObject.derived` / `Decoder.derived`** — provide givens or extensions so `derives Encoder.AsObject, Decoder` works on case classes and sealed traits
-- [ ] **Add `Codec.AsObject` derivation** — compose existing encoder + decoder so `summon[Codec[A]]` works; trivial implementation: `Codec.from(decoder, encoder)`
+- [x] **Add `Codec.AsObject` derivation** — `SanelyCodec.derived[A]` composes encoder + decoder via `Codec.AsObject.from`
 
 ### Recursive Container Support
 
-Currently only `Option[Self]`, `List[Self]`, `Vector[Self]`, `Set[Self]` are handled in recursive positions (hardcoded in `constructRecursiveEncoder`/`constructRecursiveDecoder`). Non-recursive containers work fine via `summonIgnoring`.
+Recursive positions now support: `Option[Self]`, `List[Self]`, `Vector[Self]`, `Set[Self]`, `Seq[Self]`, `Map[K, Self]`, `Chain[Self]`, `NonEmptyList[Self]`, `NonEmptyVector[Self]`, `NonEmptySeq[Self]`, `NonEmptyChain[Self]`. Non-recursive containers work fine via `summonIgnoring`.
 
-- [ ] **`Seq[Self]`** — add to hardcoded container list
-- [ ] **`Map[String, Self]`** — needs 2-type-param support in `constructRecursiveEncoder`/`constructRecursiveDecoder` (currently only matches `AppliedType(tycon, List(arg))` — single type param)
-- [ ] **`Either[E, Self]`** — same 2-type-param issue
-- [ ] **`NonEmptyList[Self]`** (cats) — optional, add if circe-core has the instance
+- [x] **`Seq[Self]`**
+- [x] **`Map[K, Self]`** — 2-type-param support with `KeyEncoder`/`KeyDecoder` summoning
+- [ ] **`Either[E, Self]`** — same 2-type-param pattern, not yet added
+- [x] **`NonEmptyList[Self]`**, **`NonEmptyVector`**, **`NonEmptySeq`**, **`NonEmptyChain`**, **`Chain`** (cats)
 
 ### Missing Test Coverage
 
-Items still unchecked from the test plan:
-
-- [ ] Nested generic `Bar(foo: Box[Foo])` (Phase 5) — likely works, needs test
-- [ ] Recursive enum `RecursiveEnumAdt` (Phase 6) — enum-specific Mirror may differ from sealed trait
-- [ ] Tagged type members `ProductWithTaggedMember(x: TaggedString)` (Phase 7) — opaque/tagged types common in circe codebases
+- [x] Nested generic `Bar(foo: Box[Foo])` (Phase 5)
+- [x] Recursive enum `RecursiveEnumAdt` (Phase 6)
+- [x] Tagged type members `ProductWithTaggedMember(x: TaggedString)` (Phase 7)
+- [x] `Codec.AsObject` derivation — product and ADT
+- [x] `io.circe.generic.auto` alias
+- [x] `io.circe.generic.semiauto` alias (`deriveEncoder`/`deriveDecoder`/`deriveCodec`)
+- [x] Recursive with `Seq` and `Map`
 - [ ] Compile error message quality for missing instances (Phase 8) — `report.errorAndAbort` exists but untested
 
 ### `containsType` Improvement
 
-`containsType` only checks `AppliedType` args. Won't detect recursive references buried in non-`AppliedType` wrappers (e.g., type aliases, match types). Low priority — rare in practice.
-
-- [ ] Handle type aliases by dealias before checking
-- [ ] Consider `TypeRepr.dealias` in recursive walk
+- [x] Handle type aliases by `dealias` before checking
+- [x] Handle `AndType` / `OrType` in recursive walk
