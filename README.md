@@ -34,6 +34,62 @@ Shape.Circle(5.0).asJson
 // {"Circle":{"radius":5.0}}
 ```
 
+## Migration from circe-generic
+
+### Step 1: Swap the dependency
+
+Remove `circe-generic` and add `circe-sanely-auto`:
+
+```diff
+-  mvn"io.circe::circe-generic:0.14.13"
++  mvn"io.github.nguyenyou::circe-sanely-auto:VERSION"
+```
+
+### Step 2: Update imports
+
+No code changes needed if you use the drop-in aliases:
+
+| circe-generic | circe-sanely-auto (drop-in) | Alternative |
+|---|---|---|
+| `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` | `import sanely.auto.given` |
+| `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto._` | — |
+
+The `io.circe.generic.auto` and `io.circe.generic.semiauto` packages are provided by this library — they delegate to the sanely macro engine internally.
+
+### Step 3: Update semiauto call sites (if any)
+
+```diff
+  object MyType:
+-   given Decoder[MyType] = deriveDecoder
+-   given Encoder.AsObject[MyType] = deriveEncoder
++   given Decoder[MyType] = deriveDecoder          // unchanged
++   given Encoder.AsObject[MyType] = deriveEncoder  // unchanged
+```
+
+Semiauto works identically. `deriveCodec` is also available:
+
+```scala
+import io.circe.generic.semiauto.*
+
+object MyType:
+  given Codec.AsObject[MyType] = deriveCodec
+```
+
+### What stays the same
+
+- JSON format: products → `{"field": value}`, sums → `{"VariantName": {...}}`
+- User-provided instances are respected (not overridden by auto-derivation)
+- All standard containers work: `Option`, `List`, `Vector`, `Set`, `Seq`, `Map`, etc.
+- Recursive types work
+- `Codec.AsObject` works via `deriveCodec` or `SanelyCodec.derived`
+
+### What changes
+
+- **Faster compile times** — single macro expansion instead of implicit search chains
+- **Scala 3 only** — no Scala 2 support, requires 3.8.2+
+- **No Shapeless dependency** — uses Scala 3 `Mirror` + `Expr.summonIgnoring`
+- **`derives` keyword** — not supported (circe-core owns `Encoder.AsObject.derived`/`Decoder.derived`); use `import io.circe.generic.auto.given` or semiauto instead
+
 ## Building
 
 Requires [Mill](https://mill-build.org/) (bootstrapped via `./mill` wrapper).
