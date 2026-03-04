@@ -16,7 +16,7 @@ object `package` extends mill.Module {
   trait SharedModule extends PlatformScalaModule with SonatypeCentralPublishModule {
     def artifactName = "circe-sanely-auto"
     def scalaVersion = build.scala3Version
-    def publishVersion = "0.3.0"
+    def publishVersion = "0.3.1"
 
     def pomSettings = PomSettings(
       description = "Drop-in replacement for circe's auto-derivation using sanely-automatic Scala 3 macros",
