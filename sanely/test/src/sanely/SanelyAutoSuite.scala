@@ -491,6 +491,37 @@ object SanelyAutoSuite extends TestSuite:
 
     // --- Phase 1 extras ---
 
+    // --- Phase 8: Error Cases ---
+
+    test("Wrong JSON shape for product returns DecodingFailure") {
+      // Missing required field "s"
+      val result = decode[Simple]("""{"i":42}""")
+      assert(result.isLeft)
+
+      // Wrong type for field
+      val result2 = decode[Simple]("""{"i":"not_an_int","s":"hello"}""")
+      assert(result2.isLeft)
+    }
+
+    test("Unknown variant for sum type returns DecodingFailure") {
+      val result = decode[Foo]("""{"UnknownVariant":{"x":1}}""")
+      assert(result.isLeft)
+    }
+
+    test("Non-object for sum type returns DecodingFailure") {
+      // Array instead of object
+      val result = decode[Foo]("""[1,2,3]""")
+      assert(result.isLeft)
+
+      // String instead of object
+      val result2 = decode[Foo](""""hello"""")
+      assert(result2.isLeft)
+
+      // Number instead of object
+      val result3 = decode[Foo]("""42""")
+      assert(result3.isLeft)
+    }
+
     test("Single-field product with extreme values") {
       val v = Wub(Long.MaxValue)
       val decoded = decode[Wub](v.asJson.noSpaces)

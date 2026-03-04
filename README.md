@@ -131,9 +131,9 @@ Stress tests and unusual patterns.
 
 ### Phase 8 — Error Cases
 
-- [ ] Wrong JSON shape → `Left(DecodingFailure(...))`
-- [ ] Unknown variant → `Left(DecodingFailure(...))`
-- [ ] Non-object for sum type → `Left(DecodingFailure(...))`
+- [x] Wrong JSON shape → `Left(DecodingFailure(...))`
+- [x] Unknown variant → `Left(DecodingFailure(...))`
+- [x] Non-object for sum type → `Left(DecodingFailure(...))`
 - [ ] Compile error when nested type has no `Encoder`/`Decoder` and no `Mirror`
 
 ### Phase 9 — Semiauto API *(optional)*
