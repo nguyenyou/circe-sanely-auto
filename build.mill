@@ -2,7 +2,7 @@ package build
 
 import mill._, scalalib._, publish._
 
-val circeVersion = "0.14.13"
+val circeVersion = "0.14.15"
 val scala3Version = "3.8.2"
 
 object compat extends ScalaModule {
