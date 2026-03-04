@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.1] - 2026-03-04
+
+### Added
+- GitHub Actions CI workflow (JVM unit tests, Scala.js unit tests, compat tests)
+- CI status badge in README
+
+### Fixed
+- Resolved all 10 compiler warnings:
+  - 9 non-exhaustive match warnings in macro derivation files (added wildcard cases for tuple type pattern matching)
+  - 1 dead code warning on Scala.js for `Platform.isJS` check (added `else` branch)
+
 ## [0.3.0] - 2026-03-04
 
 ### Added
