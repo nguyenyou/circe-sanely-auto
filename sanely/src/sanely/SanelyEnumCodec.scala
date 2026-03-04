@@ -35,6 +35,7 @@ object SanelyEnumCodec:
               Type.valueOfConstant[l].getOrElse(
                 report.errorAndAbort(s"Expected literal string type for enum label")
               ).toString
+
           val casesForThis: List[(String, Expr[S])] = Expr.summon[Mirror.ProductOf[t]] match
             case Some('{ $pm: Mirror.ProductOf[t] { type MirroredElemTypes = EmptyTuple } }) =>
               // Zero-field product = singleton
@@ -49,6 +50,7 @@ object SanelyEnumCodec:
                 case None =>
                   report.errorAndAbort(s"Enum case '${labelStr}' is not a singleton (has fields). SanelyEnumCodec only supports pure-value enums.")
           casesForThis ++ collectSingletonCases[S, ts, ls](mirror)
+        case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
 
     private def buildCodec[S: Type](
       mirror: Expr[Mirror.SumOf[S]],

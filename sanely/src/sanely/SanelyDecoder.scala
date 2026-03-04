@@ -125,6 +125,7 @@ object SanelyDecoder:
               ).toString
           val dec = resolveOneDecoder[t](selfRef)
           (labelStr, Type.of[t], dec) :: resolveFields[ts, ls](selfRef)
+        case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
 
     private def resolveOneDecoder[T: Type](
       selfRef: Expr[Decoder[A]]
@@ -224,5 +225,6 @@ object SanelyDecoder:
                   '{ Decoder.decodeMap[k, v](using $keyDec, $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
                 case None =>
                   report.errorAndAbort(s"Cannot derive Decoder for Map: no KeyDecoder for ${Type.show[k]}")
+            case _ => report.errorAndAbort(s"Unexpected type pattern in Map recursive decoder")
         case _ =>
           report.errorAndAbort(s"Cannot derive Decoder for recursive type application: ${Type.show[T]}")

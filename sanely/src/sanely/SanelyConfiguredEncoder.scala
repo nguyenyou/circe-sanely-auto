@@ -138,6 +138,7 @@ object SanelyConfiguredEncoder:
               ).toString
           val enc = resolveOneEncoder[t](selfRef)
           (labelStr, Type.of[t], enc) :: resolveFields[ts, ls](selfRef)
+        case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
 
     private def resolveOneEncoder[T: Type](
       selfRef: Expr[Encoder.AsObject[A]]
@@ -232,5 +233,6 @@ object SanelyConfiguredEncoder:
                   '{ Encoder.encodeMap[k, v](using $keyEnc, $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
                 case None =>
                   report.errorAndAbort(s"Cannot derive Encoder for Map: no KeyEncoder for ${Type.show[k]}")
+            case _ => report.errorAndAbort(s"Unexpected type pattern in Map recursive encoder")
         case _ =>
           report.errorAndAbort(s"Cannot derive Encoder for recursive type application: ${Type.show[T]}")

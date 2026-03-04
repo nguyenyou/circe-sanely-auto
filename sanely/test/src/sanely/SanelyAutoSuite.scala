@@ -637,6 +637,7 @@ object SanelyAutoSuite extends TestSuite:
         val v2 = Wub(Long.MinValue)
         val decoded2 = decode[Wub](v2.asJson.noSpaces)
         assert(decoded2 == Right(v2))
+      else ()
 
       val v3 = Wub(0L)
       val decoded3 = decode[Wub](v3.asJson.noSpaces)
