@@ -79,10 +79,10 @@ Sealed traits / enums with case class variants. Our macro handles via `Mirror.Su
 
 Case objects have no fields → should encode as `{}` inside the wrapper. Requires handling `Mirror.ProductOf` with `EmptyTuple` element types.
 
-- [ ] ADT with case objects only — `Adt2(Object1 | Object2)` → `{"Object1":{}}`
-- [ ] ADT with case class + case object — `Adt1(Class1(int: Int) | Object1)`
-- [ ] Empty case class in ADT — `Adt3(Class1() | Object1)` *(Class1 has zero fields)*
-- [ ] Enum with case object — `Vegetable(Potato | Carrot | Onion | Turnip)` where `Turnip` is a case object
+- [x] ADT with case objects only — `Adt2(Object1 | Object2)` → `{"Object1":{}}`
+- [x] ADT with case class + case object — `Adt1(Class1(int: Int) | Object1)`
+- [x] Empty case class in ADT — `Adt3(Class1() | Object1)` *(Class1 has zero fields)*
+- [x] Enum with case object — `Vegetable(Potato | Carrot | Onion | Turnip)` where `Turnip` is a case object
 
 **What to test**: `Object1.asJson == {"Object1":{}}`, mixed case class/object ADTs roundtrip.
 

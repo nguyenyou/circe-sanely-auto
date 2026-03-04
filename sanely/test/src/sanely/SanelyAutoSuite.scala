@@ -24,6 +24,24 @@ enum Shape:
   case Circle(radius: Double)
   case Rectangle(width: Double, height: Double)
 
+// Phase 3 types
+enum Vegetable:
+  case Potato
+  case Carrot
+  case Onion
+  case Turnip
+sealed trait Adt2
+case object Object1 extends Adt2
+case object Object2 extends Adt2
+
+sealed trait Adt1
+case class Adt1Class1(int: Int) extends Adt1
+case object Adt1Object1 extends Adt1
+
+sealed trait Adt3
+case class Adt3Class1() extends Adt3
+case object Adt3Object1 extends Adt3
+
 object SanelyAutoSuite extends TestSuite:
   val tests = Tests {
     test("Simple product round-trip") {
@@ -158,6 +176,64 @@ object SanelyAutoSuite extends TestSuite:
       assert(json == expected)
       val decoded = decode[Shape](json.noSpaces)
       assert(decoded == Right(v))
+    }
+
+    // --- Phase 3: Case Objects in Sums ---
+
+    test("ADT with case objects only (Adt2)") {
+      val v1: Adt2 = Object1
+      val json1 = v1.asJson
+      assert(json1 == Json.obj("Object1" -> Json.obj()))
+      val decoded1 = decode[Adt2](json1.noSpaces)
+      assert(decoded1 == Right(v1))
+
+      val v2: Adt2 = Object2
+      val json2 = v2.asJson
+      assert(json2 == Json.obj("Object2" -> Json.obj()))
+      val decoded2 = decode[Adt2](json2.noSpaces)
+      assert(decoded2 == Right(v2))
+    }
+
+    test("ADT with case class + case object (Adt1)") {
+      val v1: Adt1 = Adt1Class1(42)
+      val json1 = v1.asJson
+      assert(json1 == Json.obj("Adt1Class1" -> Json.obj("int" -> Json.fromInt(42))))
+      val decoded1 = decode[Adt1](json1.noSpaces)
+      assert(decoded1 == Right(v1))
+
+      val v2: Adt1 = Adt1Object1
+      val json2 = v2.asJson
+      assert(json2 == Json.obj("Adt1Object1" -> Json.obj()))
+      val decoded2 = decode[Adt1](json2.noSpaces)
+      assert(decoded2 == Right(v2))
+    }
+
+    test("Empty case class in ADT (Adt3)") {
+      val v1: Adt3 = Adt3Class1()
+      val json1 = v1.asJson
+      assert(json1 == Json.obj("Adt3Class1" -> Json.obj()))
+      val decoded1 = decode[Adt3](json1.noSpaces)
+      assert(decoded1 == Right(v1))
+
+      val v2: Adt3 = Adt3Object1
+      val json2 = v2.asJson
+      assert(json2 == Json.obj("Adt3Object1" -> Json.obj()))
+      val decoded2 = decode[Adt3](json2.noSpaces)
+      assert(decoded2 == Right(v2))
+    }
+
+    test("Enum with case objects (Vegetable)") {
+      val v1: Vegetable = Vegetable.Potato
+      val json1 = v1.asJson
+      assert(json1 == Json.obj("Potato" -> Json.obj()))
+      val decoded1 = decode[Vegetable](json1.noSpaces)
+      assert(decoded1 == Right(v1))
+
+      val v2: Vegetable = Vegetable.Turnip
+      val json2 = v2.asJson
+      assert(json2 == Json.obj("Turnip" -> Json.obj()))
+      val decoded2 = decode[Vegetable](json2.noSpaces)
+      assert(decoded2 == Right(v2))
     }
 
     // --- Phase 1 extras ---
