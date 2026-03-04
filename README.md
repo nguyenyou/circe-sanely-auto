@@ -4,7 +4,7 @@
 
 Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Faster compile times. No Shapeless. No circe-generic.
 
-**Scala 3.8.2+ | JVM + Scala.js | 275 tests**
+**Scala 3.8.2+ | JVM + Scala.js | 276 tests**
 
 ## Motivation
 
@@ -30,11 +30,11 @@ The goal is full API compatibility with circe's derivation. You should be able t
 
 We maintain two layers of tests:
 
-**109 unit tests** (utest, cross-compiled JVM + Scala.js) covering auto-derivation (products, sum types, case objects, generics, recursive types, large types, edge cases, error cases, semiauto API) and configured derivation (all 5 configuration options, enum codecs, hierarchical sealed traits, multi-level hierarchies, recursive types with discriminators).
+**116 unit tests** (utest, cross-compiled JVM + Scala.js) covering auto-derivation (products, sum types, case objects, generics, recursive types, large types, edge cases, error cases, semiauto API) and configured derivation (all 5 configuration options, enum codecs, hierarchical sealed traits, multi-level hierarchies, recursive types with discriminators).
 
 **160 compatibility tests** (munit + discipline) ported directly from circe's own test suite — `DerivesSuite`, `SemiautoDerivationSuite`, and `ConfiguredDerivesSuite`. These use circe's `CodecTests` which runs property-based checks: roundtrip consistency, accumulating decoder consistency, and `Codec.from` consistency. Same test types, same Arbitrary instances, same assertions. If circe's tests pass with circe-generic, they pass with circe-sanely-auto.
 
-**269 tests total**, all green.
+**276 tests total**, all green.
 
 ## Features
 
@@ -174,15 +174,15 @@ Results on M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **3.82s** | |
-| **circe-generic** | **6.14s** | 1.6x slower |
+| **circe-sanely-auto** | **3.52s** | |
+| **circe-generic** | **6.49s** | 1.8x slower |
 
 ### Configured derivation
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **2.76s** | |
-| **circe-core** | **2.69s** | ~same |
+| **circe-sanely-auto** | **2.48s** | |
+| **circe-core** | **2.70s** | ~same |
 
 ### Why the difference?
 
