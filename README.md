@@ -70,8 +70,8 @@ Basic case classes with primitive/standard-library fields. Our macro handles the
 
 Sealed traits / enums with case class variants. Our macro handles via `Mirror.SumOf` + ordinal dispatch. External tagging: `{"VariantName": {...}}`.
 
-- [ ] Sealed trait with case classes — `Foo` with `Bar(i: Int, s: String)`, `Baz(xs: List[String])`, `Bam(w: Wub, d: Double)`
-- [ ] Enum with case classes — `Shape.Circle(radius)`, `Shape.Rectangle(width, height)`
+- [x] Sealed trait with case classes — `Foo` with `Bar(i: Int, s: String)`, `Baz(xs: List[String])`, `Bam(w: Wub, d: Double)`
+- [x] Enum with case classes — `Shape.Circle(radius)`, `Shape.Rectangle(width, height)`
 
 **What to test**: external tagging shape, each variant roundtrips, nested products inside variants.
 

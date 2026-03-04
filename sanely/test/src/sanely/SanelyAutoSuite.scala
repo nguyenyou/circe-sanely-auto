@@ -15,6 +15,15 @@ case class Inner[A](field: A)
 case class Outer(a: Option[Inner[String]])
 case class Baz(xs: List[String])
 
+sealed trait Foo
+case class Bar(i: Int, s: String) extends Foo
+case class FooBaz(xs: List[String]) extends Foo
+case class FooBam(w: Wub, d: Double) extends Foo
+
+enum Shape:
+  case Circle(radius: Double)
+  case Rectangle(width: Double, height: Double)
+
 object SanelyAutoSuite extends TestSuite:
   val tests = Tests {
     test("Simple product round-trip") {
@@ -97,6 +106,61 @@ object SanelyAutoSuite extends TestSuite:
       val decoded = decode[Baz](json.noSpaces)
       assert(decoded == Right(v))
     }
+
+    // --- Phase 2: Simple Sum Types ---
+
+    test("Sealed trait round-trip (Foo.Bar)") {
+      val v: Foo = Bar(42, "hello")
+      val json = v.asJson
+      val expected = Json.obj("Bar" -> Json.obj("i" -> Json.fromInt(42), "s" -> Json.fromString("hello")))
+      assert(json == expected)
+      val decoded = decode[Foo](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Sealed trait round-trip (Foo.FooBaz)") {
+      val v: Foo = FooBaz(List("a", "b"))
+      val json = v.asJson
+      val expected = Json.obj("FooBaz" -> Json.obj("xs" -> Json.arr(Json.fromString("a"), Json.fromString("b"))))
+      assert(json == expected)
+      val decoded = decode[Foo](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Sealed trait round-trip (Foo.FooBam with nested Wub)") {
+      val v: Foo = FooBam(Wub(99L), 2.72)
+      val json = v.asJson
+      val expected = Json.obj("FooBam" -> Json.obj(
+        "w" -> Json.obj("x" -> Json.fromLong(99L)),
+        "d" -> Json.fromDoubleOrNull(2.72)
+      ))
+      assert(json == expected)
+      val decoded = decode[Foo](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Enum round-trip (Shape.Circle)") {
+      val v: Shape = Shape.Circle(5.0)
+      val json = v.asJson
+      val expected = Json.obj("Circle" -> Json.obj("radius" -> Json.fromDoubleOrNull(5.0)))
+      assert(json == expected)
+      val decoded = decode[Shape](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Enum round-trip (Shape.Rectangle)") {
+      val v: Shape = Shape.Rectangle(3.0, 4.0)
+      val json = v.asJson
+      val expected = Json.obj("Rectangle" -> Json.obj(
+        "width" -> Json.fromDoubleOrNull(3.0),
+        "height" -> Json.fromDoubleOrNull(4.0)
+      ))
+      assert(json == expected)
+      val decoded = decode[Shape](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Phase 1 extras ---
 
     test("Single-field product with extreme values") {
       val v = Wub(Long.MaxValue)
