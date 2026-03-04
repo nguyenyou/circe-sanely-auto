@@ -35,14 +35,20 @@ object SanelyEnumCodec:
               Type.valueOfConstant[l].getOrElse(
                 report.errorAndAbort(s"Expected literal string type for enum label")
               ).toString
-          // Try to summon the singleton value
-          val singletonExpr: Expr[S] = Expr.summon[Mirror.ProductOf[t]] match
+          val casesForThis: List[(String, Expr[S])] = Expr.summon[Mirror.ProductOf[t]] match
             case Some('{ $pm: Mirror.ProductOf[t] { type MirroredElemTypes = EmptyTuple } }) =>
               // Zero-field product = singleton
-              '{ $pm.fromProduct(EmptyTuple).asInstanceOf[S] }
+              List((labelStr, '{ $pm.fromProduct(EmptyTuple).asInstanceOf[S] }))
             case _ =>
-              report.errorAndAbort(s"Enum case '${labelStr}' is not a singleton (has fields). SanelyEnumCodec only supports pure-value enums.")
-          (labelStr, singletonExpr) :: collectSingletonCases[S, ts, ls](mirror)
+              // Not a singleton — check if it's a sub-sum-type (nested sealed trait)
+              Expr.summon[Mirror.SumOf[t]] match
+                case Some(subMirror) =>
+                  subMirror match
+                    case '{ $sm: Mirror.SumOf[t] { type MirroredElemTypes = subTypes; type MirroredElemLabels = subLabels } } =>
+                      collectSingletonCases[S, subTypes, subLabels](mirror)
+                case None =>
+                  report.errorAndAbort(s"Enum case '${labelStr}' is not a singleton (has fields). SanelyEnumCodec only supports pure-value enums.")
+          casesForThis ++ collectSingletonCases[S, ts, ls](mirror)
 
     private def buildCodec[S: Type](
       mirror: Expr[Mirror.SumOf[S]],
