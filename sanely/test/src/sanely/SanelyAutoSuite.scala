@@ -127,6 +127,19 @@ sealed trait ADTWithSubTraitExample
 sealed trait SubTrait extends ADTWithSubTraitExample
 case class TheClass(a: Int) extends SubTrait
 
+// Phase 9 types — semiauto (explicit derived) in companion objects
+case class SemiAutoProduct(x: Int, y: String)
+object SemiAutoProduct:
+  given Encoder.AsObject[SemiAutoProduct] = SanelyEncoder.derived
+  given Decoder[SemiAutoProduct] = SanelyDecoder.derived
+
+sealed trait SemiAutoAdt
+case class SemiAutoCase(i: Int) extends SemiAutoAdt
+case object SemiAutoObj extends SemiAutoAdt
+object SemiAutoAdt:
+  given Encoder.AsObject[SemiAutoAdt] = SanelyEncoder.derived
+  given Decoder[SemiAutoAdt] = SanelyDecoder.derived
+
 object SanelyAutoSuite extends TestSuite:
   val tests = Tests {
     test("Simple product round-trip") {
@@ -489,7 +502,64 @@ object SanelyAutoSuite extends TestSuite:
       assert(decode[Adt1]("""{"Adt1Class1":{"int":3},"extraField":true}""") == expected)
     }
 
-    // --- Phase 1 extras ---
+    // --- Phase 9: Semiauto API ---
+
+    test("Semiauto product round-trip (SemiAutoProduct)") {
+      val v = SemiAutoProduct(42, "hello")
+      val json = Encoder.AsObject[SemiAutoProduct].encodeObject(v)
+      val expected = JsonObject("x" -> Json.fromInt(42), "y" -> Json.fromString("hello"))
+      assert(json == expected)
+      val decoded = decode[SemiAutoProduct](Json.fromJsonObject(json).noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Semiauto ADT round-trip (SemiAutoAdt)") {
+      val v1: SemiAutoAdt = SemiAutoCase(7)
+      val json1 = v1.asJson(using Encoder.AsObject[SemiAutoAdt])
+      assert(json1 == Json.obj("SemiAutoCase" -> Json.obj("i" -> Json.fromInt(7))))
+      val decoded1 = decode[SemiAutoAdt](json1.noSpaces)
+      assert(decoded1 == Right(v1))
+
+      val v2: SemiAutoAdt = SemiAutoObj
+      val json2 = v2.asJson(using Encoder.AsObject[SemiAutoAdt])
+      assert(json2 == Json.obj("SemiAutoObj" -> Json.obj()))
+      val decoded2 = decode[SemiAutoAdt](json2.noSpaces)
+      assert(decoded2 == Right(v2))
+    }
+
+    test("Local case class with strict val (no StackOverflowError)") {
+      case class LocalCC(n: Int, s: String)
+      object LocalCC:
+        implicit val enc: Encoder.AsObject[LocalCC] = SanelyEncoder.derived
+        implicit val dec: Decoder[LocalCC] = SanelyDecoder.derived
+
+      val v = LocalCC(1, "local")
+      val json = LocalCC.enc.encodeObject(v)
+      assert(json == JsonObject("n" -> Json.fromInt(1), "s" -> Json.fromString("local")))
+      val decoded = LocalCC.dec.decodeJson(Json.fromJsonObject(json))
+      assert(decoded == Right(v))
+    }
+
+    test("Local ADT with strict val (no StackOverflowError)") {
+      sealed trait LocalAdt
+      case class LocalCase(x: Int) extends LocalAdt
+      case object LocalObj extends LocalAdt
+      object LocalAdt:
+        implicit val enc: Encoder.AsObject[LocalAdt] = SanelyEncoder.derived
+        implicit val dec: Decoder[LocalAdt] = SanelyDecoder.derived
+
+      val v1: LocalAdt = LocalCase(42)
+      val json1 = LocalAdt.enc.encodeObject(v1)
+      assert(json1 == JsonObject("LocalCase" -> Json.obj("x" -> Json.fromInt(42))))
+      val decoded1 = LocalAdt.dec.decodeJson(Json.fromJsonObject(json1))
+      assert(decoded1 == Right(v1))
+
+      val v2: LocalAdt = LocalObj
+      val json2 = LocalAdt.enc.encodeObject(v2)
+      assert(json2 == JsonObject("LocalObj" -> Json.obj()))
+      val decoded2 = LocalAdt.dec.decodeJson(Json.fromJsonObject(json2))
+      assert(decoded2 == Right(v2))
+    }
 
     // --- Phase 8: Error Cases ---
 

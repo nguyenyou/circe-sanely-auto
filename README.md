@@ -140,9 +140,9 @@ Stress tests and unusual patterns.
 
 Explicit `SanelyEncoder.derived[A]` / `SanelyDecoder.derived[A]` calls (already the internal API). Mirror circe's `Decoder.derived` / `Encoder.AsObject.derived` surface:
 
-- [ ] `Decoder.derived[Foo]` / `Encoder.AsObject.derived[Foo]`
-- [ ] Local case class derivation with strict `val` (no `StackOverflowError`)
-- [ ] Local ADT derivation with strict `val`
+- [x] `SanelyDecoder.derived[Foo]` / `SanelyEncoder.derived[Foo]` in companion objects
+- [x] Local case class derivation with strict `val` (no `StackOverflowError`)
+- [x] Local ADT derivation with strict `val`
 
 ## Implementation Challenges by Phase
 
