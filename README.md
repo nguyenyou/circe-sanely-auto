@@ -60,9 +60,9 @@ Basic case classes with primitive/standard-library fields. Our macro handles the
 
 - [x] Multi-field product — `Simple(i: Int, s: String)`
 - [x] Single-field product — `Wub(x: Long)`
-- [ ] Nested product — `Person(name: String, age: Int, address: Address)`
-- [ ] Option field — `Outer(a: Option[Inner[String]])` *(needs Inner to derive first)*
-- [ ] List field — `Baz(xs: List[String])`
+- [x] Nested product — `Person(name: String, age: Int, address: Address)`
+- [x] Option field — `Outer(a: Option[Inner[String]])` *(needs Inner to derive first)*
+- [x] List field — `Baz(xs: List[String])`
 
 **What to test**: field names preserved in JSON keys, primitives roundtrip, nested objects roundtrip.
 
@@ -70,8 +70,8 @@ Basic case classes with primitive/standard-library fields. Our macro handles the
 
 Sealed traits / enums with case class variants. Our macro handles via `Mirror.SumOf` + ordinal dispatch. External tagging: `{"VariantName": {...}}`.
 
-- [ ] Sealed trait with case classes — `Foo` with `Bar(i: Int, s: String)`, `Baz(xs: List[String])`, `Bam(w: Wub, d: Double)`
-- [ ] Enum with case classes — `Shape.Circle(radius)`, `Shape.Rectangle(width, height)`
+- [x] Sealed trait with case classes — `Foo` with `Bar(i: Int, s: String)`, `Baz(xs: List[String])`, `Bam(w: Wub, d: Double)`
+- [x] Enum with case classes — `Shape.Circle(radius)`, `Shape.Rectangle(width, height)`
 
 **What to test**: external tagging shape, each variant roundtrips, nested products inside variants.
 
@@ -79,10 +79,10 @@ Sealed traits / enums with case class variants. Our macro handles via `Mirror.Su
 
 Case objects have no fields → should encode as `{}` inside the wrapper. Requires handling `Mirror.ProductOf` with `EmptyTuple` element types.
 
-- [ ] ADT with case objects only — `Adt2(Object1 | Object2)` → `{"Object1":{}}`
-- [ ] ADT with case class + case object — `Adt1(Class1(int: Int) | Object1)`
-- [ ] Empty case class in ADT — `Adt3(Class1() | Object1)` *(Class1 has zero fields)*
-- [ ] Enum with case object — `Vegetable(Potato | Carrot | Onion | Turnip)` where `Turnip` is a case object
+- [x] ADT with case objects only — `Adt2(Object1 | Object2)` → `{"Object1":{}}`
+- [x] ADT with case class + case object — `Adt1(Class1(int: Int) | Object1)`
+- [x] Empty case class in ADT — `Adt3(Class1() | Object1)` *(Class1 has zero fields)*
+- [x] Enum with case object — `Vegetable(Potato | Carrot | Onion | Turnip)` where `Turnip` is a case object
 
 **What to test**: `Object1.asJson == {"Object1":{}}`, mixed case class/object ADTs roundtrip.
 
