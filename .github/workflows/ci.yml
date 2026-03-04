@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: JVM unit tests
+            command: ./mill sanely.jvm.test
+          - name: Scala.js unit tests
+            command: ./mill sanely.js.test
+          - name: Compat tests
+            command: ./mill compat.test
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - run: ${{ matrix.command }}
