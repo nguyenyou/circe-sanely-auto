@@ -1,0 +1,29 @@
+package build
+
+import mill._, scalalib._
+
+val circeVersion = "0.14.13"
+val scala3Version = "3.8.2"
+
+object sanely extends ScalaModule {
+  def scalaVersion = scala3Version
+  def mvnDeps = Task {
+    super.mvnDeps() ++ Seq(
+      mvn"io.circe::circe-core:$circeVersion"
+    )
+  }
+  def scalacOptions = Task {
+    super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+  }
+}
+
+object demo extends ScalaModule {
+  def scalaVersion = scala3Version
+  def moduleDeps = Seq(sanely)
+  def mvnDeps = Task {
+    super.mvnDeps() ++ Seq(
+      mvn"io.circe::circe-core:$circeVersion",
+      mvn"io.circe::circe-parser:$circeVersion"
+    )
+  }
+}
