@@ -60,9 +60,9 @@ Basic case classes with primitive/standard-library fields. Our macro handles the
 
 - [x] Multi-field product — `Simple(i: Int, s: String)`
 - [x] Single-field product — `Wub(x: Long)`
-- [ ] Nested product — `Person(name: String, age: Int, address: Address)`
-- [ ] Option field — `Outer(a: Option[Inner[String]])` *(needs Inner to derive first)*
-- [ ] List field — `Baz(xs: List[String])`
+- [x] Nested product — `Person(name: String, age: Int, address: Address)`
+- [x] Option field — `Outer(a: Option[Inner[String]])` *(needs Inner to derive first)*
+- [x] List field — `Baz(xs: List[String])`
 
 **What to test**: field names preserved in JSON keys, primitives roundtrip, nested objects roundtrip.
 
