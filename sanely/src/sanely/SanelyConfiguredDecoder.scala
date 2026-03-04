@@ -185,9 +185,13 @@ object SanelyConfiguredDecoder:
                 // External tagging mode
                 c.keys match
                   case Some(keys) =>
-                    val transformedLabels = $directLabelsExpr.map(l => $conf.transformConstructorNames(l))
-                    val key = keys.find(transformedLabels.toSet.contains).getOrElse("")
-                    ${ buildMatchExternal('c, 'key) }
+                    val keysList = keys.toList
+                    if $conf.strictDecoding && keysList.size > 1 then
+                      Left(DecodingFailure("Expected single-key JSON object for sum type", c.history))
+                    else
+                      val transformedLabels = $directLabelsExpr.map(l => $conf.transformConstructorNames(l))
+                      val key = keysList.find(transformedLabels.toSet.contains).getOrElse("")
+                      ${ buildMatchExternal('c, 'key) }
                   case None =>
                     Left(DecodingFailure("Expected JSON object for sum type", c.history))
       }
@@ -219,16 +223,24 @@ object SanelyConfiguredDecoder:
         case Some(companion) =>
           // Get the number of fields from the primary constructor
           val primaryCtor = sym.primaryConstructor
-          val paramCount = primaryCtor.paramSymss.headOption.map(_.size).getOrElse(0)
+          // Skip type parameter lists, only count value parameters
+          val paramCount = primaryCtor.paramSymss
+            .find(_.headOption.exists(s => !s.isTypeParam))
+            .map(_.size)
+            .getOrElse(0)
           (1 to paramCount).toList.map { idx =>
             val methodName = s"$$lessinit$$greater$$default$$$idx"
-            companion.declaredMethod(methodName).headOption.map { method =>
+            val found = companion.declaredMethod(methodName).headOption
+            found.map { method =>
               val select = Ref(companion).select(method)
-              // Apply type args if needed
-              val applied = tpe match
-                case AppliedType(_, args) if args.nonEmpty =>
-                  select.appliedToTypes(args)
-                case _ => select
+              // Apply type args if the method has type parameters
+              val applied =
+                if method.paramSymss.exists(_.exists(_.isTypeParam)) then
+                  tpe match
+                    case AppliedType(_, args) if args.nonEmpty =>
+                      select.appliedToTypes(args)
+                    case _ => select
+                else select
               applied.asExpr
             }
           }

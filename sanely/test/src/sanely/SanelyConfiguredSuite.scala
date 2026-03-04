@@ -81,6 +81,13 @@ object HierarchicalEnum:
   case object C extends NestedB
   case object D extends NestedA with NestedB // diamond
 
+// Generic class with defaults (mirrors circe's GenericFoo)
+case class GenericFoo[T](a: List[T] = List.empty, b: String = "b")
+
+object GenericFooHelper:
+  given Configuration = Configuration.default.withDefaults
+  val genericFooIntDecoder: Decoder[GenericFoo[Int]] = SanelyConfiguredDecoder.derived
+
 object SanelyConfiguredSuite extends TestSuite:
   val tests = Tests {
 
@@ -699,6 +706,47 @@ object SanelyConfiguredSuite extends TestSuite:
       // Diamond case
       assert(enc(HierarchicalEnum.D) == Json.fromString("D"))
       assert(dec.decodeJson(Json.fromString("D")) == Right(HierarchicalEnum.D))
+    }
+
+    // === strictDecoding on sum types ===
+
+    test("strictDecoding - rejects multiple keys on sum type") {
+      given Configuration = Configuration.default.withStrictDecoding
+      given Decoder[ConfigExampleBase] = SanelyConfiguredDecoder.derived
+
+      val json = Json.obj(
+        "ConfigExampleFoo" -> Json.obj(
+          "thisIsAField" -> Json.fromString("x"),
+          "a" -> Json.fromInt(0),
+          "b" -> Json.fromDoubleOrNull(2.5)
+        ),
+        "anotherField" -> Json.fromString("some value")
+      )
+      assert(json.as[ConfigExampleBase].isLeft)
+    }
+
+    test("strictDecoding - rejects unexpected fields inside product variant of sum type") {
+      given Configuration = Configuration.default.withStrictDecoding
+      given Decoder[ConfigExampleBase] = SanelyConfiguredDecoder.derived
+
+      val json = Json.obj(
+        "ConfigExampleFoo" -> Json.obj(
+          "thisIsAField" -> Json.fromString("x"),
+          "a" -> Json.fromInt(0),
+          "b" -> Json.fromDoubleOrNull(2.5),
+          "anotherField" -> Json.fromString("some value")
+        )
+      )
+      assert(json.as[ConfigExampleBase].isLeft)
+    }
+
+    // === useDefaults with generic classes ===
+
+    test("useDefaults - generic class with defaults") {
+      val dec = GenericFooHelper.genericFooIntDecoder
+
+      val json = Json.obj()
+      assert(dec.decodeJson(json) == Right(GenericFoo(List.empty[Int], "b")))
     }
 
     // === SanelyConfiguredCodec ===
