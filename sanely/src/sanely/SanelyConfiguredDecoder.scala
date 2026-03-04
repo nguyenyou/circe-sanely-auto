@@ -307,29 +307,7 @@ object SanelyConfiguredDecoder:
           arg.asType match
             case '[a] =>
               val innerDec = selfRef.asInstanceOf[Expr[Decoder[a]]]
-              tycon.typeSymbol.fullName match
-                case "scala.Option" =>
-                  '{ Decoder.decodeOption[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case s if s.endsWith(".List") =>
-                  '{ Decoder.decodeList[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case s if s.endsWith(".Vector") =>
-                  '{ Decoder.decodeVector[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case s if s.endsWith(".Set") =>
-                  '{ Decoder.decodeSet[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case s if s.endsWith(".Seq") =>
-                  '{ Decoder.decodeSeq[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case "cats.data.Chain" =>
-                  '{ Decoder.decodeChain[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case "cats.data.NonEmptyList" =>
-                  '{ Decoder.decodeNonEmptyList[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case "cats.data.NonEmptyVector" =>
-                  '{ Decoder.decodeNonEmptyVector[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case "cats.data.NonEmptySeq" =>
-                  '{ Decoder.decodeNonEmptySeq[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case "cats.data.NonEmptyChain" =>
-                  '{ Decoder.decodeNonEmptyChain[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
-                case other =>
-                  report.errorAndAbort(s"Cannot derive Decoder for recursive type in container ${other}[${Type.show[a]}]")
+              buildContainerDecoder[T, a](tycon, innerDec)
         case AppliedType(tycon, List(keyArg, valArg)) if valArg =:= selfType =>
           (keyArg.asType, valArg.asType) match
             case ('[k], '[v]) =>
@@ -340,5 +318,48 @@ object SanelyConfiguredDecoder:
                 case None =>
                   report.errorAndAbort(s"Cannot derive Decoder for Map: no KeyDecoder for ${Type.show[k]}")
             case _ => report.errorAndAbort(s"Unexpected type pattern in Map recursive decoder")
+        case AppliedType(tycon, List(arg)) if containsType(arg, selfType) =>
+          arg.asType match
+            case '[a] =>
+              val innerDec = constructRecursiveDecoder[a](arg, selfRef)
+              buildContainerDecoder[T, a](tycon, innerDec)
+        case AppliedType(tycon, List(keyArg, valArg)) if containsType(valArg, selfType) =>
+          (keyArg.asType, valArg.asType) match
+            case ('[k], '[v]) =>
+              val innerDec = constructRecursiveDecoder[v](valArg, selfRef)
+              Expr.summon[io.circe.KeyDecoder[k]] match
+                case Some(keyDec) =>
+                  '{ Decoder.decodeMap[k, v](using $keyDec, $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+                case None =>
+                  report.errorAndAbort(s"Cannot derive Decoder for Map: no KeyDecoder for ${Type.show[k]}")
+            case _ => report.errorAndAbort(s"Unexpected type pattern in Map recursive decoder")
         case _ =>
           report.errorAndAbort(s"Cannot derive Decoder for recursive type application: ${Type.show[T]}")
+
+    private def buildContainerDecoder[T: Type, A: Type](
+      tycon: TypeRepr,
+      innerDec: Expr[Decoder[A]]
+    ): Expr[Decoder[T]] =
+      tycon.typeSymbol.fullName match
+        case "scala.Option" =>
+          '{ Decoder.decodeOption[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case s if s.endsWith(".List") =>
+          '{ Decoder.decodeList[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case s if s.endsWith(".Vector") =>
+          '{ Decoder.decodeVector[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case s if s.endsWith(".Set") =>
+          '{ Decoder.decodeSet[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case s if s.endsWith(".Seq") =>
+          '{ Decoder.decodeSeq[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case "cats.data.Chain" =>
+          '{ Decoder.decodeChain[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case "cats.data.NonEmptyList" =>
+          '{ Decoder.decodeNonEmptyList[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case "cats.data.NonEmptyVector" =>
+          '{ Decoder.decodeNonEmptyVector[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case "cats.data.NonEmptySeq" =>
+          '{ Decoder.decodeNonEmptySeq[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case "cats.data.NonEmptyChain" =>
+          '{ Decoder.decodeNonEmptyChain[A](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+        case other =>
+          report.errorAndAbort(s"Cannot derive Decoder for recursive type in container ${other}[${Type.show[A]}]")
