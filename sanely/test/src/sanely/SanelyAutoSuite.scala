@@ -1,7 +1,7 @@
 package sanely
 
 import utest.*
-import io.circe.*
+import io.circe.{*, given}
 import io.circe.parser.*
 import io.circe.syntax.*
 import sanely.auto.given
@@ -41,6 +41,27 @@ case object Adt1Object1 extends Adt1
 sealed trait Adt3
 case class Adt3Class1() extends Adt3
 case object Adt3Object1 extends Adt3
+
+// Phase 4 types — custom instances that produce different JSON than auto-derivation
+
+// Custom encoder renames fields: "x" -> "first", "y" -> "second"
+case class Renamed(x: Int, y: String)
+object Renamed:
+  given Encoder.AsObject[Renamed] = Encoder.AsObject.instance { case Renamed(x, y) =>
+    JsonObject("first" -> Json.fromInt(x), "second" -> Json.fromString(y))
+  }
+  given Decoder[Renamed] = Decoder.instance { c =>
+    for
+      x <- c.downField("first").as[Int]
+      y <- c.downField("second").as[String]
+    yield Renamed(x, y)
+  }
+
+case class WrapsRenamed(r: Renamed, extra: Boolean)
+
+// Phase 5 types — generic type parameters
+case class Box[A](a: A)
+case class Qux[A](i: Int, a: A, j: Int)
 
 object SanelyAutoSuite extends TestSuite:
   val tests = Tests {
@@ -234,6 +255,65 @@ object SanelyAutoSuite extends TestSuite:
       assert(json2 == Json.obj("Turnip" -> Json.obj()))
       val decoded2 = decode[Vegetable](json2.noSpaces)
       assert(decoded2 == Right(v2))
+    }
+
+    // --- Phase 4: User-Provided Instances Respected ---
+
+    test("Custom instance respected in nested type (WrapsRenamed)") {
+      // If macro respects Renamed's custom given, "r" field uses renamed keys
+      // If macro re-derives, "r" field would have {"x":1,"y":"hi"}
+      val v = WrapsRenamed(Renamed(1, "hi"), true)
+      val json = v.asJson
+      val expected = Json.obj(
+        "r" -> Json.obj("first" -> Json.fromInt(1), "second" -> Json.fromString("hi")),
+        "extra" -> Json.fromBoolean(true)
+      )
+      assert(json == expected)
+      val decoded = decode[WrapsRenamed](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Phase 5: Generic Types ---
+
+    test("Generic product Box[Long] round-trip") {
+      val v = Box(42L)
+      val json = v.asJson
+      assert(json == Json.obj("a" -> Json.fromLong(42L)))
+      val decoded = decode[Box[Long]](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Generic product Box[Wub] round-trip") {
+      val v = Box(Wub(99L))
+      val json = v.asJson
+      assert(json == Json.obj("a" -> Json.obj("x" -> Json.fromLong(99L))))
+      val decoded = decode[Box[Wub]](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Generic product Qux[Long] round-trip") {
+      val v = Qux(1, 2L, 3)
+      val json = v.asJson
+      assert(json == Json.obj("i" -> Json.fromInt(1), "a" -> Json.fromLong(2L), "j" -> Json.fromInt(3)))
+      val decoded = decode[Qux[Long]](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Generic product Box[Foo] (generic wrapping sum type)") {
+      val v = Box[Foo](Bar(1, "x"))
+      val json = v.asJson
+      assert(json == Json.obj("a" -> Json.obj("Bar" -> Json.obj("i" -> Json.fromInt(1), "s" -> Json.fromString("x")))))
+      val decoded = decode[Box[Foo]](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Derived Inner encoder used by Outer (Option[Inner[String]])") {
+      // Outer's macro should derive Inner[String] internally
+      // and use it when encoding the Option field
+      val some = Outer(Some(Inner("c")))
+      val none = Outer(None)
+      assert(some.asJson == Json.obj("a" -> Json.obj("field" -> Json.fromString("c"))))
+      assert(none.asJson == Json.obj("a" -> Json.Null))
     }
 
     // --- Phase 1 extras ---

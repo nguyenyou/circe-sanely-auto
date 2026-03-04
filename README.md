@@ -90,8 +90,8 @@ Case objects have no fields → should encode as `{}` inside the wrapper. Requir
 
 When a type already has an implicit `Encoder`/`Decoder`, our macro's `Expr.summonIgnoring` finds it (since it only excludes our own auto-given, not user-provided instances) instead of re-deriving. This is core to the "sanely-automatic" approach.
 
-- [ ] `Foo` with custom-encoded children — `Bar` has `Encoder.forProduct2`, `Baz` encodes as JSON array (not object)
-- [ ] `Outer(a: Option[Inner[String]])` — should use `Inner`'s derived encoder, not re-derive
+- [x] Custom `Encoder.AsObject` respected in nested type — `WrapsRenamed` uses `Renamed`'s custom field-renaming encoder
+- [x] `Outer(a: Option[Inner[String]])` — macro internally derives `Inner[String]` and uses it
 - [ ] Nested sums not encoded redundantly — `ADTWithSubTraitExample` → `TheClass(0)` becomes `{"TheClass":{"a":0}}` not `{"SubTrait":{"TheClass":{"a":0}}}`
 
 **What to test**: JSON shape matches circe's expected output exactly, custom encoders are not overridden.
@@ -100,10 +100,10 @@ When a type already has an implicit `Encoder`/`Decoder`, our macro's `Expr.summo
 
 Type-parameterized case classes: `Box[A](a: A)`, `Qux[A](i: Int, a: A, j: Int)`. The macro must handle abstract type parameters — when expanding `Box[Wub]`, it resolves `Encoder[Wub]` for the field.
 
-- [ ] `Box[Long]` — generic wrapping primitive
-- [ ] `Box[Wub]` — generic wrapping product
-- [ ] `Qux[Long]` — generic with mixed fields
-- [ ] `Box[Foo]` — generic wrapping sum type
+- [x] `Box[Long]` — generic wrapping primitive
+- [x] `Box[Wub]` — generic wrapping product
+- [x] `Qux[Long]` — generic with mixed fields
+- [x] `Box[Foo]` — generic wrapping sum type
 - [ ] `Bar(foo: Box[Foo])` — nested generic
 
 **What to test**: type parameter resolution at macro expansion time, nested generics.
