@@ -92,7 +92,7 @@ When a type already has an implicit `Encoder`/`Decoder`, our macro's `Expr.summo
 
 - [x] Custom `Encoder.AsObject` respected in nested type — `WrapsRenamed` uses `Renamed`'s custom field-renaming encoder
 - [x] `Outer(a: Option[Inner[String]])` — macro internally derives `Inner[String]` and uses it
-- [ ] Nested sums not encoded redundantly — `ADTWithSubTraitExample` → `TheClass(0)` becomes `{"TheClass":{"a":0}}` not `{"SubTrait":{"TheClass":{"a":0}}}`
+- [x] Nested sums not encoded redundantly — `ADTWithSubTraitExample` → `TheClass(0)` becomes `{"TheClass":{"a":0}}` *(tested in Phase 7 sub-trait flattening)*
 
 **What to test**: JSON shape matches circe's expected output exactly, custom encoders are not overridden.
 
@@ -144,16 +144,38 @@ Explicit `SanelyEncoder.derived[A]` / `SanelyDecoder.derived[A]` calls (already 
 - [x] Local case class derivation with strict `val` (no `StackOverflowError`)
 - [x] Local ADT derivation with strict `val`
 
-## Implementation Challenges by Phase
+## TODO — Toward Full Drop-in Replacement
 
-| Phase | Key Challenge |
-|-------|--------------|
-| 1 | None — already works |
-| 2 | None — already works for case-class-only sums |
-| 3 | Case objects: `Mirror.ProductOf` with `EmptyTuple`, singleton encoding |
-| 4 | `Expr.summonIgnoring` already skips auto-given; verify user instances are found |
-| 5 | Type params: macro must resolve `Encoder[A]` when `A` is abstract |
-| 6 | Recursion: break infinite macro expansion, likely needs lazy wrapper |
-| 7 | Inline budget for 33 fields/variants; sub-trait Mirror flattening |
-| 8 | Error messages matching circe's format |
-| 9 | API surface compatibility |
+The core derivation engine is solid (41/41 tests, Phases 1–9). The remaining work is API surface alignment, broader type support, and missing test coverage.
+
+### API Surface
+
+- [ ] **Publish under `io.github.nguyenyou`** — publish to Maven Central under `io.github.nguyenyou::circe-sanely-auto`
+- [ ] **Provide `io.circe.generic.auto` alias** — add an `io.circe.generic.auto` object that re-exports `sanely.auto.given`, so users keep `import io.circe.generic.auto.given`
+- [ ] **Wire into `Encoder.AsObject.derived` / `Decoder.derived`** — provide givens or extensions so `derives Encoder.AsObject, Decoder` works on case classes and sealed traits
+- [ ] **Add `Codec.AsObject` derivation** — compose existing encoder + decoder so `summon[Codec[A]]` works; trivial implementation: `Codec.from(decoder, encoder)`
+
+### Recursive Container Support
+
+Currently only `Option[Self]`, `List[Self]`, `Vector[Self]`, `Set[Self]` are handled in recursive positions (hardcoded in `constructRecursiveEncoder`/`constructRecursiveDecoder`). Non-recursive containers work fine via `summonIgnoring`.
+
+- [ ] **`Seq[Self]`** — add to hardcoded container list
+- [ ] **`Map[String, Self]`** — needs 2-type-param support in `constructRecursiveEncoder`/`constructRecursiveDecoder` (currently only matches `AppliedType(tycon, List(arg))` — single type param)
+- [ ] **`Either[E, Self]`** — same 2-type-param issue
+- [ ] **`NonEmptyList[Self]`** (cats) — optional, add if circe-core has the instance
+
+### Missing Test Coverage
+
+Items still unchecked from the test plan:
+
+- [ ] Nested generic `Bar(foo: Box[Foo])` (Phase 5) — likely works, needs test
+- [ ] Recursive enum `RecursiveEnumAdt` (Phase 6) — enum-specific Mirror may differ from sealed trait
+- [ ] Tagged type members `ProductWithTaggedMember(x: TaggedString)` (Phase 7) — opaque/tagged types common in circe codebases
+- [ ] Compile error message quality for missing instances (Phase 8) — `report.errorAndAbort` exists but untested
+
+### `containsType` Improvement
+
+`containsType` only checks `AppliedType` args. Won't detect recursive references buried in non-`AppliedType` wrappers (e.g., type aliases, match types). Low priority — rare in practice.
+
+- [ ] Handle type aliases by dealias before checking
+- [ ] Consider `TypeRepr.dealias` in recursive walk

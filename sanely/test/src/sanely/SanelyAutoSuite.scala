@@ -127,6 +127,41 @@ sealed trait ADTWithSubTraitExample
 sealed trait SubTrait extends ADTWithSubTraitExample
 case class TheClass(a: Int) extends SubTrait
 
+// Nested generic type
+case class BarBoxFoo(foo: Box[Foo])
+
+// Recursive enum
+enum RecursiveEnumAdt:
+  case Base(a: String)
+  case Nested(r: RecursiveEnumAdt)
+
+// Recursive with Seq
+case class RecursiveWithSeq(children: Seq[RecursiveWithSeq], value: String)
+
+// Recursive with Map
+case class RecursiveWithMap(children: Map[String, RecursiveWithMap], value: String)
+
+// Tagged type member
+case class ProductWithTaggedMember(x: ProductWithTaggedMember.TaggedString)
+object ProductWithTaggedMember:
+  sealed trait Tag
+  type TaggedString = String & Tag
+  given Codec[TaggedString] = Codec.from(
+    summon[Decoder[String]].map(_.asInstanceOf[TaggedString]),
+    summon[Encoder[String]].contramap(x => x: String)
+  )
+
+// Codec derivation test type
+case class CodecTestProduct(a: Int, b: String)
+object CodecTestProduct:
+  given Codec.AsObject[CodecTestProduct] = SanelyCodec.derived
+
+sealed trait CodecTestAdt
+case class CodecCase(i: Int) extends CodecTestAdt
+case object CodecObj extends CodecTestAdt
+object CodecTestAdt:
+  given Codec.AsObject[CodecTestAdt] = SanelyCodec.derived
+
 // Phase 9 types — semiauto (explicit derived) in companion objects
 case class SemiAutoProduct(x: Int, y: String)
 object SemiAutoProduct:
@@ -604,5 +639,118 @@ object SanelyAutoSuite extends TestSuite:
       val v3 = Wub(0L)
       val decoded3 = decode[Wub](v3.asJson.noSpaces)
       assert(decoded3 == Right(v3))
+    }
+
+    // --- New coverage: nested generic ---
+
+    test("Nested generic Box[Foo] in product round-trip") {
+      val v = BarBoxFoo(Box[Foo](Bar(1, "x")))
+      val json = v.asJson
+      val expected = Json.obj("foo" -> Json.obj("a" -> Json.obj("Bar" -> Json.obj("i" -> Json.fromInt(1), "s" -> Json.fromString("x")))))
+      assert(json == expected)
+      val decoded = decode[BarBoxFoo](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Recursive enum ---
+
+    test("Recursive enum base case round-trip") {
+      val v: RecursiveEnumAdt = RecursiveEnumAdt.Base("hello")
+      val json = v.asJson
+      val expected = Json.obj("Base" -> Json.obj("a" -> Json.fromString("hello")))
+      assert(json == expected)
+      val decoded = decode[RecursiveEnumAdt](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Recursive enum nested depth 2 round-trip") {
+      val v: RecursiveEnumAdt = RecursiveEnumAdt.Nested(RecursiveEnumAdt.Nested(RecursiveEnumAdt.Base("deep")))
+      val json = v.asJson
+      val decoded = decode[RecursiveEnumAdt](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Recursive with Seq ---
+
+    test("Recursive with Seq round-trip") {
+      val v = RecursiveWithSeq(Seq(RecursiveWithSeq(Seq.empty, "child")), "parent")
+      val json = v.asJson
+      val decoded = decode[RecursiveWithSeq](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Recursive with Map ---
+
+    test("Recursive with Map round-trip") {
+      val v = RecursiveWithMap(Map("child" -> RecursiveWithMap(Map.empty, "leaf")), "root")
+      val json = v.asJson
+      val decoded = decode[RecursiveWithMap](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Tagged type member ---
+
+    test("Tagged type member round-trip") {
+      val v = ProductWithTaggedMember("hello".asInstanceOf[ProductWithTaggedMember.TaggedString])
+      val json = v.asJson
+      assert(json == Json.obj("x" -> Json.fromString("hello")))
+      val decoded = decode[ProductWithTaggedMember](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Codec derivation ---
+
+    test("Codec.AsObject derivation product round-trip") {
+      val v = CodecTestProduct(42, "hello")
+      val json = v.asJson(using CodecTestProduct.given_AsObject_CodecTestProduct)
+      val expected = Json.obj("a" -> Json.fromInt(42), "b" -> Json.fromString("hello"))
+      assert(json == expected)
+      val decoded = json.as[CodecTestProduct](using CodecTestProduct.given_AsObject_CodecTestProduct)
+      assert(decoded == Right(v))
+    }
+
+    test("Codec.AsObject derivation ADT round-trip") {
+      val v1: CodecTestAdt = CodecCase(7)
+      val json1 = v1.asJson(using CodecTestAdt.given_AsObject_CodecTestAdt)
+      assert(json1 == Json.obj("CodecCase" -> Json.obj("i" -> Json.fromInt(7))))
+      val decoded1 = json1.as[CodecTestAdt](using CodecTestAdt.given_AsObject_CodecTestAdt)
+      assert(decoded1 == Right(v1))
+    }
+
+    // --- io.circe.generic.auto alias ---
+
+    test("io.circe.generic.auto alias works") {
+      import io.circe.generic.auto.given
+      case class AutoAlias(x: Int, y: String)
+      val v = AutoAlias(1, "hi")
+      val json = v.asJson
+      assert(json == Json.obj("x" -> Json.fromInt(1), "y" -> Json.fromString("hi")))
+      val decoded = decode[AutoAlias](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- io.circe.generic.semiauto alias ---
+
+    test("io.circe.generic.semiauto alias works") {
+      case class SemiAlias(a: Int, b: String)
+      given Encoder.AsObject[SemiAlias] = io.circe.generic.semiauto.deriveEncoder
+      given Decoder[SemiAlias] = io.circe.generic.semiauto.deriveDecoder
+
+      val v = SemiAlias(1, "hi")
+      val json = v.asJson
+      assert(json == Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromString("hi")))
+      val decoded = decode[SemiAlias](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("io.circe.generic.semiauto.deriveCodec works") {
+      case class SemiCodecAlias(x: Int, y: String)
+      given Codec.AsObject[SemiCodecAlias] = io.circe.generic.semiauto.deriveCodec
+
+      val v = SemiCodecAlias(1, "hi")
+      val json = v.asJson
+      assert(json == Json.obj("x" -> Json.fromInt(1), "y" -> Json.fromString("hi")))
+      val decoded = decode[SemiCodecAlias](json.noSpaces)
+      assert(decoded == Right(v))
     }
   }

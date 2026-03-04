@@ -125,8 +125,8 @@ object SanelyEncoder:
         return constructRecursiveEncoder[T](tpe, selfRef)
 
       // Safe path: no recursion risk
-      val autoEncoderSymbol = Symbol.requiredModule("sanely.auto").methodMember("autoEncoder").head
-      Expr.summonIgnoring[Encoder[T]](autoEncoderSymbol) match
+      val ignoreSymbols = collectIgnoreSymbols("autoEncoder", "deriveEncoder", "importedEncoder", "importedAsObjectEncoder")
+      Expr.summonIgnoring[Encoder[T]](ignoreSymbols*) match
         case Some(enc) => enc
         case None =>
           Expr.summon[Mirror.Of[T]] match
@@ -140,9 +140,33 @@ object SanelyEncoder:
               report.errorAndAbort(s"Cannot derive Encoder for ${Type.show[T]}: no implicit Encoder and no Mirror available")
 
     private def containsType(tpe: TypeRepr, target: TypeRepr): Boolean =
-      tpe match
-        case AppliedType(_, args) => args.exists(arg => (arg =:= target) || containsType(arg, target))
+      val dealiased = tpe.dealias
+      if dealiased =:= target then true
+      else dealiased match
+        case AppliedType(_, args) => args.exists(arg => containsType(arg, target))
+        case AndType(left, right) => containsType(left, target) || containsType(right, target)
+        case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
+
+    private def collectIgnoreSymbols(sanelyAutoMethod: String, genericAutoMethod: String, importedMethods: String*): List[Symbol] =
+      val buf = List.newBuilder[Symbol]
+      buf += Symbol.requiredModule("sanely.auto").methodMember(sanelyAutoMethod).head
+      // io.circe.generic.auto alias
+      try
+        val genericAuto = Symbol.requiredModule("io.circe.generic.auto")
+        genericAuto.methodMember(genericAutoMethod).foreach(buf += _)
+      catch case _: Exception => ()
+      // circe-core imported* unwrappers
+      for method <- importedMethods do
+        try
+          val encoderCompanion = Symbol.requiredModule("io.circe.Encoder")
+          encoderCompanion.methodMember(method).foreach(buf += _)
+        catch case _: Exception => ()
+        try
+          val decoderCompanion = Symbol.requiredModule("io.circe.Decoder")
+          decoderCompanion.methodMember(method).foreach(buf += _)
+        catch case _: Exception => ()
+      buf.result()
 
     private def constructRecursiveEncoder[T: Type](
       tpe: TypeRepr,
@@ -162,7 +186,28 @@ object SanelyEncoder:
                   '{ Encoder.encodeVector[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
                 case s if s.endsWith(".Set") =>
                   '{ Encoder.encodeSet[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case s if s.endsWith(".Seq") =>
+                  '{ Encoder.encodeSeq[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case "cats.data.Chain" =>
+                  '{ Encoder.encodeChain[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case "cats.data.NonEmptyList" =>
+                  '{ Encoder.encodeNonEmptyList[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case "cats.data.NonEmptyVector" =>
+                  '{ Encoder.encodeNonEmptyVector[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case "cats.data.NonEmptySeq" =>
+                  '{ Encoder.encodeNonEmptySeq[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case "cats.data.NonEmptyChain" =>
+                  '{ Encoder.encodeNonEmptyChain[a](using $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
                 case other =>
                   report.errorAndAbort(s"Cannot derive Encoder for recursive type in container ${other}[${Type.show[a]}]")
+        case AppliedType(tycon, List(keyArg, valArg)) if valArg =:= selfType =>
+          (keyArg.asType, valArg.asType) match
+            case ('[k], '[v]) =>
+              val innerEnc = selfRef.asInstanceOf[Expr[Encoder[v]]]
+              Expr.summon[io.circe.KeyEncoder[k]] match
+                case Some(keyEnc) =>
+                  '{ Encoder.encodeMap[k, v](using $keyEnc, $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
+                case None =>
+                  report.errorAndAbort(s"Cannot derive Encoder for Map: no KeyEncoder for ${Type.show[k]}")
         case _ =>
           report.errorAndAbort(s"Cannot derive Encoder for recursive type application: ${Type.show[T]}")

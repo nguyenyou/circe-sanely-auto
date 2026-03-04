@@ -139,8 +139,8 @@ object SanelyDecoder:
         return constructRecursiveDecoder[T](tpe, selfRef)
 
       // Safe path: no recursion risk
-      val autoDecoderSymbol = Symbol.requiredModule("sanely.auto").methodMember("autoDecoder").head
-      Expr.summonIgnoring[Decoder[T]](autoDecoderSymbol) match
+      val ignoreSymbols = collectIgnoreSymbols("autoDecoder", "deriveDecoder", "importedDecoder")
+      Expr.summonIgnoring[Decoder[T]](ignoreSymbols*) match
         case Some(dec) => dec
         case None =>
           Expr.summon[Mirror.Of[T]] match
@@ -154,9 +154,33 @@ object SanelyDecoder:
               report.errorAndAbort(s"Cannot derive Decoder for ${Type.show[T]}: no implicit Decoder and no Mirror available")
 
     private def containsType(tpe: TypeRepr, target: TypeRepr): Boolean =
-      tpe match
-        case AppliedType(_, args) => args.exists(arg => (arg =:= target) || containsType(arg, target))
+      val dealiased = tpe.dealias
+      if dealiased =:= target then true
+      else dealiased match
+        case AppliedType(_, args) => args.exists(arg => containsType(arg, target))
+        case AndType(left, right) => containsType(left, target) || containsType(right, target)
+        case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
+
+    private def collectIgnoreSymbols(sanelyAutoMethod: String, genericAutoMethod: String, importedMethods: String*): List[Symbol] =
+      val buf = List.newBuilder[Symbol]
+      buf += Symbol.requiredModule("sanely.auto").methodMember(sanelyAutoMethod).head
+      // io.circe.generic.auto alias
+      try
+        val genericAuto = Symbol.requiredModule("io.circe.generic.auto")
+        genericAuto.methodMember(genericAutoMethod).foreach(buf += _)
+      catch case _: Exception => ()
+      // circe-core imported* unwrappers
+      for method <- importedMethods do
+        try
+          val decoderCompanion = Symbol.requiredModule("io.circe.Decoder")
+          decoderCompanion.methodMember(method).foreach(buf += _)
+        catch case _: Exception => ()
+        try
+          val encoderCompanion = Symbol.requiredModule("io.circe.Encoder")
+          encoderCompanion.methodMember(method).foreach(buf += _)
+        catch case _: Exception => ()
+      buf.result()
 
     private def constructRecursiveDecoder[T: Type](
       tpe: TypeRepr,
@@ -176,7 +200,28 @@ object SanelyDecoder:
                   '{ Decoder.decodeVector[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
                 case s if s.endsWith(".Set") =>
                   '{ Decoder.decodeSet[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+                case s if s.endsWith(".Seq") =>
+                  '{ Decoder.decodeSeq[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+                case "cats.data.Chain" =>
+                  '{ Decoder.decodeChain[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+                case "cats.data.NonEmptyList" =>
+                  '{ Decoder.decodeNonEmptyList[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+                case "cats.data.NonEmptyVector" =>
+                  '{ Decoder.decodeNonEmptyVector[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+                case "cats.data.NonEmptySeq" =>
+                  '{ Decoder.decodeNonEmptySeq[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+                case "cats.data.NonEmptyChain" =>
+                  '{ Decoder.decodeNonEmptyChain[a](using $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
                 case other =>
                   report.errorAndAbort(s"Cannot derive Decoder for recursive type in container ${other}[${Type.show[a]}]")
+        case AppliedType(tycon, List(keyArg, valArg)) if valArg =:= selfType =>
+          (keyArg.asType, valArg.asType) match
+            case ('[k], '[v]) =>
+              val innerDec = selfRef.asInstanceOf[Expr[Decoder[v]]]
+              Expr.summon[io.circe.KeyDecoder[k]] match
+                case Some(keyDec) =>
+                  '{ Decoder.decodeMap[k, v](using $keyDec, $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
+                case None =>
+                  report.errorAndAbort(s"Cannot derive Decoder for Map: no KeyDecoder for ${Type.show[k]}")
         case _ =>
           report.errorAndAbort(s"Cannot derive Decoder for recursive type application: ${Type.show[T]}")
