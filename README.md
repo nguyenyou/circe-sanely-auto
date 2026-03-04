@@ -4,7 +4,7 @@ Drop-in replacement for circe's automatic Encoder/Decoder derivation, built with
 
 Based on the [sanely-automatic derivation](https://kubuszok.com/2025/sanely-automatic-derivation/) approach: uses `Expr.summonIgnoring` (Scala 3.7+) to exclude the auto-given from implicit search, then recursively derives all nested instances internally within a single macro expansion — avoiding the implicit search chains that make circe-generic slow to compile.
 
-**Scala 3.8.2+ only.**
+**Scala 3.8.2+ only.** Cross-published for JVM and Scala.js.
 
 ## Usage
 
@@ -32,6 +32,72 @@ enum Shape:
 
 Shape.Circle(5.0).asJson
 // {"Circle":{"radius":5.0}}
+```
+
+## Configured Derivation
+
+For `io.circe.derivation.Configuration`-based derivation (snake_case field names, discriminator fields, default values, strict decoding, enum string codecs):
+
+```scala
+import io.circe.*
+import io.circe.derivation.Configuration
+import io.circe.generic.semiauto.*
+
+given Configuration = Configuration.default
+  .withSnakeCaseMemberNames
+  .withDiscriminator("type")
+  .withDefaults
+
+case class User(firstName: String, lastName: String, age: Int = 25)
+given Codec.AsObject[User] = deriveConfiguredCodec
+
+User("Alice", "Smith", 30).asJson
+// {"first_name":"Alice","last_name":"Smith","age":30,"type":"User"}
+```
+
+Configured API surface:
+
+```scala
+import io.circe.generic.semiauto.*
+
+// With a given Configuration in scope:
+deriveConfiguredEncoder[A]  // Encoder.AsObject[A]
+deriveConfiguredDecoder[A]  // Decoder[A]
+deriveConfiguredCodec[A]    // Codec.AsObject[A]
+deriveEnumCodec[A]          // Codec[A] — singleton enum ↔ string
+```
+
+Or use the macro objects directly:
+
+```scala
+SanelyConfiguredEncoder.derived[A]  // Encoder.AsObject[A]
+SanelyConfiguredDecoder.derived[A]  // Decoder[A]
+SanelyConfiguredCodec.derived[A]    // Codec.AsObject[A]
+SanelyEnumCodec.derived[A]          // Codec[A]
+```
+
+### Configuration options
+
+| Option | Effect |
+|---|---|
+| `transformMemberNames` | Rename JSON keys (e.g., `withSnakeCaseMemberNames`) |
+| `transformConstructorNames` | Rename ADT variant names (e.g., `withSnakeCaseConstructorNames`) |
+| `useDefaults` | Use Scala default parameter values for missing/null JSON fields |
+| `discriminator` | `Some("type")` → flat `{"type":"Variant",...}` instead of `{"Variant":{...}}` |
+| `strictDecoding` | Reject unexpected JSON keys |
+
+### Enum string codec
+
+For enums with only singleton cases (no fields), encode as plain JSON strings:
+
+```scala
+enum Color:
+  case Red, Green, Blue
+
+given Configuration = Configuration.default.withSnakeCaseConstructorNames
+given Codec[Color] = deriveEnumCodec
+
+Color.Red.asJson  // "red"
 ```
 
 ## Migration from circe-generic
@@ -121,9 +187,11 @@ You can also compile and run each module individually:
 Requires [Mill](https://mill-build.org/) (bootstrapped via `./mill` wrapper).
 
 ```bash
-./mill sanely.compile    # compile library
-./mill sanely.test       # run tests
-./mill demo.run          # run demo
+./mill sanely.jvm.compile  # compile library (JVM)
+./mill sanely.js.compile   # compile library (Scala.js)
+./mill sanely.jvm.test     # run tests (JVM)
+./mill sanely.js.test      # run tests (Scala.js)
+./mill demo.run            # run demo
 ```
 
 ## Goal
@@ -228,13 +296,18 @@ Explicit `SanelyEncoder.derived[A]` / `SanelyDecoder.derived[A]` calls (already 
 
 ## Status
 
-All circe auto-derivation roundtrip tests are ported and passing (52/52). The library provides:
+76 tests passing (52 auto-derivation + 24 configured derivation), on both JVM and Scala.js. The library provides:
 
 - **`import sanely.auto.given`** — auto-derivation for `Encoder.AsObject` and `Decoder`
 - **`import io.circe.generic.auto.given`** — drop-in alias using circe's `Exported` pattern
 - **`io.circe.generic.semiauto.{deriveEncoder, deriveDecoder, deriveCodec}`** — explicit derivation
+- **`io.circe.generic.semiauto.{deriveConfiguredEncoder, deriveConfiguredDecoder, deriveConfiguredCodec}`** — configured derivation with `io.circe.derivation.Configuration`
+- **`io.circe.generic.semiauto.deriveEnumCodec`** — enum string codec
 - **`SanelyCodec.derived[A]`** — `Codec.AsObject` derivation
+- **`SanelyConfiguredCodec.derived[A]`** — configured `Codec.AsObject` derivation
+- **`SanelyEnumCodec.derived[A]`** — enum string codec
 - Recursive containers: `Option`, `List`, `Vector`, `Set`, `Seq`, `Map`, `Chain`, `NonEmptyList`, `NonEmptyVector`, `NonEmptySeq`, `NonEmptyChain`
+- Cross-published for **JVM** and **Scala.js**
 
 ### Out of scope
 
