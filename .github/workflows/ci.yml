@@ -19,7 +19,7 @@ jobs:
             command: ./mill compat.test
     name: ${{ matrix.name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
       - uses: actions/setup-java@v5.2.0
         with:
           distribution: temurin
