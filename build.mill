@@ -1,12 +1,24 @@
 package build
 
-import mill._, scalalib._
+import mill._, scalalib._, publish._
 
 val circeVersion = "0.14.13"
 val scala3Version = "3.8.2"
 
-object sanely extends ScalaModule {
+object sanely extends ScalaModule with SonatypeCentralPublishModule {
   def scalaVersion = scala3Version
+  def artifactName = "circe-sanely-auto"
+  def publishVersion = "0.1.0"
+
+  def pomSettings = PomSettings(
+    description = "Drop-in replacement for circe's auto-derivation using sanely-automatic Scala 3 macros",
+    organization = "io.github.nguyenyou",
+    url = "https://github.com/nguyenyou/circe-sanely-auto",
+    licenses = Seq(License.MIT),
+    versionControl = VersionControl.github("nguyenyou", "circe-sanely-auto"),
+    developers = Seq(Developer("nguyenyou", "Nguyen Tu", "https://github.com/nguyenyou")),
+  )
+
   def mvnDeps = Task {
     super.mvnDeps() ++ Seq(
       mvn"io.circe::circe-core:$circeVersion"
