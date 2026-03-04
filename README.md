@@ -110,10 +110,10 @@ Type-parameterized case classes: `Box[A](a: A)`, `Qux[A](i: Int, a: A, j: Int)`.
 
 ### Phase 6 — Recursive Types
 
-Self-referencing types. The macro must break the recursion — can't inline-expand forever. Likely needs lazy val or by-name encoder/decoder.
+Self-referencing types. The macro breaks recursion using lazy val self-reference and container type detection.
 
-- [ ] Recursive sealed trait — `RecursiveAdtExample(Base(a: String) | Nested(r: RecursiveAdtExample))`
-- [ ] Recursive with Option — `RecursiveWithOptionExample(o: Option[RecursiveWithOptionExample])`
+- [x] Recursive sealed trait — `RecursiveAdtExample(Base(a: String) | Nested(r: RecursiveAdtExample))`
+- [x] Recursive with Option — `RecursiveWithOptionExample(o: Option[RecursiveWithOptionExample])`
 - [ ] Recursive enum — `RecursiveEnumAdt(Base(a: String) | Nested(r: RecursiveEnumAdt))`
 
 **What to test**: encode/decode trees of depth 0–3, `None` terminates recursion.

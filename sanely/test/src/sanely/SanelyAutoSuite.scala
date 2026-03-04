@@ -63,6 +63,13 @@ case class WrapsRenamed(r: Renamed, extra: Boolean)
 case class Box[A](a: A)
 case class Qux[A](i: Int, a: A, j: Int)
 
+// Phase 6 types — recursive
+sealed trait RecursiveAdtExample
+case class BaseAdtExample(a: String) extends RecursiveAdtExample
+case class NestedAdtExample(r: RecursiveAdtExample) extends RecursiveAdtExample
+
+case class RecursiveWithOptionExample(o: Option[RecursiveWithOptionExample])
+
 object SanelyAutoSuite extends TestSuite:
   val tests = Tests {
     test("Simple product round-trip") {
@@ -314,6 +321,51 @@ object SanelyAutoSuite extends TestSuite:
       val none = Outer(None)
       assert(some.asJson == Json.obj("a" -> Json.obj("field" -> Json.fromString("c"))))
       assert(none.asJson == Json.obj("a" -> Json.Null))
+    }
+
+    // --- Phase 6: Recursive Types ---
+
+    test("Recursive sealed trait round-trip (base case)") {
+      val v: RecursiveAdtExample = BaseAdtExample("hello")
+      val json = v.asJson
+      val expected = Json.obj("BaseAdtExample" -> Json.obj("a" -> Json.fromString("hello")))
+      assert(json == expected)
+      val decoded = decode[RecursiveAdtExample](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Recursive sealed trait round-trip (nested depth 1)") {
+      val v: RecursiveAdtExample = NestedAdtExample(BaseAdtExample("inner"))
+      val json = v.asJson
+      val expected = Json.obj("NestedAdtExample" -> Json.obj(
+        "r" -> Json.obj("BaseAdtExample" -> Json.obj("a" -> Json.fromString("inner")))
+      ))
+      assert(json == expected)
+      val decoded = decode[RecursiveAdtExample](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Recursive sealed trait round-trip (nested depth 2)") {
+      val v: RecursiveAdtExample = NestedAdtExample(NestedAdtExample(BaseAdtExample("deep")))
+      val json = v.asJson
+      val decoded = decode[RecursiveAdtExample](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Recursive with Option round-trip (None terminates)") {
+      val v = RecursiveWithOptionExample(None)
+      val json = v.asJson
+      val expected = Json.obj("o" -> Json.Null)
+      assert(json == expected)
+      val decoded = decode[RecursiveWithOptionExample](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Recursive with Option round-trip (nested depth 2)") {
+      val v = RecursiveWithOptionExample(Some(RecursiveWithOptionExample(Some(RecursiveWithOptionExample(None)))))
+      val json = v.asJson
+      val decoded = decode[RecursiveWithOptionExample](json.noSpaces)
+      assert(decoded == Right(v))
     }
 
     // --- Phase 1 extras ---
