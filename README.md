@@ -59,7 +59,7 @@ Each test is a roundtrip: `encode(a) |> decode == Right(a)`. Circe uses property
 Basic case classes with primitive/standard-library fields. Our macro already handles these via `Mirror.ProductOf` + `resolveOneEncoder`/`resolveOneDecoder` with `Expr.summon`.
 
 - [x] Multi-field product — `Simple(i: Int, s: String)`
-- [ ] Single-field product — `Wub(x: Long)`
+- [x] Single-field product — `Wub(x: Long)`
 - [ ] Nested product — `Person(name: String, age: Int, address: Address)`
 - [ ] Option field — `Outer(a: Option[Inner[String]])` *(needs Inner to derive first)*
 - [ ] List field — `Baz(xs: List[String])`
