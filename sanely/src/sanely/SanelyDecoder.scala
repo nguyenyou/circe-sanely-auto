@@ -57,6 +57,8 @@ object SanelyDecoder:
           def apply(c: HCursor): Decoder.Result[P] =
             if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
             else SanelyRuntime.decodeProductFields(c, $mirror, _names, _decoders)
+          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
+            SanelyRuntime.decodeProductFieldsAccumulating(c, $mirror, _names, _decoders)
       }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
@@ -103,6 +105,13 @@ object SanelyDecoder:
                 SanelyRuntime.decodeSum(c, key, _labels, _decoders, _isSubTrait)
               case None =>
                 Left(DecodingFailure("Expected JSON object for sum type", c.history))
+          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
+            c.keys match
+              case Some(keys) =>
+                val key = keys.find(_knownLabels.contains).getOrElse("")
+                SanelyRuntime.decodeSumAccumulating(c, key, _labels, _decoders, _isSubTrait)
+              case None =>
+                cats.data.Validated.invalidNel(DecodingFailure("Expected JSON object for sum type", c.history))
       }
 
     private def resolveFields[Types: Type, Labels: Type](
