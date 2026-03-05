@@ -31,9 +31,9 @@ object SanelyConfiguredEncoder:
           val selfRef: Expr[Encoder.AsObject[A]] = '{ _selfEnc }
           mirror match
             case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-              deriveProduct[A, types, labels](m, selfRef)
+              timer.time("topDerive") { deriveProduct[A, types, labels](m, selfRef) }
             case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-              deriveSum[A, types, labels](m, selfRef)
+              timer.time("topDerive") { deriveSum[A, types, labels](m, selfRef) }
         }
         _selfEnc
       }

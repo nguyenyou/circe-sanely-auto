@@ -23,6 +23,8 @@ Mill 1.1.2. Run from repo root:
 ./mill demo.run                 # run demo
 ./mill benchmark.sanely.compile # benchmark: our library
 ./mill benchmark.generic.compile # benchmark: circe-generic
+./mill benchmark-configured.sanely.compile   # configured benchmark: our library
+./mill benchmark-configured.generic.compile  # configured benchmark: circe-generic
 bash bench.sh 5                 # timed compile comparison
 ```
 
@@ -37,6 +39,7 @@ bash bench.sh 5                 # timed compile comparison
 | `compat/` | Circe compatibility tests (munit + discipline). Uses circe's own `CodecTests` |
 | `demo/` | Runnable examples |
 | `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
+| `benchmark-configured/` | Configured derivation benchmark. Three sub-modules: `sanely`, `generic`, `generic-compat` sharing `benchmark-configured/shared/src/` |
 
 ## Source Files
 
@@ -122,6 +125,7 @@ Update `CHANGELOG.md` with new features, bug fixes, and breaking changes. Use `g
 
 ## Known Issues
 
+- Configured macro profiling: `topDerive` is a **container category** that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, `resolveDefaults`. Category percentages sum > 100% due to nesting.
 - `Long.MaxValue`/`Long.MinValue` lose precision on Scala.js due to JSON number representation. Skipped via `Platform.isJS` (platform-specific sources in `test/src-jvm/` and `test/src-js/`).
 - `inline def derived` inside utest `test {}` blocks may not expand for generic types. Workaround: derive in a helper object outside the test block.
 
@@ -137,5 +141,7 @@ Test sources to match:
 ## Mill Notes
 
 - `benchmark/package.mill`: two modules share `benchmark/shared/src/` via `override def moduleDir`
+- `benchmark-configured/package.mill`: three modules (`sanely`, `generic`, `generic-compat`) share `benchmark-configured/shared/src/`
+- Module names with hyphens: use `benchmark-configured.sanely`, NOT `benchmark.configured`
 - Mill 1.x: override `moduleDir` (public API), not `millSourcePath` (internal)
 - `sanely/package.mill`: cross-compile via `PlatformScalaModule` with `jvm` and `js` sub-modules
