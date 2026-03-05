@@ -172,20 +172,21 @@ bash bench.sh --configured 5 # configured derivation (~230 types)
 
 | Suite | circe-sanely-auto | circe baseline | Speedup |
 |---|---|---|---|
-| **Auto derivation** (~300 types) | **3.64s** | 6.86s (circe-generic) | **1.9x** |
-| **Configured derivation** (~230 types) | **2.37s** | 2.83s (circe-core) | **1.19x** |
+| **Auto derivation** (~300 types) | **3.91s** | 6.94s (circe-generic) | **1.77x** |
+| **Configured derivation** (~230 types) | **2.08s** | 2.86s (circe-core) | **1.38x** |
 
 ### Why the difference?
 
-**Auto derivation** (1.9x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
+**Auto derivation** (1.77x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
 
-**Configured derivation** (19% faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations — runtime dispatch, builtin short-circuit, and container composition — reduce both macro expansion time and generated AST size.
+**Configured derivation** (38% faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations reduce both macro expansion time and generated AST size.
 
-Three optimizations drive this:
+Four optimizations drive this:
 
-1. **Builtin short-circuit** — primitive types (String, Int, Long, Double, Float, Boolean, Short, Byte, BigDecimal, BigInt) are resolved directly to their circe instances without calling `Expr.summonIgnoring`, saving ~66% of summonIgnoring calls.
-2. **Container composition** — containers of primitives or already-cached types (`Option[String]`, `List[Int]`, `Map[String, Double]`, `Option[CustomType]`, etc.) are composed directly using `buildContainerEncoder`/`buildContainerDecoder`, covering all 10 container types (Option, List, Vector, Set, Seq, Chain, NonEmptyList, NonEmptyVector, NonEmptySeq, NonEmptyChain). Saves ~12% more summonIgnoring calls.
-3. **Runtime dispatch** — instead of generating N nested `.add()` calls (products) or N if-then-else branches (sum types) in the macro AST, the macro builds flat `Array[Encoder]`/`Array[Decoder]` and delegates to runtime while-loops in `SanelyRuntime`, reducing generated AST size by ~30-50%.
+1. **Single-pass codec derivation** — `deriveConfiguredCodec` uses a dedicated macro that resolves both encoder and decoder for each field type in one traversal, sharing one cache, one `Mirror` summon, and one builtin check per type. Halves the number of macro expansions (230 vs 460).
+2. **Builtin short-circuit** — primitive types (String, Int, Long, Double, Float, Boolean, Short, Byte, BigDecimal, BigInt) are resolved directly to their circe instances without calling `Expr.summonIgnoring`, saving ~66% of summonIgnoring calls.
+3. **Container composition** — containers of primitives or already-cached types (`Option[String]`, `List[Int]`, `Map[String, Double]`, `Option[CustomType]`, etc.) are composed directly using `buildContainerEncoder`/`buildContainerDecoder`, covering all 10 container types (Option, List, Vector, Set, Seq, Chain, NonEmptyList, NonEmptyVector, NonEmptySeq, NonEmptyChain). Saves ~12% more summonIgnoring calls.
+4. **Runtime dispatch** — instead of generating N nested `.add()` calls (products) or N if-then-else branches (sum types) in the macro AST, the macro builds flat `Array[Encoder]`/`Array[Decoder]` and delegates to runtime while-loops in `SanelyRuntime`, reducing generated AST size by ~30-50%.
 
 ### JVM profiling (async-profiler)
 
@@ -193,37 +194,37 @@ JVM-level profiling with async-profiler shows where the Scala compiler spends ti
 
 #### Auto derivation — compiler workload
 
-| Phase | sanely (936 samples) | circe-generic (1262 samples) | Delta |
+| Phase | sanely (911 samples) | circe-generic (1252 samples) | Delta |
 |---|---|---|---|
-| core (types, symbols, contexts) | 408 (44%) | 593 (47%) | -31% |
-| ast (tree maps, accumulators) | 139 (15%) | 224 (18%) | -38% |
-| typer | 88 (9%) | 103 (8%) | -15% |
-| other (infra, denotations) | 106 (11%) | 129 (10%) | -18% |
-| transform (erasure, lambdalift) | 66 (7%) | 75 (6%) | -12% |
-| backend (bytecode, classfiles) | 79 (8%) | 54 (4%) | +46% |
-| macro inlines | 9 (1%) | 55 (4%) | **-84%** |
+| core (types, symbols, contexts) | 389 (43%) | 635 (51%) | -39% |
+| ast (tree maps, accumulators) | 112 (12%) | 193 (15%) | -42% |
+| typer | 92 (10%) | 102 (8%) | -10% |
+| other (infra, denotations) | 120 (13%) | 117 (9%) | +3% |
+| transform (erasure, lambdalift) | 76 (8%) | 73 (6%) | +4% |
+| backend (bytecode, classfiles) | 70 (8%) | 62 (5%) | +13% |
+| macro inlines | 17 (2%) | 43 (3%) | **-60%** |
 | macro quoted | 17 (2%) | 0 (0%) | sanely only |
-| typer implicits | 13 (1%) | 13 (1%) | same |
-| parsing | 9 (1%) | 8 (1%) | same |
-| **total compiler** | **936** | **1262** | **-26%** |
+| typer implicits | 8 (1%) | 8 (1%) | same |
+| parsing | 10 (1%) | 10 (1%) | same |
+| **total compiler** | **911** | **1252** | **-27%** |
 
 #### Configured derivation — compiler workload
 
-| Phase | sanely (772 samples) | circe-core (795 samples) | Delta |
+| Phase | sanely (734 samples) | circe-core (800 samples) | Delta |
 |---|---|---|---|
-| core (types, symbols, contexts) | 325 (42%) | 365 (46%) | -11% |
-| ast (tree maps, accumulators) | 101 (13%) | 97 (12%) | +4% |
-| typer | 77 (10%) | 69 (9%) | +12% |
-| other (infra, denotations) | 88 (11%) | 81 (10%) | +9% |
-| transform (erasure, lambdalift) | 78 (10%) | 65 (8%) | +20% |
-| backend (bytecode, classfiles) | 58 (8%) | 53 (7%) | +9% |
-| macro inlines | 9 (1%) | 31 (4%) | **-71%** |
-| macro quoted | 15 (2%) | 8 (1%) | +88% |
-| typer implicits | 10 (1%) | 12 (2%) | -17% |
+| core (types, symbols, contexts) | 309 (42%) | 379 (47%) | -18% |
+| ast (tree maps, accumulators) | 98 (13%) | 115 (14%) | -15% |
+| typer | 73 (10%) | 65 (8%) | +12% |
+| other (infra, denotations) | 89 (12%) | 86 (11%) | +3% |
+| transform (erasure, lambdalift) | 66 (9%) | 57 (7%) | +16% |
+| backend (bytecode, classfiles) | 61 (8%) | 48 (6%) | +27% |
+| macro inlines | 11 (1%) | 19 (2%) | **-42%** |
+| macro quoted | 8 (1%) | 6 (1%) | +33% |
+| typer implicits | 9 (1%) | 13 (2%) | -31% |
 | parsing | 7 (1%) | 9 (1%) | -22% |
-| **total compiler** | **772** | **795** | **-3%** |
+| **total compiler** | **734** | **800** | **-8%** |
 
-**Key pattern**: Sanely trades inlining for quote reflection. circe-generic/circe-core's `inline` + `summonInline` approach forces the compiler to do heavy inlining work (55 samples for auto, 31 for configured). Sanely's `Expr.summonIgnoring` approach shifts that work to the quote reflection phase (17/15 samples) which is cheaper. For auto derivation, the total compiler workload is **26% lighter**. For configured, the compiler-only difference is small (-3%) — the 19% wall-clock speedup comes primarily from reduced JIT/classload overhead due to simpler generated code.
+**Key pattern**: Sanely trades inlining for quote reflection. circe-generic/circe-core's `inline` + `summonInline` approach forces the compiler to do heavy inlining work (43 samples for auto, 19 for configured). Sanely's `Expr.summonIgnoring` approach shifts that work to the quote reflection phase (17/8 samples) which is cheaper. For auto derivation, the total compiler workload is **27% lighter**. For configured, single-pass codec derivation reduces compiler work by **8%** — the 38% wall-clock speedup comes from both reduced compiler work and reduced JIT/classload overhead due to fewer macro expansions (230 vs 460).
 
 ### Macro profiling
 
@@ -245,24 +246,24 @@ python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `summonIgnoring` | 1100ms | 45.8% | 660 | 1.67ms |
-| `derive` | 738ms | 30.7% | 586 | 1.26ms |
-| `summonMirror` | 88ms | 3.7% | 586 | 0.15ms |
+| `summonIgnoring` | 1112ms | 46.2% | 660 | 1.69ms |
+| `derive` | 779ms | 32.3% | 586 | 1.33ms |
+| `summonMirror` | 88ms | 3.6% | 586 | 0.15ms |
 | `subTraitDetect` | 47ms | 2.0% | 336 | 0.14ms |
 | `builtinHit` | — | — | 706 | — |
 | cache hits | — | — | 1714 (75%) | — |
-| overhead | 427ms | 17.8% | — | — |
+| overhead | 382ms | 15.9% | — | — |
 
-#### Configured derivation (460 expansions, 1.2s total macro time)
+#### Configured derivation (230 expansions, 1.1s total macro time)
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `topDerive`* | 1004ms | 84.7% | 460 | 2.18ms |
-| `summonIgnoring` | 311ms | 26.3% | 294 | 1.06ms |
-| `subTraitDetect` | 30ms | 2.5% | 138 | 0.21ms |
-| `resolveDefaults` | 9ms | 0.8% | 214 | 0.04ms |
-| `builtinHit` | — | — | 690 | — |
-| cache hits | — | — | 654 | — |
+| `topDerive`* | 977ms | 86.7% | 230 | 4.25ms |
+| `summonIgnoring` | 337ms | 29.9% | 294 | 1.15ms |
+| `subTraitDetect` | 20ms | 1.8% | 69 | 0.29ms |
+| `resolveDefaults` | 10ms | 0.9% | 214 | 0.05ms |
+| `builtinHit` | — | — | 345 | — |
+| cache hits | — | — | 327 | — |
 
 *`topDerive` is a container category that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, and `resolveDefaults`. Percentages sum > 100% due to nesting.
 
@@ -270,14 +271,14 @@ python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 
 | Metric | Auto | Configured |
 |---|---|---|
-| Total macro expansions | 308 | 460 |
+| Total macro expansions | 308 | 230 |
 | `summonIgnoring` calls | 660 | 294 |
-| Builtin short-circuit hits | 706 | 690 |
+| Builtin short-circuit hits | 706 | 345 |
 | Container composition hits | included in builtin | included in builtin |
-| Cache hit rate | 75% (1714 hits) | — (654 hits) |
-| summonIgnoring % of total | 46% | 26% |
+| Cache hit rate | 75% (1714 hits) | — (327 hits) |
+| summonIgnoring % of total | 46% | 30% |
 
-`summonIgnoring` (the compiler's implicit search) dominates auto derivation at 46%. Builtin short-circuiting and container composition resolve ~706 type lookups without calling `summonIgnoring` at all. For configured derivation, builtin hits account for 690 resolutions, reducing `summonIgnoring` calls by 70% (from ~984 to 294). The intra-expansion cache achieves a 75% hit rate in auto derivation, avoiding redundant derivations for repeated types within a single macro call.
+`summonIgnoring` (the compiler's implicit search) dominates auto derivation at 46%. Builtin short-circuiting and container composition resolve ~706 type lookups without calling `summonIgnoring` at all. For configured derivation, single-pass codec derivation halved the macro expansion count from 460 (separate CfgEncoder + CfgDecoder) to 230 (unified CfgCodec), while sharing one cache and one Mirror summon per type. The `summonIgnoring` call count stays at 294 (both encoder and decoder must still be summoned), but sub-trait detection halved from 138 to 69 calls. The intra-expansion cache achieves a 75% hit rate in auto derivation, avoiding redundant derivations for repeated types within a single macro call.
 
 ## Building
 
@@ -319,7 +320,7 @@ This entire library — every macro, every test, every line of build config, and
 - [ ] **Deduplicate `dealias` calls** — `TypeRepr.of[T].dealias` is called 3+ times for the same type in `resolveOneEncoder`: cache key, `tryResolveBuiltinEncoder`, and inner arg resolution. Compute once at the top and reuse.
 - [ ] **Profile untimed overhead** — 430ms (17%) is overhead not attributed to any timing category. Add timing around: cache key generation, `containsType` traversals, `resolveFields` tuple recursion, `Type.valueOfConstant`, Mirror pattern matching. Find whether it's one hot spot or distributed.
 - [ ] **Investigate cross-expansion caching** — each `inline given autoEncoder[A]` triggers an independent macro expansion with its own `exprCache`. If `Person` has field `Address`, both `autoEncoder[Person]` and `autoEncoder[Address]` independently derive `Address`. Emitting `lazy val` instances in a generated object could eliminate this redundancy. Needs investigation into impact on incremental compilation.
-- [ ] **Reduce transform+backend compiler phases** — JVM profile shows sanely's transform (64 samples) + backend (70) > circe-core's (52 + 52), meaning sanely generates more bytecode despite runtime dispatch. Investigate generated class count/size and look for further runtime method consolidation.
+- [ ] **Reduce transform+backend compiler phases** — JVM profile shows sanely's transform (66 samples) + backend (61) > circe-core's (57 + 48), meaning sanely generates more bytecode despite runtime dispatch. Investigate generated class count/size and look for further runtime method consolidation.
 
 ## Contributing
 
