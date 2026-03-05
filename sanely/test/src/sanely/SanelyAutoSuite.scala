@@ -138,6 +138,10 @@ enum RecursiveEnumAdt:
 // Recursive with Seq
 case class RecursiveWithSeq(children: Seq[RecursiveWithSeq], value: String)
 
+// Map with non-String builtin key type
+case class IntKeyMap(data: Map[Int, String])
+case class LongKeyMap(data: Map[Long, Boolean])
+
 // Recursive with Map
 case class RecursiveWithMap(children: Map[String, RecursiveWithMap], value: String)
 
@@ -713,6 +717,22 @@ object SanelyAutoSuite extends TestSuite:
       val v = RecursiveWithSeq(Seq(RecursiveWithSeq(Seq.empty, "child")), "parent")
       val json = v.asJson
       val decoded = decode[RecursiveWithSeq](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Map with non-String builtin key types ---
+
+    test("Map[Int, String] round-trip") {
+      val v = IntKeyMap(Map(1 -> "a", 2 -> "b"))
+      val json = v.asJson
+      val decoded = decode[IntKeyMap](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Map[Long, Boolean] round-trip") {
+      val v = LongKeyMap(Map(100L -> true, 200L -> false))
+      val json = v.asJson
+      val decoded = decode[LongKeyMap](json.noSpaces)
       assert(decoded == Right(v))
     }
 

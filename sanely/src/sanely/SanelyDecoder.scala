@@ -203,15 +203,28 @@ object SanelyDecoder:
                   dec.map(_.asInstanceOf[Expr[Decoder[T]]])
             }
           case AppliedType(tycon, List(keyArg, valArg))
-            if keyArg.dealias =:= TypeRepr.of[String] && tycon.typeSymbol.fullName.endsWith(".Map") =>
-            resolvePrimDecoder(valArg.dealias).flatMap { innerDec =>
-              valArg.asType match
-                case '[v] =>
-                  val inner = innerDec.asInstanceOf[Expr[Decoder[v]]]
-                  Some('{ Decoder.decodeMap[String, v](using io.circe.KeyDecoder.decodeKeyString, $inner) }.asInstanceOf[Expr[Decoder[T]]])
-            }
+            if tycon.typeSymbol.fullName.endsWith(".Map") =>
+            for
+              keyDec <- resolveBuiltinKeyDecoder(keyArg.dealias)
+              valDec <- resolvePrimDecoder(valArg.dealias)
+              result <- (keyArg.asType, valArg.asType) match
+                case ('[k], '[v]) =>
+                  val kd = keyDec.asInstanceOf[Expr[io.circe.KeyDecoder[k]]]
+                  val vd = valDec.asInstanceOf[Expr[Decoder[v]]]
+                  Some('{ Decoder.decodeMap[k, v](using $kd, $vd) }.asInstanceOf[Expr[Decoder[T]]])
+                case _ => None
+            yield result
           case _ => None
       }
+
+    private def resolveBuiltinKeyDecoder(tpe: TypeRepr): Option[Expr[io.circe.KeyDecoder[?]]] =
+      if tpe =:= TypeRepr.of[String] then Some('{ io.circe.KeyDecoder.decodeKeyString })
+      else if tpe =:= TypeRepr.of[Int] then Some('{ io.circe.KeyDecoder.decodeKeyInt })
+      else if tpe =:= TypeRepr.of[Long] then Some('{ io.circe.KeyDecoder.decodeKeyLong })
+      else if tpe =:= TypeRepr.of[Double] then Some('{ io.circe.KeyDecoder.decodeKeyDouble })
+      else if tpe =:= TypeRepr.of[Short] then Some('{ io.circe.KeyDecoder.decodeKeyShort })
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ io.circe.KeyDecoder.decodeKeyByte })
+      else None
 
     private def resolvePrimDecoder(tpe: TypeRepr): Option[Expr[Decoder[?]]] =
       tpe match
@@ -284,7 +297,8 @@ object SanelyDecoder:
           (keyArg.asType, valArg.asType) match
             case ('[k], '[v]) =>
               val innerDec = selfRef.asInstanceOf[Expr[Decoder[v]]]
-              Expr.summon[io.circe.KeyDecoder[k]] match
+              resolveBuiltinKeyDecoder(keyArg.dealias).map(_.asInstanceOf[Expr[io.circe.KeyDecoder[k]]])
+                .orElse(Expr.summon[io.circe.KeyDecoder[k]]) match
                 case Some(keyDec) =>
                   '{ Decoder.decodeMap[k, v](using $keyDec, $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
                 case None =>
@@ -302,7 +316,8 @@ object SanelyDecoder:
           (keyArg.asType, valArg.asType) match
             case ('[k], '[v]) =>
               val innerDec = constructRecursiveDecoder[v](valArg, selfRef)
-              Expr.summon[io.circe.KeyDecoder[k]] match
+              resolveBuiltinKeyDecoder(keyArg.dealias).map(_.asInstanceOf[Expr[io.circe.KeyDecoder[k]]])
+                .orElse(Expr.summon[io.circe.KeyDecoder[k]]) match
                 case Some(keyDec) =>
                   '{ Decoder.decodeMap[k, v](using $keyDec, $innerDec) }.asInstanceOf[Expr[Decoder[T]]]
                 case None =>
