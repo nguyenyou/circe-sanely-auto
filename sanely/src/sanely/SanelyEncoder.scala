@@ -120,7 +120,7 @@ object SanelyEncoder:
         return selfRef.asInstanceOf[Expr[Encoder[T]]]
 
       // Cache check first — hits 75% of the time, skips containsType traversal
-      val cacheKey = tpe.dealias.show
+      val cacheKey = MacroUtils.cheapTypeKey(tpe)
       exprCache.get(cacheKey) match
         case Some(cached) =>
           timer.count("cacheHit")
@@ -171,7 +171,7 @@ object SanelyEncoder:
       resolvePrimEncoder(tpe).map(_.asInstanceOf[Expr[Encoder[T]]]).orElse {
         tpe match
           case AppliedType(tycon, List(arg)) =>
-            val innerOpt = resolvePrimEncoder(arg.dealias).orElse(exprCache.get(arg.dealias.show))
+            val innerOpt = resolvePrimEncoder(arg.dealias).orElse(exprCache.get(MacroUtils.cheapTypeKey(arg)))
             innerOpt.flatMap { innerEnc =>
               arg.asType match
                 case '[a] =>
@@ -182,7 +182,7 @@ object SanelyEncoder:
             if tycon.typeSymbol.fullName.endsWith(".Map") =>
             for
               keyEnc <- resolveBuiltinKeyEncoder(keyArg.dealias)
-              valEnc <- resolvePrimEncoder(valArg.dealias).orElse(exprCache.get(valArg.dealias.show))
+              valEnc <- resolvePrimEncoder(valArg.dealias).orElse(exprCache.get(MacroUtils.cheapTypeKey(valArg)))
               result <- (keyArg.asType, valArg.asType) match
                 case ('[k], '[v]) =>
                   val ke = keyEnc.asInstanceOf[Expr[io.circe.KeyEncoder[k]]]
