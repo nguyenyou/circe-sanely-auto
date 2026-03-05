@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.0] - 2026-03-05
+
+### Performance
+- **Single-pass codec derivation** — `deriveCodec` and `deriveConfiguredCodec` now derive both encoder and decoder in a single macro expansion instead of composing two separate expansions. Shares mirror summoning, `containsType` traversal, `summonIgnoring` calls, builtin resolution, and expression cache across encoder+decoder derivation. Reduces configured derivation macro expansions from 460 to 230 and sub-trait detections from 138 to 69.
+- **Auto benchmark**: 3.91s median (was 3.17s after v0.8.0 optimizations), 1.77x faster than circe-generic (6.94s)
+- **Configured benchmark**: 2.08s median (was 2.90s), 1.38x faster than circe-core (2.86s)
+
+### Changed
+- `SanelyCodec.scala` rewritten from 17-line composer to full `CodecDerivation` macro (~650 lines) with shared `exprCache` storing `(Expr[Encoder[?]], Expr[Decoder[?]])` pairs
+- `SanelyConfiguredCodec.scala` rewritten from 19-line composer to full configured `CodecDerivation` macro (~760 lines) with configuration threading (transforms, defaults, strict decoding, discriminator)
+
 ## [0.10.0] - 2026-03-05
 
 ### Added
