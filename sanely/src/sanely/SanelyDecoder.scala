@@ -138,11 +138,7 @@ object SanelyDecoder:
       if tpe =:= selfType then
         return selfRef.asInstanceOf[Expr[Decoder[T]]]
 
-      // Check if T contains the recursive type in its type params
-      if containsType(tpe, selfType) then
-        return constructRecursiveDecoder[T](tpe, selfRef)
-
-      // Safe path: no recursion risk — check cache first
+      // Cache check first — hits 75% of the time, skips containsType traversal
       val cacheKey = tpe.dealias.show
       exprCache.get(cacheKey) match
         case Some(cached) =>
@@ -156,6 +152,11 @@ object SanelyDecoder:
           exprCache(cacheKey) = dec
           return dec
         case None => ()
+
+      // Check if T contains the recursive type in its type params
+      // Must check BEFORE Expr.summonIgnoring to avoid exponential implicit search
+      if containsType(tpe, selfType) then
+        return constructRecursiveDecoder[T](tpe, selfRef)
 
       val resolved: Expr[Decoder[T]] =
         timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match

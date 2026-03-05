@@ -174,31 +174,31 @@ Results on M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **3.42s** | |
-| **circe-generic** | **6.35s** | 1.9x slower |
+| **circe-sanely-auto** | **3.13s** | |
+| **circe-generic** | **6.27s** | 2.0x slower |
 
 ### Configured derivation
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **2.24s** | |
-| **circe-core** | **2.58s** | 1.15x slower |
+| **circe-sanely-auto** | **2.27s** | |
+| **circe-core** | **2.60s** | 1.15x slower |
 
 ### Why the difference?
 
-The speedup is most dramatic for **auto derivation** (1.9x). With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
+The speedup is most dramatic for **auto derivation** (2.0x). With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
 
-**Configured derivation** is also faster (13%). Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations — runtime dispatch, builtin short-circuit, and container+builtin composition — reduce both macro expansion time and generated AST size enough to produce a measurable speedup. JVM-level profiling (async-profiler) confirms that sanely produces a lighter compiler workload:
+**Configured derivation** is also faster (15%). Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations — runtime dispatch, builtin short-circuit, and container+builtin composition — reduce both macro expansion time and generated AST size enough to produce a measurable speedup. JVM-level profiling (async-profiler) confirms that sanely produces a lighter compiler workload:
 
 | Compiler phase | circe-sanely-auto | circe-core | Delta |
 |---|---|---|---|
-| typer | 65 samples | 71 samples | -8% |
-| macro inlines | 10 | 31 | -68% (sanely does less inlining) |
-| macro quoted | 16 | 7 | +129% (sanely does more quote reflection) |
-| typer implicits | 10 | 6 | +67% |
-| transform | 64 | 52 | +23% |
-| backend | 70 | 52 | +35% |
-| **total compiler** | **780** | **791** | **-1% (sanely is lighter)** |
+| typer | 101 samples | 103 samples | -2% |
+| macro inlines | 12 | 51 | -76% (sanely does less inlining) |
+| macro quoted | 11 | 8 | +38% (sanely does more quote reflection) |
+| typer implicits | 8 | 11 | -27% |
+| transform | 78 | 66 | +18% |
+| backend | 63 | 48 | +31% |
+| **total compiler** | **924** | **1280** | **-28% (sanely is lighter)** |
 
 Sanely trades inlining time for quoted reflection time — circe-core's `inline` + `summonInline` approach requires the compiler to do more inlining work, while sanely's `Expr.summonIgnoring` approach does more work in the quote reflection phase. The net effect favors sanely because runtime dispatch reduces the generated AST that the transform and backend phases must process.
 
@@ -226,28 +226,28 @@ SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `summonIgnoring` | 1158ms | 46.2% | 660 | 1.75ms |
-| `derive` | 776ms | 31.0% | 586 | 1.32ms |
-| `summonMirror` | 89ms | 3.5% | 586 | 0.15ms |
-| `subTraitDetect` | 53ms | 2.1% | 336 | 0.16ms |
+| `summonIgnoring` | 1150ms | 46.5% | 660 | 1.74ms |
+| `derive` | 735ms | 29.7% | 586 | 1.25ms |
+| `summonMirror` | 89ms | 3.6% | 586 | 0.15ms |
+| `subTraitDetect` | 58ms | 2.3% | 336 | 0.17ms |
 | `builtinHit` | — | — | 706 | — |
-| overhead | 430ms | 17.2% | — | — |
+| overhead | 445ms | 18.0% | — | — |
 | cache hits | — | — | 1714 (75%) | — |
 
 **Configured derivation profile** (460 expansions, ~1.2s total macro time):
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `topDerive` | 1029ms | 84.9%* | 460 | 2.24ms |
-| `summonIgnoring` | 315ms | 26.0% | 294 | 1.07ms |
-| `subTraitDetect` | 30ms | 2.5% | 138 | 0.22ms |
-| `resolveDefaults` | 10ms | 0.8% | 214 | 0.05ms |
+| `topDerive` | 1016ms | 84.5%* | 460 | 2.21ms |
+| `summonIgnoring` | 309ms | 25.7% | 294 | 1.05ms |
+| `subTraitDetect` | 27ms | 2.3% | 138 | 0.20ms |
+| `resolveDefaults` | 9ms | 0.8% | 214 | 0.04ms |
 | `builtinHit` | — | — | 690 | — |
 | cache hits | — | — | 654 | — |
 
 *`topDerive` is a container category that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, and `resolveDefaults`.
 
-**Key insight**: `summonIgnoring` (the compiler's implicit search via `Expr.summonIgnoring`) dominates auto derivation at 46%. Builtin short-circuiting and container+builtin composition resolve ~706 type lookups without calling `summonIgnoring` at all (52% fewer calls vs without the optimization). For configured derivation, builtin hits account for 690 resolutions, reducing `summonIgnoring` calls by 70% (from 984 to 294). The intra-expansion cache achieves a 75% hit rate, avoiding redundant derivations for repeated types within a single macro call.
+**Key insight**: `summonIgnoring` (the compiler's implicit search via `Expr.summonIgnoring`) dominates auto derivation at 47%. Builtin short-circuiting and container+builtin composition resolve ~706 type lookups without calling `summonIgnoring` at all (52% fewer calls vs without the optimization). For configured derivation, builtin hits account for 690 resolutions, reducing `summonIgnoring` calls by 70% (from 984 to 294). The intra-expansion cache achieves a 75% hit rate, avoiding redundant derivations for repeated types within a single macro call.
 
 ## Building
 
@@ -280,7 +280,7 @@ This entire library — every macro, every test, every line of build config, and
 - [x] **Enable `-Werror` in CI** — all modules compile with `-Werror` (Scala 3's replacement for `-Xfatal-warnings`), ensuring macro-generated code produces zero compiler warnings. Users with strict linting never need `@nowarn` annotations for code they didn't write.
 - [x] **Test coverage gaps** — added tests for: generic context derivation (type params not yet known), semiauto `derived` inside companion not causing infinite recursion, Tuple/Either fields.
 - [ ] **(P1) Single-pass codec derivation (`deriveCodec`, `deriveConfiguredCodec`)** — today codec derivation composes separate decoder + encoder derivations, which duplicates macro work and implicit search. Add a dedicated codec macro path that shares one type-resolution cache and one traversal.
-- [ ] **(P1) Reorder resolution: cache before `containsType`** — `resolveOneEncoder`/`resolveOneDecoder` currently call `containsType` (recursive type tree traversal) before checking the `exprCache`. For non-recursive types (the vast majority), `containsType` returns false and falls through to the cache check anyway. Moving cache check first skips both `containsType` and builtin check on cache hits.
+- [x] **(P1) Reorder resolution: cache before `containsType`** — `resolveOneEncoder`/`resolveOneDecoder` now check `exprCache` before calling `containsType` (recursive type tree traversal). For non-recursive types (the vast majority), cache hits skip both `containsType` and builtin check entirely.
 - [ ] **(P1) Container composition for non-builtin inner types** — `tryResolveBuiltinEncoder` for `Option[T]`, `List[T]`, etc. currently requires inner `T` to be a primitive. If `T` is a user type already in cache, it returns `None` and falls through to `summonIgnoring`. Composing container codecs from any resolved inner encoder (cache or derived) would eliminate many `summonIgnoring` calls on `Option[CustomType]`, `List[CustomType]`, `Map[String, CustomType]`.
 - [ ] **(P2) Cheaper cache key** — `tpe.dealias.show` converts the entire type tree to a human-readable string on every field resolution (~2000+ calls). Use a cheaper representation (e.g., `TypeRepr` hash-based lookup or `.dealias.toString`).
 - [ ] **Negative builtin cache** — `tryResolveBuiltinEncoder` is called for every non-cached type. When it returns `None`, the same type will be re-checked in subsequent expansions. Cache failures to skip repeated pattern matching on known non-builtin types.

@@ -119,12 +119,7 @@ object SanelyEncoder:
       if tpe =:= selfType then
         return selfRef.asInstanceOf[Expr[Encoder[T]]]
 
-      // Check if T contains the recursive type in its type params (e.g., Option[A], List[A])
-      // Must check BEFORE Expr.summonIgnoring to avoid exponential implicit search
-      if containsType(tpe, selfType) then
-        return constructRecursiveEncoder[T](tpe, selfRef)
-
-      // Safe path: no recursion risk — check cache first
+      // Cache check first — hits 75% of the time, skips containsType traversal
       val cacheKey = tpe.dealias.show
       exprCache.get(cacheKey) match
         case Some(cached) =>
@@ -138,6 +133,11 @@ object SanelyEncoder:
           exprCache(cacheKey) = enc
           return enc
         case None => ()
+
+      // Check if T contains the recursive type in its type params (e.g., Option[A], List[A])
+      // Must check BEFORE Expr.summonIgnoring to avoid exponential implicit search
+      if containsType(tpe, selfType) then
+        return constructRecursiveEncoder[T](tpe, selfRef)
 
       val resolved: Expr[Encoder[T]] =
         timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*)) match
