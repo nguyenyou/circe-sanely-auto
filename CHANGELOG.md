@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.0] - 2026-03-05
+
+### Added
+- **Literal/singleton type support** — detect `ConstantType` (literal `"hello"`, `42`, `true`, etc.) at compile time; encoders emit the literal value directly, decoders validate the exact value and produce typed error messages on mismatch.
+- **Circe-compatible error messages** — decoder errors now match circe's format: `WrongTypeExpectation` for non-object inputs, typed "has no class/object/case named" messages, "could not find discriminator field" format, strict decoding with type/field names.
+- **Builtin key encoder/decoder resolution** — `KeyEncoder`/`KeyDecoder` for `String`, `Int`, `Long`, `Double`, `Short`, `Byte` are now resolved directly without implicit search. Extends container+builtin composition from `Map[String, V]` to `Map[K, V]` for all builtin key types.
+- **Full compat test coverage** — 318 compatibility tests (up from 253), covering auto-derivation (Box, Vegetable, RecursiveEnum, TaggedMember, LongSum, LongEnum), semiauto (SFoo/SBar composition, local classes, strict val evaluation), configured (exact error messages, DownField paths, field name collision hierarchies), and configured enum (compileErrors test).
+- 6 new unit tests: literal type fields (string, int, boolean, long) with rejection tests, `Map[Int, String]` and `Map[Long, Boolean]` round-trips.
+- Unit test count: 122 → 124; compat test count: 253 → 318; total: 442 tests.
+
 ## [0.9.0] - 2026-03-05
 
 ### Fixed

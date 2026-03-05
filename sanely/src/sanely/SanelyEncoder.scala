@@ -185,15 +185,28 @@ object SanelyEncoder:
                   enc.map(_.asInstanceOf[Expr[Encoder[T]]])
             }
           case AppliedType(tycon, List(keyArg, valArg))
-            if keyArg.dealias =:= TypeRepr.of[String] && tycon.typeSymbol.fullName.endsWith(".Map") =>
-            resolvePrimEncoder(valArg.dealias).flatMap { innerEnc =>
-              valArg.asType match
-                case '[v] =>
-                  val inner = innerEnc.asInstanceOf[Expr[Encoder[v]]]
-                  Some('{ Encoder.encodeMap[String, v](using io.circe.KeyEncoder.encodeKeyString, $inner) }.asInstanceOf[Expr[Encoder[T]]])
-            }
+            if tycon.typeSymbol.fullName.endsWith(".Map") =>
+            for
+              keyEnc <- resolveBuiltinKeyEncoder(keyArg.dealias)
+              valEnc <- resolvePrimEncoder(valArg.dealias)
+              result <- (keyArg.asType, valArg.asType) match
+                case ('[k], '[v]) =>
+                  val ke = keyEnc.asInstanceOf[Expr[io.circe.KeyEncoder[k]]]
+                  val ve = valEnc.asInstanceOf[Expr[Encoder[v]]]
+                  Some('{ Encoder.encodeMap[k, v](using $ke, $ve) }.asInstanceOf[Expr[Encoder[T]]])
+                case _ => None
+            yield result
           case _ => None
       }
+
+    private def resolveBuiltinKeyEncoder(tpe: TypeRepr): Option[Expr[io.circe.KeyEncoder[?]]] =
+      if tpe =:= TypeRepr.of[String] then Some('{ io.circe.KeyEncoder.encodeKeyString })
+      else if tpe =:= TypeRepr.of[Int] then Some('{ io.circe.KeyEncoder.encodeKeyInt })
+      else if tpe =:= TypeRepr.of[Long] then Some('{ io.circe.KeyEncoder.encodeKeyLong })
+      else if tpe =:= TypeRepr.of[Double] then Some('{ io.circe.KeyEncoder.encodeKeyDouble })
+      else if tpe =:= TypeRepr.of[Short] then Some('{ io.circe.KeyEncoder.encodeKeyShort })
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ io.circe.KeyEncoder.encodeKeyByte })
+      else None
 
     private def resolvePrimEncoder(tpe: TypeRepr): Option[Expr[Encoder[?]]] =
       tpe match
@@ -263,7 +276,8 @@ object SanelyEncoder:
           (keyArg.asType, valArg.asType) match
             case ('[k], '[v]) =>
               val innerEnc = selfRef.asInstanceOf[Expr[Encoder[v]]]
-              Expr.summon[io.circe.KeyEncoder[k]] match
+              resolveBuiltinKeyEncoder(keyArg.dealias).map(_.asInstanceOf[Expr[io.circe.KeyEncoder[k]]])
+                .orElse(Expr.summon[io.circe.KeyEncoder[k]]) match
                 case Some(keyEnc) =>
                   '{ Encoder.encodeMap[k, v](using $keyEnc, $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
                 case None =>
@@ -281,7 +295,8 @@ object SanelyEncoder:
           (keyArg.asType, valArg.asType) match
             case ('[k], '[v]) =>
               val innerEnc = constructRecursiveEncoder[v](valArg, selfRef)
-              Expr.summon[io.circe.KeyEncoder[k]] match
+              resolveBuiltinKeyEncoder(keyArg.dealias).map(_.asInstanceOf[Expr[io.circe.KeyEncoder[k]]])
+                .orElse(Expr.summon[io.circe.KeyEncoder[k]]) match
                 case Some(keyEnc) =>
                   '{ Encoder.encodeMap[k, v](using $keyEnc, $innerEnc) }.asInstanceOf[Expr[Encoder[T]]]
                 case None =>
