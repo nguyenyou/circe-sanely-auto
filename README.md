@@ -270,7 +270,11 @@ This entire library — every macro, every test, every line of build config, and
 - [x] **Runtime dispatch for generated code** — instead of emitting N nested `.add()` calls or N if-then-else branches in the macro AST, build flat `Array[Encoder]`/`Array[Decoder]` at compile time and delegate to runtime while-loops in `SanelyRuntime`. Reduces generated AST size by ~30-50%.
 - [x] **Builtin short-circuit for primitive types** — resolve String, Int, Long, Double, Float, Boolean, Short, Byte, BigDecimal, BigInt directly to their circe instances without calling `Expr.summonIgnoring`. Saves ~66% of summonIgnoring calls in configured derivation.
 - [x] **Profile macro expansion** — compile-time profiling via `SANELY_PROFILE=true` tracks `summonIgnoring`, `summonMirror`, `derive`, `subTraitDetect`, `resolveDefaults`, `builtinHit`, and cache hits per expansion.
-- [ ] **Accumulating decoder** (`decodeAccumulating`) — generate both fail-fast and accumulating decode paths, matching circe-generic's behavior for collecting all errors instead of stopping at the first.
+- [ ] **Container + builtin composition** — extend builtin short-circuit to handle containers of primitives: `Option[String]`, `List[Int]`, `Map[String, Double]`, etc. Emit `Decoder.decodeList(using Decoder.decodeInt)` directly without calling `Expr.summonIgnoring` for the inner type. Expected ~10-15% further reduction in summonIgnoring calls.
+- [ ] **Accumulating decoder** (`decodeAccumulating`) — add a `failFast: Boolean` parameter to runtime decode methods; when false, collect all field errors into `ValidatedNel` instead of short-circuiting on the first. Single derivation pass, runtime branch. Matches circe-generic's behavior.
+- [ ] **Literal/singleton type handling** — detect literal types (`"hello"`, `42`) and case object singletons at compile time; emit direct value references instead of going through encoder/decoder machinery.
+- [ ] **Ignore `Encoder.derived`/`Decoder.derived` from circe-core** — add circe-core's own `derived` methods to `cachedIgnoreSymbols` so they don't interfere with `Expr.summonIgnoring` when circe-core is on the classpath.
+- [ ] **Improved error messages** — when derivation fails, report what was tried and why each approach failed (builtin miss, summonIgnoring miss, no Mirror) instead of a single generic message.
 - [ ] **Derive key encoders/decoders inline for built-in types** — generate `key.toString` directly for `Int`, `Long`, etc. instead of summoning `KeyEncoder[K]` via implicit search.
 
 ## Contributing
