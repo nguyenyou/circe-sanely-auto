@@ -171,24 +171,18 @@ object SanelyEncoder:
       resolvePrimEncoder(tpe).map(_.asInstanceOf[Expr[Encoder[T]]]).orElse {
         tpe match
           case AppliedType(tycon, List(arg)) =>
-            resolvePrimEncoder(arg.dealias).flatMap { innerEnc =>
+            val innerOpt = resolvePrimEncoder(arg.dealias).orElse(exprCache.get(arg.dealias.show))
+            innerOpt.flatMap { innerEnc =>
               arg.asType match
                 case '[a] =>
                   val inner = innerEnc.asInstanceOf[Expr[Encoder[a]]]
-                  val enc: Option[Expr[Encoder[?]]] = tycon.typeSymbol.fullName match
-                    case "scala.Option" => Some('{ Encoder.encodeOption[a](using $inner) })
-                    case s if s.endsWith(".List") => Some('{ Encoder.encodeList[a](using $inner) })
-                    case s if s.endsWith(".Vector") => Some('{ Encoder.encodeVector[a](using $inner) })
-                    case s if s.endsWith(".Set") => Some('{ Encoder.encodeSet[a](using $inner) })
-                    case s if s.endsWith(".Seq") => Some('{ Encoder.encodeSeq[a](using $inner) })
-                    case _ => None
-                  enc.map(_.asInstanceOf[Expr[Encoder[T]]])
+                  buildContainerEncoder[T, a](tycon, inner)
             }
           case AppliedType(tycon, List(keyArg, valArg))
             if tycon.typeSymbol.fullName.endsWith(".Map") =>
             for
               keyEnc <- resolveBuiltinKeyEncoder(keyArg.dealias)
-              valEnc <- resolvePrimEncoder(valArg.dealias)
+              valEnc <- resolvePrimEncoder(valArg.dealias).orElse(exprCache.get(valArg.dealias.show))
               result <- (keyArg.asType, valArg.asType) match
                 case ('[k], '[v]) =>
                   val ke = keyEnc.asInstanceOf[Expr[io.circe.KeyEncoder[k]]]

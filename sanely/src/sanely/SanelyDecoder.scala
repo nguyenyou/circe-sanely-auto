@@ -190,24 +190,18 @@ object SanelyDecoder:
       resolvePrimDecoder(tpe).map(_.asInstanceOf[Expr[Decoder[T]]]).orElse {
         tpe match
           case AppliedType(tycon, List(arg)) =>
-            resolvePrimDecoder(arg.dealias).flatMap { innerDec =>
+            val innerOpt = resolvePrimDecoder(arg.dealias).orElse(exprCache.get(arg.dealias.show))
+            innerOpt.flatMap { innerDec =>
               arg.asType match
                 case '[a] =>
                   val inner = innerDec.asInstanceOf[Expr[Decoder[a]]]
-                  val dec: Option[Expr[Decoder[?]]] = tycon.typeSymbol.fullName match
-                    case "scala.Option" => Some('{ Decoder.decodeOption[a](using $inner) })
-                    case s if s.endsWith(".List") => Some('{ Decoder.decodeList[a](using $inner) })
-                    case s if s.endsWith(".Vector") => Some('{ Decoder.decodeVector[a](using $inner) })
-                    case s if s.endsWith(".Set") => Some('{ Decoder.decodeSet[a](using $inner) })
-                    case s if s.endsWith(".Seq") => Some('{ Decoder.decodeSeq[a](using $inner) })
-                    case _ => None
-                  dec.map(_.asInstanceOf[Expr[Decoder[T]]])
+                  buildContainerDecoder[T, a](tycon, inner)
             }
           case AppliedType(tycon, List(keyArg, valArg))
             if tycon.typeSymbol.fullName.endsWith(".Map") =>
             for
               keyDec <- resolveBuiltinKeyDecoder(keyArg.dealias)
-              valDec <- resolvePrimDecoder(valArg.dealias)
+              valDec <- resolvePrimDecoder(valArg.dealias).orElse(exprCache.get(valArg.dealias.show))
               result <- (keyArg.asType, valArg.asType) match
                 case ('[k], '[v]) =>
                   val kd = keyDec.asInstanceOf[Expr[io.circe.KeyDecoder[k]]]
