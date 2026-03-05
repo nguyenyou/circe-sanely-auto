@@ -276,6 +276,8 @@ This entire library — every macro, every test, every line of build config, and
 - [ ] **Ignore `Encoder.derived`/`Decoder.derived` from circe-core** — add circe-core's own `derived` methods to `cachedIgnoreSymbols` so they don't interfere with `Expr.summonIgnoring` when circe-core is on the classpath.
 - [ ] **Improved error messages** — when derivation fails, report what was tried and why each approach failed (builtin miss, summonIgnoring miss, no Mirror) instead of a single generic message.
 - [ ] **Derive key encoders/decoders inline for built-in types** — generate `key.toString` directly for `Int`, `Long`, etc. instead of summoning `KeyEncoder[K]` via implicit search.
+- [ ] **Enable `-Xfatal-warnings` in CI** — ensure macro-generated code produces zero compiler warnings so users with strict linting never need `@nowarn` annotations for code they didn't write.
+- [ ] **Test coverage gaps** — add tests for: generic context derivation (type params not yet known), semiauto `derived` inside companion not causing infinite recursion, Tuple/Either fields.
 
 ## Contributing
 
