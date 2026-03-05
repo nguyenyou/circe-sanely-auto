@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0] - 2026-03-05
+
+### Fixed
+- **Hierarchical enum codec with diamond inheritance** — `SanelyEnumCodec` now correctly handles sealed trait hierarchies where a singleton extends multiple intermediate traits (diamond structure). Previously, `mirror.ordinal()` returned the ordinal of the intermediate trait rather than the leaf, causing ordinal collisions (e.g., both `B` and `D` mapping to ordinal 1). Now uses reference equality (`eq`) on singleton instances with deduplication, eliminating the collision.
+
+### Added
+- **Configured derivation compat tests** (`ConfiguredDerivesSuite`) — 25 tests ported from circe's `ConfiguredDerivesSuite` covering: member name transforms (snake_case, SCREAMING_SNAKE_CASE, kebab-case, PascalCase), default values (Option with/without defaults, null handling, generic classes), discriminator field, constructor name transforms, combined configuration options, strict decoding (sum types, product types, accumulating errors), multi-level hierarchies (2-level, 3-level with field name conflicts), and recursive discriminated types.
+- **Configured enum compat tests** (`ConfiguredEnumDerivesSuites`) — 11 tests ported from circe's `ConfiguredEnumDerivesSuites` covering: codec property tests, decode failure for unknown cases, constructor name transforms, and hierarchical enums with diamond inheritance.
+- **Expanded auto derivation compat tests** — added `RecursiveAdtExample`, `RecursiveWithOptionExample`, `ADTWithSubTraitExample`, `Outer` (nested with Option), `LongClass` (33 fields stress test), "nested sums not encoded redundantly" test, and "derived encoder respects existing instances" test.
+- **Expanded semiauto derivation compat tests** — added `Adt1` (class+object), `Adt2` (all objects), `Adt3` (empty class+object), `Adt4` (nested sub-traits), and "decoder ignores superfluous keys" test.
+- Compat test count: 160 → 253 (+93 tests)
+
 ## [0.8.0] - 2026-03-05
 
 ### Performance
