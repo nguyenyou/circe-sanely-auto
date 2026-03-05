@@ -34,7 +34,7 @@ object `package` extends mill.Module {
     }
 
     def scalacOptions = Task {
-      super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+      super.scalacOptions() ++ Seq("-Xmax-inlines", "64", "-Werror")
     }
 
     trait SharedTests extends ScalaTests with TestModule.Utest {
@@ -46,7 +46,7 @@ object `package` extends mill.Module {
         )
       }
       def scalacOptions = Task {
-        super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+        super.scalacOptions() ++ Seq("-Xmax-inlines", "64", "-Werror")
       }
     }
   }

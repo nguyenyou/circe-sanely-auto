@@ -21,6 +21,7 @@ object compat extends ScalaModule {
   def scalacOptions = Task {
     super.scalacOptions() ++ Seq(
       "-Xmax-inlines", "64",
+      "-Werror",
       "-Wconf:msg=Implicit parameters should be provided with a `using` clause:s",
     )
   }
