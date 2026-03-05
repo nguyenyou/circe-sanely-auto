@@ -387,7 +387,7 @@ object SanelyConfiguredCodec:
       if tpe =:= selfType then
         return (selfEncRef.asInstanceOf[Expr[Encoder[T]]], selfDecRef.asInstanceOf[Expr[Decoder[T]]])
 
-      val cacheKey = tpe.dealias.show
+      val cacheKey = MacroUtils.cheapTypeKey(tpe)
       exprCache.get(cacheKey) match
         case Some((cachedEnc, cachedDec)) =>
           timer.count("cacheHit")
@@ -440,7 +440,7 @@ object SanelyConfiguredCodec:
             case AppliedType(tycon, List(arg)) =>
               val innerPair = (resolvePrimEncoder(arg.dealias), resolvePrimDecoder(arg.dealias)) match
                 case (Some(e), Some(d)) => Some((e, d))
-                case _ => exprCache.get(arg.dealias.show)
+                case _ => exprCache.get(MacroUtils.cheapTypeKey(arg))
               innerPair.flatMap { case (innerEnc, innerDec) =>
                 arg.asType match
                   case '[a] =>
@@ -455,7 +455,7 @@ object SanelyConfiguredCodec:
               if tycon.typeSymbol.fullName.endsWith(".Map") =>
               val valPair = (resolvePrimEncoder(valArg.dealias), resolvePrimDecoder(valArg.dealias)) match
                 case (Some(e), Some(d)) => Some((e, d))
-                case _ => exprCache.get(valArg.dealias.show)
+                case _ => exprCache.get(MacroUtils.cheapTypeKey(valArg))
               for
                 keyEnc <- resolveBuiltinKeyEncoder(keyArg.dealias)
                 keyDec <- resolveBuiltinKeyDecoder(keyArg.dealias)

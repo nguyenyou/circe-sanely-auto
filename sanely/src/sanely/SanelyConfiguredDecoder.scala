@@ -214,7 +214,7 @@ object SanelyConfiguredDecoder:
         return selfRef.asInstanceOf[Expr[Decoder[T]]]
 
       // Cache check first — hits 75% of the time, skips containsType traversal
-      val cacheKey = tpe.dealias.show
+      val cacheKey = MacroUtils.cheapTypeKey(tpe)
       exprCache.get(cacheKey) match
         case Some(cached) =>
           timer.count("cacheHit")
@@ -265,7 +265,7 @@ object SanelyConfiguredDecoder:
       resolvePrimDecoder(tpe).map(_.asInstanceOf[Expr[Decoder[T]]]).orElse {
         tpe match
           case AppliedType(tycon, List(arg)) =>
-            val innerOpt = resolvePrimDecoder(arg.dealias).orElse(exprCache.get(arg.dealias.show))
+            val innerOpt = resolvePrimDecoder(arg.dealias).orElse(exprCache.get(MacroUtils.cheapTypeKey(arg)))
             innerOpt.flatMap { innerDec =>
               arg.asType match
                 case '[a] =>
@@ -276,7 +276,7 @@ object SanelyConfiguredDecoder:
             if tycon.typeSymbol.fullName.endsWith(".Map") =>
             for
               keyDec <- resolveBuiltinKeyDecoder(keyArg.dealias)
-              valDec <- resolvePrimDecoder(valArg.dealias).orElse(exprCache.get(valArg.dealias.show))
+              valDec <- resolvePrimDecoder(valArg.dealias).orElse(exprCache.get(MacroUtils.cheapTypeKey(valArg)))
               result <- (keyArg.asType, valArg.asType) match
                 case ('[k], '[v]) =>
                   val kd = keyDec.asInstanceOf[Expr[io.circe.KeyDecoder[k]]]
