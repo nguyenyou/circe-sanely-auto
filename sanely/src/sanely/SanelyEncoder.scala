@@ -168,19 +168,45 @@ object SanelyEncoder:
 
     private def tryResolveBuiltinEncoder[T: Type]: Option[Expr[Encoder[T]]] =
       val tpe = TypeRepr.of[T].dealias
-      val result: Option[Expr[Encoder[?]]] =
-        if tpe =:= TypeRepr.of[String] then Some('{ Encoder.encodeString })
-        else if tpe =:= TypeRepr.of[Int] then Some('{ Encoder.encodeInt })
-        else if tpe =:= TypeRepr.of[Long] then Some('{ Encoder.encodeLong })
-        else if tpe =:= TypeRepr.of[Double] then Some('{ Encoder.encodeDouble })
-        else if tpe =:= TypeRepr.of[Float] then Some('{ Encoder.encodeFloat })
-        else if tpe =:= TypeRepr.of[Boolean] then Some('{ Encoder.encodeBoolean })
-        else if tpe =:= TypeRepr.of[Short] then Some('{ Encoder.encodeShort })
-        else if tpe =:= TypeRepr.of[Byte] then Some('{ Encoder.encodeByte })
-        else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ Encoder.encodeBigDecimal })
-        else if tpe =:= TypeRepr.of[BigInt] then Some('{ Encoder.encodeBigInt })
-        else None
-      result.map(_.asInstanceOf[Expr[Encoder[T]]])
+      resolvePrimEncoder(tpe).map(_.asInstanceOf[Expr[Encoder[T]]]).orElse {
+        tpe match
+          case AppliedType(tycon, List(arg)) =>
+            resolvePrimEncoder(arg.dealias).flatMap { innerEnc =>
+              arg.asType match
+                case '[a] =>
+                  val inner = innerEnc.asInstanceOf[Expr[Encoder[a]]]
+                  val enc: Option[Expr[Encoder[?]]] = tycon.typeSymbol.fullName match
+                    case "scala.Option" => Some('{ Encoder.encodeOption[a](using $inner) })
+                    case s if s.endsWith(".List") => Some('{ Encoder.encodeList[a](using $inner) })
+                    case s if s.endsWith(".Vector") => Some('{ Encoder.encodeVector[a](using $inner) })
+                    case s if s.endsWith(".Set") => Some('{ Encoder.encodeSet[a](using $inner) })
+                    case s if s.endsWith(".Seq") => Some('{ Encoder.encodeSeq[a](using $inner) })
+                    case _ => None
+                  enc.map(_.asInstanceOf[Expr[Encoder[T]]])
+            }
+          case AppliedType(tycon, List(keyArg, valArg))
+            if keyArg.dealias =:= TypeRepr.of[String] && tycon.typeSymbol.fullName.endsWith(".Map") =>
+            resolvePrimEncoder(valArg.dealias).flatMap { innerEnc =>
+              valArg.asType match
+                case '[v] =>
+                  val inner = innerEnc.asInstanceOf[Expr[Encoder[v]]]
+                  Some('{ Encoder.encodeMap[String, v](using io.circe.KeyEncoder.encodeKeyString, $inner) }.asInstanceOf[Expr[Encoder[T]]])
+            }
+          case _ => None
+      }
+
+    private def resolvePrimEncoder(tpe: TypeRepr): Option[Expr[Encoder[?]]] =
+      if tpe =:= TypeRepr.of[String] then Some('{ Encoder.encodeString })
+      else if tpe =:= TypeRepr.of[Int] then Some('{ Encoder.encodeInt })
+      else if tpe =:= TypeRepr.of[Long] then Some('{ Encoder.encodeLong })
+      else if tpe =:= TypeRepr.of[Double] then Some('{ Encoder.encodeDouble })
+      else if tpe =:= TypeRepr.of[Float] then Some('{ Encoder.encodeFloat })
+      else if tpe =:= TypeRepr.of[Boolean] then Some('{ Encoder.encodeBoolean })
+      else if tpe =:= TypeRepr.of[Short] then Some('{ Encoder.encodeShort })
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ Encoder.encodeByte })
+      else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ Encoder.encodeBigDecimal })
+      else if tpe =:= TypeRepr.of[BigInt] then Some('{ Encoder.encodeBigInt })
+      else None
 
     private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]
@@ -190,8 +216,8 @@ object SanelyEncoder:
         val genericAuto = Symbol.requiredModule("io.circe.generic.auto")
         genericAuto.methodMember("deriveEncoder").foreach(buf += _)
       catch case _: Exception => ()
-      // circe-core imported* unwrappers
-      for method <- List("importedEncoder", "importedAsObjectEncoder") do
+      // circe-core imported* unwrappers and derived
+      for method <- List("importedEncoder", "importedAsObjectEncoder", "derived") do
         try
           val encoderCompanion = Symbol.requiredModule("io.circe.Encoder")
           encoderCompanion.methodMember(method).foreach(buf += _)
