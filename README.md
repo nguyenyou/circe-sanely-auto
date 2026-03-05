@@ -188,9 +188,19 @@ Results on M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
 
 The speedup only applies to **auto derivation**. With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
 
-**Configured derivation** uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object). There's no implicit search — you're telling the compiler exactly what to derive. Both implementations end up doing similar inline macro expansion, so compile times converge.
+**Configured derivation** uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object). There's no implicit search chain to eliminate — you're telling the compiler exactly what to derive. JVM-level profiling (async-profiler) confirms that both implementations produce nearly identical compiler workloads:
 
-In short: sanely's advantage is specifically in eliminating implicit search overhead, which only affects auto derivation.
+| Compiler phase | circe-sanely-auto | circe-core | Delta |
+|---|---|---|---|
+| typer | 60 samples | 82 samples | -27% (sanely does less type checking) |
+| macro inlines | 6 | 20 | -70% (sanely does less inlining) |
+| macro quoted | 17 | 7 | +143% (sanely does more quote reflection) |
+| typer implicits | 15 | 6 | +150% (sanely uses `Expr.summonIgnoring`) |
+| transform | 76 | 61 | +25% (sanely generates slightly more code) |
+| backend | 67 | 55 | +22% (sanely produces slightly more bytecode) |
+| **total compiler** | **859** | **804** | **1.07x** (roughly equal) |
+
+Sanely trades typer time for quoted/transform/backend time — our macros avoid some type checking overhead but generate more code via quote reflection, which the compiler's transform and backend phases then have to process. The net effect is roughly break-even.
 
 ### Macro profiling
 

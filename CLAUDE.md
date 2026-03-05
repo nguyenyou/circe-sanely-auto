@@ -21,14 +21,47 @@ Mill 1.1.2. Run from repo root:
 ./mill sanely.js.test           # unit tests - Scala.js (109 tests, utest)
 ./mill compat.test              # circe compat tests (160 tests, munit + discipline)
 ./mill demo.run                 # run demo
-./mill benchmark.sanely.compile # benchmark: our library
-./mill benchmark.generic.compile # benchmark: circe-generic
-./mill benchmark-configured.sanely.compile   # configured benchmark: our library
-./mill benchmark-configured.generic.compile  # configured benchmark: circe-generic
-bash bench.sh 5                 # timed compile comparison
 ```
 
 **Do NOT run** `./mill __.compile` or bare `./mill` — use targeted module commands to avoid cache invalidation.
+
+### Benchmarks
+
+```bash
+bash bench.sh 5                 # auto derivation timed comparison (~300 types)
+bash bench.sh --configured 5    # configured derivation timed comparison (~230 types)
+./mill benchmark.sanely.compile # compile benchmark: our library (auto)
+./mill benchmark.generic.compile # compile benchmark: circe-generic (auto)
+./mill benchmark-configured.sanely.compile   # compile benchmark: our library (configured)
+./mill benchmark-configured.generic.compile  # compile benchmark: circe-core (configured)
+```
+
+### Profiling
+
+```bash
+# Macro-level profiling (our MacroTimer)
+rm -rf out/benchmark/sanely
+SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/profile.txt
+python3 .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/profile.txt
+
+# Configured derivation macro profiling
+rm -rf out/benchmark-configured/sanely
+SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee /tmp/profile.txt
+python3 .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/profile.txt
+
+# JVM-level profiling (async-profiler, requires: brew install async-profiler)
+# Use JAVA_TOOL_OPTIONS (not JAVA_OPTS) to profile ALL JVMs including zinc worker
+rm -rf out/benchmark/sanely
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/collapsed.txt,collapsed" \
+  ./mill --no-server benchmark.sanely.compile
+python3 .claude/skills/compile-profile/scripts/analyze_jvm_profile.py /tmp/collapsed.txt
+
+# HTML flame graph (for visual inspection)
+rm -rf out/benchmark/sanely
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/flamegraph.html" \
+  ./mill --no-server benchmark.sanely.compile
+open /tmp/flamegraph.html
+```
 
 ## Modules
 
