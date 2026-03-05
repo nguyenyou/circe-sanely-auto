@@ -188,7 +188,19 @@ Results on M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
 
 The speedup is most dramatic for **auto derivation** (2x). With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
 
-**Configured derivation** is also faster (21%). Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations — runtime dispatch, builtin short-circuit, and container+builtin composition — reduce both macro expansion time and generated AST size enough to produce a measurable speedup.
+**Configured derivation** is also faster (21%). Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations — runtime dispatch, builtin short-circuit, and container+builtin composition — reduce both macro expansion time and generated AST size enough to produce a measurable speedup. JVM-level profiling (async-profiler) confirms that sanely produces a lighter compiler workload:
+
+| Compiler phase | circe-sanely-auto | circe-core | Delta |
+|---|---|---|---|
+| typer | 59 samples | 62 samples | -5% |
+| macro inlines | 10 | 24 | -58% (sanely does less inlining) |
+| macro quoted | 19 | 7 | +171% (sanely does more quote reflection) |
+| typer implicits | 9 | 0 | +9 (sanely uses `Expr.summonIgnoring`) |
+| transform | 63 | 56 | +13% (sanely generates slightly more code) |
+| backend | 53 | 51 | +4% |
+| **total compiler** | **712** | **759** | **-6% (sanely is lighter)** |
+
+Sanely trades inlining time for quoted reflection time — circe-core's `inline` + `summonInline` approach requires the compiler to do more inlining work, while sanely's `Expr.summonIgnoring` approach does more work in the quote reflection phase. The net effect favors sanely because runtime dispatch reduces the generated AST that the transform and backend phases must process.
 
 Three optimizations drive this:
 
