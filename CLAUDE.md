@@ -84,10 +84,10 @@ open /tmp/flamegraph.html
 | `auto.scala` | Entry point. `inline given autoEncoder`/`autoDecoder` via `import sanely.auto.given` |
 | `SanelyEncoder.scala` | Macro: `Encoder.AsObject[A]` for products and sum types |
 | `SanelyDecoder.scala` | Macro: `Decoder[A]` for products and sum types |
-| `SanelyCodec.scala` | Composes encoder + decoder into `Codec.AsObject[A]` |
+| `SanelyCodec.scala` | Single-pass macro: `Codec.AsObject[A]` sharing one cache + traversal for both encoder and decoder |
 | `SanelyConfiguredEncoder.scala` | Configured encoder with `Configuration` support |
 | `SanelyConfiguredDecoder.scala` | Configured decoder (most complex: defaults, strict, discriminator) |
-| `SanelyConfiguredCodec.scala` | Composes configured encoder + decoder |
+| `SanelyConfiguredCodec.scala` | Single-pass macro: configured `Codec.AsObject[A]` sharing one cache + traversal |
 | `SanelyEnumCodec.scala` | Singleton enum string codec with hierarchical sealed trait support |
 
 ### Drop-in API (`sanely/src/io/circe/generic/`)
