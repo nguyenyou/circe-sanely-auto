@@ -63,25 +63,13 @@ object SanelyConfiguredDecoder:
                       case _ => false
                     if isOptionType then
                       '{
-                        val cursor = $c.downField($fieldNames($fieldIdxExpr))
-                        val result: Decoder.Result[t] =
-                          if $conf.useDefaults && cursor.failed then
-                            Right($typedDefault)
-                          else
-                            $typedDec.tryDecode(cursor)
-                        result match
+                        SanelyRuntime.tryDecodeOptionFieldWithDefault($c, $fieldNames($fieldIdxExpr), $typedDec, $conf.useDefaults, $typedDefault) match
                           case Right(v) => ${ buildDecodeChain(c, fieldNames, rest, fieldIdx + 1, 'v :: acc) }
                           case Left(e)  => Left(e)
                       }
                     else
                       '{
-                        val cursor = $c.downField($fieldNames($fieldIdxExpr))
-                        val result: Decoder.Result[t] =
-                          if $conf.useDefaults && (cursor.failed || cursor.focus.exists(_.isNull)) then
-                            Right($typedDefault)
-                          else
-                            $typedDec.tryDecode(cursor)
-                        result match
+                        SanelyRuntime.tryDecodeFieldWithDefault($c, $fieldNames($fieldIdxExpr), $typedDec, $conf.useDefaults, $typedDefault) match
                           case Right(v) => ${ buildDecodeChain(c, fieldNames, rest, fieldIdx + 1, 'v :: acc) }
                           case Left(e)  => Left(e)
                       }
@@ -106,13 +94,9 @@ object SanelyConfiguredDecoder:
             if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
             else
               if $conf.strictDecoding then
-                val expectedKeys = _fieldNames.toSet
-                c.keys match
-                  case Some(keys) =>
-                    val unexpected = keys.filterNot(expectedKeys.contains).toList
-                    if unexpected.nonEmpty then
-                      return Left(DecodingFailure(s"Unexpected field(s): ${unexpected.mkString(", ")}", c.history))
-                  case None => ()
+                SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet) match
+                  case Left(err) => return Left(err)
+                  case _ => ()
               ${ buildDecodeChain('c, '{ _fieldNames }, fieldsWithDefaults, 0, Nil) }
       }
 
@@ -160,25 +144,12 @@ object SanelyConfiguredDecoder:
 
       '{
         new Decoder[S]:
+          private val _transformedLabels: Set[String] = $directLabelsExpr.map(l => $conf.transformConstructorNames(l)).toSet
           def apply(c: HCursor): Decoder.Result[S] =
-            val pair: (String, ACursor) = $conf.discriminator match
-              case Some(discField) =>
-                c.downField(discField).as[String] match
-                  case Right(typeName) => (typeName, c)
-                  case Left(_) =>
-                    return Left(DecodingFailure(s"Missing discriminator field '$$discField'", c.history))
-              case None =>
-                c.keys match
-                  case Some(keys) =>
-                    val keysList = keys.toList
-                    if $conf.strictDecoding && keysList.size > 1 then
-                      return Left(DecodingFailure("Expected single-key JSON object for sum type", c.history))
-                    val transformedLabels = $directLabelsExpr.map(l => $conf.transformConstructorNames(l))
-                    val key = keysList.find(transformedLabels.toSet.contains).getOrElse("")
-                    (key, c.downField(key))
-                  case None =>
-                    return Left(DecodingFailure("Expected JSON object for sum type", c.history))
-            ${ buildMatch('c, '{ pair._1 }, '{ pair._2 }) }
+            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding) match
+              case Left(err) => Left(err)
+              case Right(pair) =>
+                ${ buildMatch('c, '{ pair._1 }, '{ pair._2 }) }
       }
 
     private def resolveFields[Types: Type, Labels: Type](

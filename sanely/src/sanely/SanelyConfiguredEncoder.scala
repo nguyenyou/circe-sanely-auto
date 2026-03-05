@@ -86,12 +86,7 @@ object SanelyConfiguredEncoder:
               '{
                 val encoded = $typedEnc($a.asInstanceOf[t])
                 val transformedLabel = $conf.transformConstructorNames($labelExpr)
-                $conf.discriminator match
-                  case None =>
-                    JsonObject.singleton(transformedLabel, encoded)
-                  case Some(discr) =>
-                    val base = encoded.asObject.getOrElse(JsonObject.empty)
-                    base.add(discr, Json.fromString(transformedLabel))
+                SanelyRuntime.encodeSumVariant(encoded, transformedLabel, $conf.discriminator)
               }
 
       '{
