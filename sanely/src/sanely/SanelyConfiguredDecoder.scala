@@ -239,19 +239,45 @@ object SanelyConfiguredDecoder:
 
     private def tryResolveBuiltinDecoder[T: Type]: Option[Expr[Decoder[T]]] =
       val tpe = TypeRepr.of[T].dealias
-      val result: Option[Expr[Decoder[?]]] =
-        if tpe =:= TypeRepr.of[String] then Some('{ Decoder.decodeString })
-        else if tpe =:= TypeRepr.of[Int] then Some('{ Decoder.decodeInt })
-        else if tpe =:= TypeRepr.of[Long] then Some('{ Decoder.decodeLong })
-        else if tpe =:= TypeRepr.of[Double] then Some('{ Decoder.decodeDouble })
-        else if tpe =:= TypeRepr.of[Float] then Some('{ Decoder.decodeFloat })
-        else if tpe =:= TypeRepr.of[Boolean] then Some('{ Decoder.decodeBoolean })
-        else if tpe =:= TypeRepr.of[Short] then Some('{ Decoder.decodeShort })
-        else if tpe =:= TypeRepr.of[Byte] then Some('{ Decoder.decodeByte })
-        else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ Decoder.decodeBigDecimal })
-        else if tpe =:= TypeRepr.of[BigInt] then Some('{ Decoder.decodeBigInt })
-        else None
-      result.map(_.asInstanceOf[Expr[Decoder[T]]])
+      resolvePrimDecoder(tpe).map(_.asInstanceOf[Expr[Decoder[T]]]).orElse {
+        tpe match
+          case AppliedType(tycon, List(arg)) =>
+            resolvePrimDecoder(arg.dealias).flatMap { innerDec =>
+              arg.asType match
+                case '[a] =>
+                  val inner = innerDec.asInstanceOf[Expr[Decoder[a]]]
+                  val dec: Option[Expr[Decoder[?]]] = tycon.typeSymbol.fullName match
+                    case "scala.Option" => Some('{ Decoder.decodeOption[a](using $inner) })
+                    case s if s.endsWith(".List") => Some('{ Decoder.decodeList[a](using $inner) })
+                    case s if s.endsWith(".Vector") => Some('{ Decoder.decodeVector[a](using $inner) })
+                    case s if s.endsWith(".Set") => Some('{ Decoder.decodeSet[a](using $inner) })
+                    case s if s.endsWith(".Seq") => Some('{ Decoder.decodeSeq[a](using $inner) })
+                    case _ => None
+                  dec.map(_.asInstanceOf[Expr[Decoder[T]]])
+            }
+          case AppliedType(tycon, List(keyArg, valArg))
+            if keyArg.dealias =:= TypeRepr.of[String] && tycon.typeSymbol.fullName.endsWith(".Map") =>
+            resolvePrimDecoder(valArg.dealias).flatMap { innerDec =>
+              valArg.asType match
+                case '[v] =>
+                  val inner = innerDec.asInstanceOf[Expr[Decoder[v]]]
+                  Some('{ Decoder.decodeMap[String, v](using io.circe.KeyDecoder.decodeKeyString, $inner) }.asInstanceOf[Expr[Decoder[T]]])
+            }
+          case _ => None
+      }
+
+    private def resolvePrimDecoder(tpe: TypeRepr): Option[Expr[Decoder[?]]] =
+      if tpe =:= TypeRepr.of[String] then Some('{ Decoder.decodeString })
+      else if tpe =:= TypeRepr.of[Int] then Some('{ Decoder.decodeInt })
+      else if tpe =:= TypeRepr.of[Long] then Some('{ Decoder.decodeLong })
+      else if tpe =:= TypeRepr.of[Double] then Some('{ Decoder.decodeDouble })
+      else if tpe =:= TypeRepr.of[Float] then Some('{ Decoder.decodeFloat })
+      else if tpe =:= TypeRepr.of[Boolean] then Some('{ Decoder.decodeBoolean })
+      else if tpe =:= TypeRepr.of[Short] then Some('{ Decoder.decodeShort })
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ Decoder.decodeByte })
+      else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ Decoder.decodeBigDecimal })
+      else if tpe =:= TypeRepr.of[BigInt] then Some('{ Decoder.decodeBigInt })
+      else None
 
     private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]
@@ -260,7 +286,7 @@ object SanelyConfiguredDecoder:
         val genericAuto = Symbol.requiredModule("io.circe.generic.auto")
         genericAuto.methodMember("deriveDecoder").foreach(buf += _)
       catch case _: Exception => ()
-      for method <- List("importedDecoder") do
+      for method <- List("importedDecoder", "derived") do
         try
           val decoderCompanion = Symbol.requiredModule("io.circe.Decoder")
           decoderCompanion.methodMember(method).foreach(buf += _)
