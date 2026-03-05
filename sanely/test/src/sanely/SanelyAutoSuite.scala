@@ -179,6 +179,12 @@ object ProductWithTaggedMember:
     summon[Encoder[String]].contramap(x => x: String)
   )
 
+// Literal type fields
+case class LiteralStringField(tag: "hello", value: Int)
+case class LiteralIntField(version: 42, name: String)
+case class LiteralBooleanField(active: true, data: String)
+case class LiteralLongField(id: 100L, label: String)
+
 // Codec derivation test type
 case class CodecTestProduct(a: Int, b: String)
 object CodecTestProduct:
@@ -828,6 +834,54 @@ object SanelyAutoSuite extends TestSuite:
       assert(json == Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromString("hi")))
       val decoded = decode[SemiAlias](json.noSpaces)
       assert(decoded == Right(v))
+    }
+
+    // --- Literal type fields ---
+
+    test("Literal string type field round-trip") {
+      val v = LiteralStringField("hello", 99)
+      val json = v.asJson
+      val expected = Json.obj("tag" -> Json.fromString("hello"), "value" -> Json.fromInt(99))
+      assert(json == expected)
+      val decoded = decode[LiteralStringField](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Literal int type field round-trip") {
+      val v = LiteralIntField(42, "test")
+      val json = v.asJson
+      val expected = Json.obj("version" -> Json.fromInt(42), "name" -> Json.fromString("test"))
+      assert(json == expected)
+      val decoded = decode[LiteralIntField](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Literal boolean type field round-trip") {
+      val v = LiteralBooleanField(true, "on")
+      val json = v.asJson
+      val expected = Json.obj("active" -> Json.fromBoolean(true), "data" -> Json.fromString("on"))
+      assert(json == expected)
+      val decoded = decode[LiteralBooleanField](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Literal long type field round-trip") {
+      val v = LiteralLongField(100L, "item")
+      val json = v.asJson
+      val expected = Json.obj("id" -> Json.fromLong(100L), "label" -> Json.fromString("item"))
+      assert(json == expected)
+      val decoded = decode[LiteralLongField](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Literal string decoder rejects wrong value") {
+      val result = decode[LiteralStringField]("""{"tag":"world","value":99}""")
+      assert(result.isLeft)
+    }
+
+    test("Literal int decoder rejects wrong value") {
+      val result = decode[LiteralIntField]("""{"version":99,"name":"test"}""")
+      assert(result.isLeft)
     }
 
     test("io.circe.generic.semiauto.deriveCodec works") {
