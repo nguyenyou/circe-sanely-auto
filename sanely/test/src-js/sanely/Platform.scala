@@ -1,4 +1,4 @@
 package sanely
 
 object Platform:
-  inline val isJS = true
+  val isJS = true
