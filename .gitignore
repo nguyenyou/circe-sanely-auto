@@ -2,4 +2,5 @@ out/
 .bsp/
 .metals/
 .idea/
-.local__pycache__/
+.local/
+__pycache__/
