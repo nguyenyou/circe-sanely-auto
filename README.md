@@ -4,7 +4,7 @@
 
 Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Faster compile times. No Shapeless. No circe-generic.
 
-**Scala 3.8.2+ | JVM + Scala.js | ✅ 276 tests**
+**Scala 3.8.2+ | JVM + Scala.js | ✅ 440 tests**
 
 ## Motivation
 
@@ -30,11 +30,11 @@ The goal is full API compatibility with circe's derivation. You should be able t
 
 We maintain two layers of tests:
 
-**✅ 116 unit tests** (utest, cross-compiled JVM + Scala.js) covering auto-derivation (products, sum types, case objects, generics, recursive types, large types, edge cases, error cases, semiauto API) and configured derivation (all 5 configuration options, enum codecs, hierarchical sealed traits, multi-level hierarchies, recursive types with discriminators).
+**✅ 122 unit tests** (utest, cross-compiled JVM + Scala.js) covering auto-derivation (products, sum types, case objects, generics, recursive types, large types, edge cases, error cases, semiauto API) and configured derivation (all 5 configuration options, enum codecs, hierarchical sealed traits, multi-level hierarchies, recursive types with discriminators).
 
-**✅ 160 compatibility tests** (munit + discipline) ported directly from circe's own test suite — `DerivesSuite`, `SemiautoDerivationSuite`, and `ConfiguredDerivesSuite`. These use circe's `CodecTests` which runs property-based checks: roundtrip consistency, accumulating decoder consistency, and `Codec.from` consistency. Same test types, same Arbitrary instances, same assertions. If circe's tests pass with circe-generic, they pass with circe-sanely-auto.
+**✅ 318 compatibility tests** (munit + discipline) ported directly from circe's own test suite — `DerivesSuite`, `SemiautoDerivationSuite`, and `ConfiguredDerivesSuite`. These use circe's `CodecTests` which runs property-based checks: roundtrip consistency, accumulating decoder consistency, and `Codec.from` consistency. Same test types, same Arbitrary instances, same assertions. If circe's tests pass with circe-generic, they pass with circe-sanely-auto.
 
-**✅ 276 tests total**, all green.
+**✅ 440 tests total**, all green.
 
 ## Features
 
@@ -174,31 +174,31 @@ Results on M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **3.24s** | |
-| **circe-generic** | **6.48s** | 2.0x slower |
+| **circe-sanely-auto** | **3.63s** | |
+| **circe-generic** | **6.93s** | 1.9x slower |
 
 ### Configured derivation
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **2.19s** | |
-| **circe-core** | **2.77s** | 1.26x slower |
+| **circe-sanely-auto** | **2.29s** | |
+| **circe-core** | **2.89s** | 1.26x slower |
 
 ### Why the difference?
 
-The speedup is most dramatic for **auto derivation** (2x). With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
+The speedup is most dramatic for **auto derivation** (1.9x). With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
 
 **Configured derivation** is also faster (21%). Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations — runtime dispatch, builtin short-circuit, and container+builtin composition — reduce both macro expansion time and generated AST size enough to produce a measurable speedup. JVM-level profiling (async-profiler) confirms that sanely produces a lighter compiler workload:
 
 | Compiler phase | circe-sanely-auto | circe-core | Delta |
 |---|---|---|---|
-| typer | 59 samples | 62 samples | -5% |
-| macro inlines | 10 | 24 | -58% (sanely does less inlining) |
-| macro quoted | 19 | 7 | +171% (sanely does more quote reflection) |
-| typer implicits | 9 | 0 | +9 (sanely uses `Expr.summonIgnoring`) |
-| transform | 63 | 56 | +13% (sanely generates slightly more code) |
-| backend | 53 | 51 | +4% |
-| **total compiler** | **712** | **759** | **-6% (sanely is lighter)** |
+| typer | 70 samples | 72 samples | -3% |
+| macro inlines | 10 | 25 | -60% (sanely does less inlining) |
+| macro quoted | 9 | 5 | +80% (sanely does more quote reflection) |
+| typer implicits | 8 | 9 | -1 |
+| transform | 70 | 57 | +23% (sanely generates slightly more code) |
+| backend | 65 | 47 | +38% |
+| **total compiler** | **778** | **810** | **-4% (sanely is lighter)** |
 
 Sanely trades inlining time for quoted reflection time — circe-core's `inline` + `summonInline` approach requires the compiler to do more inlining work, while sanely's `Expr.summonIgnoring` approach does more work in the quote reflection phase. The net effect favors sanely because runtime dispatch reduces the generated AST that the transform and backend phases must process.
 
@@ -222,32 +222,32 @@ SANELY_PROFILE=true ./mill --no-server clean benchmark-configured.sanely && \
 SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee /tmp/profile.txt
 ```
 
-**Auto derivation profile** (308 expansions, ~2.2s total macro time):
+**Auto derivation profile** (308 expansions, ~2.5s total macro time):
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `summonIgnoring` | 1053ms | 47.0% | 660 | 1.59ms |
-| `derive` | 668ms | 29.8% | 586 | 1.14ms |
-| `summonMirror` | 79ms | 3.5% | 586 | 0.13ms |
-| `subTraitDetect` | 45ms | 2.0% | 336 | 0.13ms |
+| `summonIgnoring` | 1137ms | 45.4% | 660 | 1.72ms |
+| `derive` | 774ms | 30.9% | 586 | 1.32ms |
+| `summonMirror` | 95ms | 3.8% | 586 | 0.16ms |
+| `subTraitDetect` | 51ms | 2.0% | 336 | 0.15ms |
 | `builtinHit` | — | — | 706 | — |
-| overhead | 394ms | 17.6% | — | — |
+| overhead | 449ms | 17.9% | — | — |
 | cache hits | — | — | 1714 (75%) | — |
 
-**Configured derivation profile** (460 expansions, ~1.1s total macro time):
+**Configured derivation profile** (460 expansions, ~1.2s total macro time):
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `topDerive` | 959ms | 84.3%* | 460 | 2.08ms |
-| `summonIgnoring` | 301ms | 26.5% | 294 | 1.03ms |
-| `subTraitDetect` | 29ms | 2.5% | 138 | 0.21ms |
-| `resolveDefaults` | 8ms | 0.7% | 214 | 0.04ms |
+| `topDerive` | 1021ms | 84.7%* | 460 | 2.22ms |
+| `summonIgnoring` | 316ms | 26.2% | 294 | 1.08ms |
+| `subTraitDetect` | 29ms | 2.4% | 138 | 0.21ms |
+| `resolveDefaults` | 9ms | 0.7% | 214 | 0.04ms |
 | `builtinHit` | — | — | 690 | — |
 | cache hits | — | — | 654 | — |
 
 *`topDerive` is a container category that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, and `resolveDefaults`.
 
-**Key insight**: `summonIgnoring` (the compiler's implicit search via `Expr.summonIgnoring`) dominates auto derivation at 47%. Builtin short-circuiting and container+builtin composition resolve ~706 type lookups without calling `summonIgnoring` at all (52% fewer calls vs without the optimization). For configured derivation, builtin hits account for 690 resolutions, reducing `summonIgnoring` calls by 70% (from 984 to 294). The intra-expansion cache achieves a 75% hit rate, avoiding redundant derivations for repeated types within a single macro call.
+**Key insight**: `summonIgnoring` (the compiler's implicit search via `Expr.summonIgnoring`) dominates auto derivation at 45%. Builtin short-circuiting and container+builtin composition resolve ~706 type lookups without calling `summonIgnoring` at all (52% fewer calls vs without the optimization). For configured derivation, builtin hits account for 690 resolutions, reducing `summonIgnoring` calls by 70% (from 984 to 294). The intra-expansion cache achieves a 75% hit rate, avoiding redundant derivations for repeated types within a single macro call.
 
 ## Building
 
