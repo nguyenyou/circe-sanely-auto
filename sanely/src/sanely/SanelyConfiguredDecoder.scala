@@ -14,12 +14,15 @@ object SanelyConfiguredDecoder:
 
   private def deriveMacro[A: Type](conf: Expr[Configuration], mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[Decoder[A]] =
     val helper = new ConfiguredDecoderDerivation[A](conf)
-    helper.derive(mirror)
+    val result = helper.derive(mirror)
+    helper.timer.report()
+    result
 
   private class ConfiguredDecoderDerivation[A: Type](conf: Expr[Configuration])(using val quotes: Quotes):
     import quotes.reflect.*
 
     val selfType: TypeRepr = TypeRepr.of[A]
+    val timer: MacroTimer = MacroTimer.create(Type.show[A], "CfgDecoder")
     private val exprCache = mutable.Map.empty[String, Expr[?]]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Decoder[A]] =
@@ -109,10 +112,12 @@ object SanelyConfiguredDecoder:
       // Only flatten sub-traits when no user-provided decoder exists
       val ignoreSymbols = cachedIgnoreSymbols
       val casesWithSubTrait = cases.map { case (label, tpe, dec) =>
-        val isSub = tpe match
-          case '[t] =>
-            Expr.summon[Mirror.SumOf[t]].isDefined &&
-            Expr.summonIgnoring[Decoder[t]](ignoreSymbols*).isEmpty
+        val isSub = timer.time("subTraitDetect") {
+          tpe match
+            case '[t] =>
+              Expr.summon[Mirror.SumOf[t]].isDefined &&
+              Expr.summonIgnoring[Decoder[t]](ignoreSymbols*).isEmpty
+        }
         (label, tpe, dec, isSub)
       }
 
@@ -215,20 +220,24 @@ object SanelyConfiguredDecoder:
       // Safe path: no recursion risk — check cache first
       val cacheKey = tpe.dealias.show
       exprCache.get(cacheKey) match
-        case Some(cached) => return cached.asInstanceOf[Expr[Decoder[T]]]
+        case Some(cached) =>
+          timer.count("cacheHit")
+          return cached.asInstanceOf[Expr[Decoder[T]]]
         case None => ()
 
       val resolved: Expr[Decoder[T]] =
-        Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*) match
+        timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match
           case Some(dec) => dec
           case None =>
-            Expr.summon[Mirror.Of[T]] match
+            timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
               case Some(mirrorExpr) =>
-                mirrorExpr match
-                  case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveProduct[T, types, labels](m, selfRef)
-                  case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveSum[T, types, labels](m, selfRef)
+                timer.time("derive") {
+                  mirrorExpr match
+                    case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      deriveProduct[T, types, labels](m, selfRef)
+                    case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      deriveSum[T, types, labels](m, selfRef)
+                }
               case None =>
                 report.errorAndAbort(s"Cannot derive Decoder for ${Type.show[T]}: no implicit Decoder and no Mirror available")
       exprCache(cacheKey) = resolved
