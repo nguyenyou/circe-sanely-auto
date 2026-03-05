@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0] - 2026-03-05
+
+### Performance
+- **Builtin short-circuit for primitive types** — String, Int, Long, Double, Float, Boolean, Short, Byte, BigDecimal, and BigInt are now resolved directly to their `Encoder.encodeX`/`Decoder.decodeX` instances without calling `Expr.summonIgnoring`. Reduces summonIgnoring calls by ~47% for auto derivation (1366→720) and ~66% for configured derivation (984→336).
+- **Runtime product encoding** — macro-generated N nested `.add()` calls replaced with a flat `Array[Encoder]` and a single `SanelyRuntime.encodeProductFields` while-loop. Reduces generated AST size for product encoders.
+- **Runtime product decoding** — macro-generated N-deep nested match chains replaced with `SanelyRuntime.decodeProductFields`/`decodeProductFieldsConfigured` using `Array[Decoder]` and `ArrayProduct` + `mirror.fromProduct`. Reduces generated AST size for product decoders.
+- **Runtime sum type dispatch** — macro-generated foldRight if-then-else chains replaced with array-based `SanelyRuntime.encodeSum`/`encodeSumConfigured` and `decodeSum`/`decodeSumConfigured`. Reduces generated AST size for sum type encoders and decoders.
+- **Configured benchmark**: 2.90s median (was ~3.10s), now slightly faster than circe-core (2.94s)
+- **Auto benchmark**: 3.17s median (was ~3.69s), 2.1x faster than circe-generic (6.75s)
+
+### Changed
+- All optimizations applied to both configured (`SanelyConfiguredEncoder`/`SanelyConfiguredDecoder`) and non-configured (`SanelyEncoder`/`SanelyDecoder`) derivation files.
+- `SanelyRuntime` expanded with 6 new runtime methods: `encodeProductFields`, `encodeSum`, `encodeSumConfigured`, `decodeProductFields`, `decodeProductFieldsConfigured`, `decodeSumConfigured`.
+
 ## [0.7.0] - 2026-03-05
 
 ### Added
