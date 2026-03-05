@@ -77,6 +77,70 @@ object SemiautoDerivedSuite {
   case class OvergenerationExampleInner(i: Int)
   case class OvergenerationExampleOuter0(i: OvergenerationExampleInner)
   case class OvergenerationExampleOuter1(oi: Option[OvergenerationExampleInner])
+
+  // ADT variants matching circe's SemiautoDerivationSuite
+
+  sealed trait Adt1
+  object Adt1 {
+    case class Class1(int: Int) extends Adt1
+    object Class1 {
+      given decoder: Decoder[Class1] = deriveDecoder
+      given encoder: Encoder.AsObject[Class1] = deriveEncoder
+
+      given eq: Eq[Class1] = Eq.by(_.int)
+      given arbitrary: Arbitrary[Class1] = Arbitrary(Arbitrary.arbitrary[Int].map(Class1(_)))
+    }
+
+    case object Object1 extends Adt1
+
+    given decoder: Decoder[Adt1] = deriveDecoder
+    given encoder: Encoder.AsObject[Adt1] = deriveEncoder
+
+    given eq: Eq[Adt1] = Eq.instance {
+      case (x: Class1, y: Class1) => x === y
+      case (Object1, Object1)     => true
+      case _                      => false
+    }
+    given arbitrary: Arbitrary[Adt1] = Arbitrary(Gen.oneOf(Arbitrary.arbitrary[Class1], Gen.const(Object1)))
+  }
+
+  sealed trait Adt2
+  object Adt2 {
+    case object Object1 extends Adt2
+    case object Object2 extends Adt2
+
+    given decoder: Decoder[Adt2] = deriveDecoder
+    given encoder: Encoder.AsObject[Adt2] = deriveEncoder
+
+    given eq: Eq[Adt2] = Eq.fromUniversalEquals
+    given arbitrary: Arbitrary[Adt2] = Arbitrary(Gen.oneOf(Gen.const(Object1), Gen.const(Object2)))
+  }
+
+  sealed trait Adt3
+  object Adt3 {
+    case class Class1() extends Adt3
+    case object Object1 extends Adt3
+
+    given decoder: Decoder[Adt3] = deriveDecoder
+    given encoder: Encoder.AsObject[Adt3] = deriveEncoder
+
+    given eq: Eq[Adt3] = Eq.fromUniversalEquals
+    given arbitrary: Arbitrary[Adt3] = Arbitrary(Gen.oneOf(Gen.const(Class1()), Gen.const(Object1)))
+  }
+
+  sealed trait Adt4
+  object Adt4 {
+    sealed trait SubTrait1 extends Adt4
+    case class Class1() extends SubTrait1
+    sealed trait SubTrait2 extends Adt4
+    case object Object1 extends SubTrait2
+
+    given decoder: Decoder[Adt4] = deriveDecoder
+    given encoder: Encoder.AsObject[Adt4] = deriveEncoder
+
+    given eq: Eq[Adt4] = Eq.fromUniversalEquals
+    given arbitrary: Arbitrary[Adt4] = Arbitrary(Gen.oneOf(Gen.const(Class1()), Gen.const(Object1)))
+  }
 }
 
 class SemiautoDerivedSuite extends CirceMunitSuite {
@@ -137,6 +201,11 @@ class SemiautoDerivedSuite extends CirceMunitSuite {
     ).codec
   )
 
+  checkAll("Codec[Adt1]", CodecTests[Adt1].codec)
+  checkAll("Codec[Adt2]", CodecTests[Adt2].codec)
+  checkAll("Codec[Adt3]", CodecTests[Adt3].codec)
+  checkAll("Codec[Adt4]", CodecTests[Adt4].codec)
+
   property("A generically derived codec should not interfere with base instances") {
     Prop.forAll { (is: List[Int]) =>
       val json = Encoder[List[Int]].apply(is)
@@ -152,5 +221,14 @@ class SemiautoDerivedSuite extends CirceMunitSuite {
       assert(deriveDecoder[EmptyCc].decodeJson(j).isRight == j.isObject)
       assert(deriveCodec[EmptyCc].decodeJson(j).isRight == j.isObject)
     }
+  }
+
+  test("Decoder for ADT/Enum ignores superfluous keys") {
+    import io.circe.parser.decode
+    val expected = Right(Adt1.Class1(3))
+    assertEquals(decode[Adt1]("""{"Class1":{"int":3}}"""), expected)
+    assertEquals(decode[Adt1]("""{"extraField":true,"Class1":{"int":3}}"""), expected)
+    assertEquals(decode[Adt1]("""{"extraField":true,"extraField2":15,"Class1":{"int":3}}"""), expected)
+    assertEquals(decode[Adt1]("""{"Class1":{"int":3},"extraField":true}"""), expected)
   }
 }

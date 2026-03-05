@@ -58,17 +58,24 @@ object SanelyEnumCodec:
     ): Expr[Codec[S]] =
       val typeName = Expr(Type.show[S])
 
+      // Deduplicate cases (diamond inheritance can produce the same singleton via multiple paths)
+      val deduped = cases.distinctBy(_._1)
+
       '{
-        val _valueToName: Map[Int, String] = ${
-          val mapEntries = cases.zipWithIndex.map { case ((label, valueExpr), idx) =>
+        // Use parallel arrays for encoding: match by reference equality (safe for singletons)
+        val _values: Array[AnyRef] = ${
+          val exprs = deduped.map { case (_, valueExpr) => '{ $valueExpr.asInstanceOf[AnyRef] } }
+          '{ Array(${Varargs(exprs)}*) }
+        }
+        val _names: Array[String] = ${
+          val exprs = deduped.map { case (label, _) =>
             val labelExpr = Expr(label)
-            '{ ($mirror.ordinal($valueExpr), $conf.transformConstructorNames($labelExpr)) }
+            '{ $conf.transformConstructorNames($labelExpr) }
           }
-          val listExpr = Expr.ofList(mapEntries)
-          '{ $listExpr.toMap }
+          '{ Array(${Varargs(exprs)}*) }
         }
         val _nameToValue: Map[String, S] = ${
-          val mapEntries = cases.map { case (label, valueExpr) =>
+          val mapEntries = deduped.map { case (label, valueExpr) =>
             val labelExpr = Expr(label)
             '{ ($conf.transformConstructorNames($labelExpr), $valueExpr) }
           }
@@ -85,5 +92,10 @@ object SanelyEnumCodec:
                   case None => Left(DecodingFailure(s"enum ${$typeName} does not contain case: " + name, c.history))
               case Left(e) => Left(e)
           def apply(a: S): Json =
-            Json.fromString(_valueToName($mirror.ordinal(a)))
+            val ref = a.asInstanceOf[AnyRef]
+            var i = 0
+            while i < _values.length do
+              if _values(i) eq ref then return Json.fromString(_names(i))
+              i += 1
+            Json.fromString(_names(0)) // unreachable for valid enums
       }

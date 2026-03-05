@@ -137,7 +137,7 @@ Supports hierarchical sealed traits with diamond inheritance.
 
 ```diff
 - mvn"io.circe::circe-generic:0.14.x"
-+ mvn"io.github.nguyenyou::circe-sanely-auto:0.8.0"
++ mvn"io.github.nguyenyou::circe-sanely-auto:0.9.0"
 ```
 
 ### Step 2: Update imports
