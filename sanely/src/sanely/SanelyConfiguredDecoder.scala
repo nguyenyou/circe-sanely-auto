@@ -31,9 +31,9 @@ object SanelyConfiguredDecoder:
           val selfRef: Expr[Decoder[A]] = '{ _selfDec }
           mirror match
             case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-              deriveProduct[A, types, labels](m, selfRef)
+              timer.time("topDerive") { deriveProduct[A, types, labels](m, selfRef) }
             case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-              deriveSum[A, types, labels](m, selfRef)
+              timer.time("topDerive") { deriveSum[A, types, labels](m, selfRef) }
         }
         _selfDec
       }
@@ -43,7 +43,7 @@ object SanelyConfiguredDecoder:
       selfRef: Expr[Decoder[A]]
     ): Expr[Decoder[P]] =
       val fields = resolveFields[Types, Labels](selfRef)
-      val defaults = resolveDefaults[P]
+      val defaults = timer.time("resolveDefaults") { resolveDefaults[P] }
 
       def buildDecodeChain(c: Expr[HCursor], fieldNames: Expr[Array[String]], remaining: List[(String, Type[?], Expr[Decoder[?]], Option[Expr[Any]])], fieldIdx: Int, acc: List[Expr[Any]]): Expr[Decoder.Result[P]] =
         remaining match
