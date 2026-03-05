@@ -1,6 +1,6 @@
 package sanely
 
-import io.circe.{Decoder, DecodingFailure, HCursor, Json}
+import io.circe.{ACursor, Decoder, DecodingFailure, HCursor, Json}
 import io.circe.derivation.Configuration
 import scala.deriving.Mirror
 import scala.collection.mutable
@@ -42,7 +42,7 @@ object SanelyConfiguredDecoder:
       val fields = resolveFields[Types, Labels](selfRef)
       val defaults = resolveDefaults[P]
 
-      def buildDecodeChain(c: Expr[HCursor], remaining: List[(String, Type[?], Expr[Decoder[?]], Option[Expr[Any]])], fieldIdx: Int, acc: List[Expr[Any]]): Expr[Decoder.Result[P]] =
+      def buildDecodeChain(c: Expr[HCursor], fieldNames: Expr[Array[String]], remaining: List[(String, Type[?], Expr[Decoder[?]], Option[Expr[Any]])], fieldIdx: Int, acc: List[Expr[Any]]): Expr[Decoder.Result[P]] =
         remaining match
           case Nil =>
             val tupleExpr = acc.reverse.foldRight('{ EmptyTuple }: Expr[Tuple]) { (elem, tuple) =>
@@ -53,7 +53,7 @@ object SanelyConfiguredDecoder:
             tpe match
               case '[t] =>
                 val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                val labelExpr = Expr(label)
+                val fieldIdxExpr = Expr(fieldIdx)
                 defaultOpt match
                   case Some(defaultExpr) =>
                     val typedDefault = defaultExpr.asInstanceOf[Expr[t]]
@@ -63,34 +63,32 @@ object SanelyConfiguredDecoder:
                       case _ => false
                     if isOptionType then
                       '{
-                        val fieldName = $conf.transformMemberNames($labelExpr)
-                        val cursor = $c.downField(fieldName)
+                        val cursor = $c.downField($fieldNames($fieldIdxExpr))
                         val result: Decoder.Result[t] =
                           if $conf.useDefaults && cursor.failed then
                             Right($typedDefault)
                           else
                             $typedDec.tryDecode(cursor)
                         result match
-                          case Right(v) => ${ buildDecodeChain(c, rest, fieldIdx + 1, 'v :: acc) }
+                          case Right(v) => ${ buildDecodeChain(c, fieldNames, rest, fieldIdx + 1, 'v :: acc) }
                           case Left(e)  => Left(e)
                       }
                     else
                       '{
-                        val fieldName = $conf.transformMemberNames($labelExpr)
-                        val cursor = $c.downField(fieldName)
+                        val cursor = $c.downField($fieldNames($fieldIdxExpr))
                         val result: Decoder.Result[t] =
                           if $conf.useDefaults && (cursor.failed || cursor.focus.exists(_.isNull)) then
                             Right($typedDefault)
                           else
                             $typedDec.tryDecode(cursor)
                         result match
-                          case Right(v) => ${ buildDecodeChain(c, rest, fieldIdx + 1, 'v :: acc) }
+                          case Right(v) => ${ buildDecodeChain(c, fieldNames, rest, fieldIdx + 1, 'v :: acc) }
                           case Left(e)  => Left(e)
                       }
                   case None =>
                     '{
-                      $typedDec.tryDecode($c.downField($conf.transformMemberNames($labelExpr))) match
-                        case Right(v) => ${ buildDecodeChain(c, rest, fieldIdx + 1, 'v :: acc) }
+                      $typedDec.tryDecode($c.downField($fieldNames($fieldIdxExpr))) match
+                        case Right(v) => ${ buildDecodeChain(c, fieldNames, rest, fieldIdx + 1, 'v :: acc) }
                         case Left(e)  => Left(e)
                     }
 
@@ -98,25 +96,24 @@ object SanelyConfiguredDecoder:
         (label, tpe, dec, defaults.lift(idx).flatten)
       }
 
-      // Collect field labels for strict decoding
       val fieldLabels = fields.map(_._1)
       val fieldLabelsExpr = Expr(fieldLabels)
 
       '{
+        val _fieldNames = $fieldLabelsExpr.map($conf.transformMemberNames).toArray
         new Decoder[P]:
           def apply(c: HCursor): Decoder.Result[P] =
             if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
             else
-              // Strict decoding check
               if $conf.strictDecoding then
-                val expectedKeys = $fieldLabelsExpr.map($conf.transformMemberNames).toSet
+                val expectedKeys = _fieldNames.toSet
                 c.keys match
                   case Some(keys) =>
                     val unexpected = keys.filterNot(expectedKeys.contains).toList
                     if unexpected.nonEmpty then
                       return Left(DecodingFailure(s"Unexpected field(s): ${unexpected.mkString(", ")}", c.history))
                   case None => ()
-              ${ buildDecodeChain('c, fieldsWithDefaults, 0, Nil) }
+              ${ buildDecodeChain('c, '{ _fieldNames }, fieldsWithDefaults, 0, Nil) }
       }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
@@ -135,71 +132,53 @@ object SanelyConfiguredDecoder:
         (label, tpe, dec, isSub)
       }
 
-      // --- External tagging path (discriminator = None) ---
-      def buildMatchExternal(c: Expr[HCursor], key: Expr[String]): Expr[Decoder.Result[S]] =
-        casesWithSubTrait.foldRight('{ Left(DecodingFailure("Unknown variant", $c.history)) }: Expr[Decoder.Result[S]]) {
-          case ((label, tpe, dec, true), elseExpr) =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                '{ $typedDec.tryDecode($c) match
-                    case Right(v) => Right(v.asInstanceOf[S])
-                    case Left(_)  => $elseExpr
-                }
-          case ((label, tpe, dec, false), elseExpr) =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                val labelExpr = Expr(label)
-                '{ if $key == $conf.transformConstructorNames($labelExpr) then $typedDec.tryDecode($c.downField($key)).asInstanceOf[Decoder.Result[S]] else $elseExpr }
-        }
-
-      // --- Discriminator path (discriminator = Some(d)) ---
-      def buildMatchDiscriminator(c: Expr[HCursor], discriminatorValue: Expr[String]): Expr[Decoder.Result[S]] =
-        casesWithSubTrait.foldRight('{ Left(DecodingFailure("Unknown variant: " + $discriminatorValue, $c.history)) }: Expr[Decoder.Result[S]]) {
-          case ((label, tpe, dec, true), elseExpr) =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                '{ $typedDec.tryDecode($c) match
-                    case Right(v) => Right(v.asInstanceOf[S])
-                    case Left(_)  => $elseExpr
-                }
-          case ((label, tpe, dec, false), elseExpr) =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                val labelExpr = Expr(label)
-                '{ if $discriminatorValue == $conf.transformConstructorNames($labelExpr) then $typedDec.tryDecode($c).asInstanceOf[Decoder.Result[S]] else $elseExpr }
-        }
-
       val directLabels = casesWithSubTrait.collect { case (label, _, _, false) => label }
       val directLabelsExpr = Expr(directLabels)
+
+      def buildMatch(c: Expr[HCursor], matchValue: Expr[String], decodeCursor: Expr[ACursor]): Expr[Decoder.Result[S]] =
+        val fallback: Expr[Decoder.Result[S]] = '{
+          $conf.discriminator match
+            case Some(_) => Left(DecodingFailure("Unknown variant: " + $matchValue, $c.history))
+            case None    => Left(DecodingFailure("Unknown variant", $c.history))
+        }
+        casesWithSubTrait.foldRight(fallback) {
+          case ((label, tpe, dec, true), elseExpr) =>
+            tpe match
+              case '[t] =>
+                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
+                '{ $typedDec.tryDecode($c) match
+                    case Right(v) => Right(v.asInstanceOf[S])
+                    case Left(_)  => $elseExpr
+                }
+          case ((label, tpe, dec, false), elseExpr) =>
+            tpe match
+              case '[t] =>
+                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
+                val labelExpr = Expr(label)
+                '{ if $matchValue == $conf.transformConstructorNames($labelExpr) then $typedDec.tryDecode($decodeCursor).asInstanceOf[Decoder.Result[S]] else $elseExpr }
+        }
 
       '{
         new Decoder[S]:
           def apply(c: HCursor): Decoder.Result[S] =
-            $conf.discriminator match
+            val pair: (String, ACursor) = $conf.discriminator match
               case Some(discField) =>
-                // Discriminator mode: read discriminator field value
                 c.downField(discField).as[String] match
-                  case Right(typeName) =>
-                    ${ buildMatchDiscriminator('c, 'typeName) }
-                  case Left(e) =>
-                    Left(DecodingFailure(s"Missing discriminator field '$$discField'", c.history))
+                  case Right(typeName) => (typeName, c)
+                  case Left(_) =>
+                    return Left(DecodingFailure(s"Missing discriminator field '$$discField'", c.history))
               case None =>
-                // External tagging mode
                 c.keys match
                   case Some(keys) =>
                     val keysList = keys.toList
                     if $conf.strictDecoding && keysList.size > 1 then
-                      Left(DecodingFailure("Expected single-key JSON object for sum type", c.history))
-                    else
-                      val transformedLabels = $directLabelsExpr.map(l => $conf.transformConstructorNames(l))
-                      val key = keysList.find(transformedLabels.toSet.contains).getOrElse("")
-                      ${ buildMatchExternal('c, 'key) }
+                      return Left(DecodingFailure("Expected single-key JSON object for sum type", c.history))
+                    val transformedLabels = $directLabelsExpr.map(l => $conf.transformConstructorNames(l))
+                    val key = keysList.find(transformedLabels.toSet.contains).getOrElse("")
+                    (key, c.downField(key))
                   case None =>
-                    Left(DecodingFailure("Expected JSON object for sum type", c.history))
+                    return Left(DecodingFailure("Expected JSON object for sum type", c.history))
+            ${ buildMatch('c, '{ pair._1 }, '{ pair._2 }) }
       }
 
     private def resolveFields[Types: Type, Labels: Type](

@@ -40,22 +40,20 @@ object SanelyConfiguredEncoder:
       selfRef: Expr[Encoder.AsObject[A]]
     ): Expr[Encoder.AsObject[P]] =
       val fields = resolveFields[Types, Labels](selfRef)
-
-      def addField(base: Expr[JsonObject], product: Expr[Product], label: String, idx: Int, tpe: Type[?], enc: Expr[Encoder[?]]): Expr[JsonObject] =
-        tpe match
-          case '[t] =>
-            val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
-            val labelExpr = Expr(label)
-            val idxExpr = Expr(idx)
-            '{ $base.add($conf.transformMemberNames($labelExpr), $typedEnc($product.productElement($idxExpr).asInstanceOf[t])) }
+      val labelsExpr = Expr(fields.map(_._1))
 
       '{
+        val _names = $labelsExpr.map($conf.transformMemberNames).toArray
         new Encoder.AsObject[P]:
           def encodeObject(a: P): JsonObject =
             ${
               val product = '{ a.asInstanceOf[Product] }
-              fields.zipWithIndex.foldLeft('{ JsonObject.empty }) { case (acc, ((label, tpe, enc), idx)) =>
-                addField(acc, product, label, idx, tpe, enc)
+              fields.zipWithIndex.foldLeft('{ JsonObject.empty }) { case (acc, ((_, tpe, enc), idx)) =>
+                tpe match
+                  case '[t] =>
+                    val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
+                    val idxExpr = Expr(idx)
+                    '{ $acc.add(_names($idxExpr), $typedEnc($product.productElement($idxExpr).asInstanceOf[t])) }
               }
             }
       }
@@ -76,18 +74,7 @@ object SanelyConfiguredEncoder:
         (label, tpe, enc, isSub)
       }
 
-      def buildBranchExternal(a: Expr[S], label: String, tpe: Type[?], enc: Expr[Encoder[?]], isSubTrait: Boolean): Expr[JsonObject] =
-        tpe match
-          case '[t] =>
-            if isSubTrait then
-              val typedEnc = enc.asInstanceOf[Expr[Encoder.AsObject[t]]]
-              '{ $typedEnc.encodeObject($a.asInstanceOf[t]) }
-            else
-              val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
-              val labelExpr = Expr(label)
-              '{ JsonObject.singleton($conf.transformConstructorNames($labelExpr), $typedEnc($a.asInstanceOf[t])) }
-
-      def buildBranchDiscriminator(a: Expr[S], discr: Expr[String], label: String, tpe: Type[?], enc: Expr[Encoder[?]], isSubTrait: Boolean): Expr[JsonObject] =
+      def buildBranch(a: Expr[S], label: String, tpe: Type[?], enc: Expr[Encoder[?]], isSubTrait: Boolean): Expr[JsonObject] =
         tpe match
           case '[t] =>
             if isSubTrait then
@@ -97,9 +84,14 @@ object SanelyConfiguredEncoder:
               val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
               val labelExpr = Expr(label)
               '{
-                val inner = $typedEnc($a.asInstanceOf[t])
-                val base = inner.asObject.getOrElse(JsonObject.empty)
-                base.add($discr, Json.fromString($conf.transformConstructorNames($labelExpr)))
+                val encoded = $typedEnc($a.asInstanceOf[t])
+                val transformedLabel = $conf.transformConstructorNames($labelExpr)
+                $conf.discriminator match
+                  case None =>
+                    JsonObject.singleton(transformedLabel, encoded)
+                  case Some(discr) =>
+                    val base = encoded.asObject.getOrElse(JsonObject.empty)
+                    base.add(discr, Json.fromString(transformedLabel))
               }
 
       '{
@@ -107,26 +99,11 @@ object SanelyConfiguredEncoder:
           def encodeObject(a: S): JsonObject =
             val ord = $mirror.ordinal(a)
             ${
-              // We build two branches: one for discriminator mode, one for external tagging
-              // The runtime check on conf.discriminator selects which path
-              val externalMatch = casesWithSubTrait.zipWithIndex.foldRight('{ throw new MatchError(ord) }: Expr[JsonObject]) {
+              casesWithSubTrait.zipWithIndex.foldRight('{ throw new MatchError(ord) }: Expr[JsonObject]) {
                 case (((label, tpe, enc, isSub), idx), elseExpr) =>
                   val idxExpr = Expr(idx)
-                  val branch = buildBranchExternal('a, label, tpe, enc, isSub)
+                  val branch = buildBranch('a, label, tpe, enc, isSub)
                   '{ if ord == $idxExpr then $branch else $elseExpr }
-              }
-
-              val discrMatch = casesWithSubTrait.zipWithIndex.foldRight('{ throw new MatchError(ord) }: Expr[JsonObject]) {
-                case (((label, tpe, enc, isSub), idx), elseExpr) =>
-                  val idxExpr = Expr(idx)
-                  val branch = buildBranchDiscriminator('a, '{ $conf.discriminator.get }, label, tpe, enc, isSub)
-                  '{ if ord == $idxExpr then $branch else $elseExpr }
-              }
-
-              '{
-                $conf.discriminator match
-                  case None    => $externalMatch
-                  case Some(_) => $discrMatch
               }
             }
       }

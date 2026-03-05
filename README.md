@@ -137,7 +137,7 @@ Supports hierarchical sealed traits with diamond inheritance.
 
 ```diff
 - mvn"io.circe::circe-generic:0.14.x"
-+ mvn"io.github.nguyenyou::circe-sanely-auto:0.5.0"
++ mvn"io.github.nguyenyou::circe-sanely-auto:0.6.0"
 ```
 
 ### Step 2: Update imports
@@ -174,15 +174,15 @@ Results on M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **3.52s** | |
-| **circe-generic** | **6.49s** | 1.8x slower |
+| **circe-sanely-auto** | **3.69s** | |
+| **circe-generic** | **6.99s** | 1.9x slower |
 
 ### Configured derivation
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **2.48s** | |
-| **circe-core** | **2.70s** | ~same |
+| **circe-sanely-auto** | **3.10s** | |
+| **circe-core** | **3.20s** | ~same |
 
 ### Why the difference?
 
