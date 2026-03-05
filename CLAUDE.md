@@ -19,7 +19,8 @@ Mill 1.1.2. Run from repo root:
 ./mill sanely.js.compile        # compile (Scala.js)
 ./mill sanely.jvm.test          # unit tests - JVM (129 tests, utest)
 ./mill sanely.js.test           # unit tests - Scala.js (129 tests, utest)
-./mill compat.test              # circe compat tests (318 tests, munit + discipline)
+./mill compat.jvm.test          # circe compat tests - JVM (318 tests, munit + discipline)
+./mill compat.js.test           # circe compat tests - Scala.js (318 tests, munit + discipline)
 ./mill demo.run                 # run demo
 ```
 
@@ -69,7 +70,7 @@ open /tmp/flamegraph.html
 |---|---|
 | `sanely/` | Core library. Cross-compiled JVM + Scala.js via `PlatformScalaModule` |
 | `sanely/test/` | Unit tests (utest). Platform-specific sources in `test/src-jvm/` and `test/src-js/` |
-| `compat/` | Circe compatibility tests (munit + discipline). Uses circe's own `CodecTests` |
+| `compat/` | Circe compatibility tests (munit + discipline). Cross-compiled JVM + Scala.js. Uses circe's own `CodecTests` |
 | `demo/` | Runnable examples |
 | `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
 | `benchmark-configured/` | Configured derivation benchmark. Three sub-modules: `sanely`, `generic`, `generic-compat` sharing `benchmark-configured/shared/src/` |

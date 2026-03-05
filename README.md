@@ -257,9 +257,10 @@ Requires [Mill](https://mill-build.org/) 1.1.2+.
 ./mill sanely.jvm.compile    # compile (JVM)
 ./mill sanely.js.compile     # compile (Scala.js)
 ./mill sanely.jvm.test       # unit tests (JVM)
-./mill sanely.js.test         # unit tests (Scala.js)
-./mill compat.test            # circe compatibility tests
-./mill demo.run               # run demo
+./mill sanely.js.test        # unit tests (Scala.js)
+./mill compat.jvm.test       # circe compatibility tests (JVM)
+./mill compat.js.test        # circe compatibility tests (Scala.js)
+./mill demo.run              # run demo
 ```
 
 ## How it's made
