@@ -43,30 +43,20 @@ object SanelyDecoder:
       selfRef: Expr[Decoder[A]]
     ): Expr[Decoder[P]] =
       val fields = resolveFields[Types, Labels](selfRef)
-
-      def buildDecodeChain(c: Expr[HCursor], remaining: List[(String, Type[?], Expr[Decoder[?]])], acc: List[Expr[Any]]): Expr[Decoder.Result[P]] =
-        remaining match
-          case Nil =>
-            val tupleExpr = acc.reverse.foldRight('{ EmptyTuple }: Expr[Tuple]) { (elem, tuple) =>
-              '{ $elem *: $tuple }
-            }
-            '{ Right($mirror.fromProduct($tupleExpr)) }
-          case (label, tpe, dec) :: rest =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                val labelExpr = Expr(label)
-                '{
-                  $typedDec.tryDecode($c.downField($labelExpr)) match
-                    case Right(v) => ${ buildDecodeChain(c, rest, 'v :: acc) }
-                    case Left(e)  => Left(e)
-                }
+      val namesExpr = Expr(fields.map(_._1).toArray)
+      val decoderExprs = fields.map { case (_, tpe, dec) =>
+        tpe match
+          case '[t] => '{ ${dec.asInstanceOf[Expr[Decoder[t]]]}.asInstanceOf[Decoder[Any]] }
+      }
+      val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
 
       '{
         new Decoder[P]:
+          private lazy val _decoders = $decodersArrayExpr
+          private val _names = $namesExpr
           def apply(c: HCursor): Decoder.Result[P] =
             if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
-            else ${ buildDecodeChain('c, fields, Nil) }
+            else SanelyRuntime.decodeProductFields(c, $mirror, _names, _decoders)
       }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
@@ -88,37 +78,29 @@ object SanelyDecoder:
         (label, tpe, dec, isSub)
       }
 
-      def buildMatch(c: Expr[HCursor], key: Expr[String]): Expr[Decoder.Result[S]] =
-        casesWithSubTrait.foldRight('{ Left(DecodingFailure("Unknown variant", $c.history)) }: Expr[Decoder.Result[S]]) {
-          case ((label, tpe, dec, true), elseExpr) =>
-            // Sub-trait: try its decoder directly on the cursor (it handles its own key matching)
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                '{ $typedDec.tryDecode($c) match
-                    case Right(v) => Right(v.asInstanceOf[S])
-                    case Left(_)  => $elseExpr
-                }
-          case ((label, tpe, dec, false), elseExpr) =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                val labelExpr = Expr(label)
-                '{ if $key == $labelExpr then $typedDec.tryDecode($c.downField($labelExpr)).asInstanceOf[Decoder.Result[S]] else $elseExpr }
-        }
-
       // Collect only non-sub-trait labels for key matching
       val directLabels = casesWithSubTrait.collect { case (label, _, _, false) => label }
       val directLabelsExpr = Expr(directLabels)
 
+      val allLabelsExpr = Expr(casesWithSubTrait.map(_._1).toArray)
+      val isSubTraitExpr = Expr(casesWithSubTrait.map(_._4).toArray)
+      val decoderExprs = casesWithSubTrait.map { case (_, tpe, dec, _) =>
+        tpe match
+          case '[t] => '{ ${dec.asInstanceOf[Expr[Decoder[t]]]}.asInstanceOf[Decoder[Any]] }
+      }
+      val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
+
       '{
         new Decoder[S]:
           private val _knownLabels: Set[String] = $directLabelsExpr.toSet
+          private val _labels = $allLabelsExpr
+          private lazy val _decoders = $decodersArrayExpr
+          private val _isSubTrait = $isSubTraitExpr
           def apply(c: HCursor): Decoder.Result[S] =
             c.keys match
               case Some(keys) =>
                 val key = keys.find(_knownLabels.contains).getOrElse("")
-                ${ buildMatch('c, 'key) }
+                SanelyRuntime.decodeSum(c, key, _labels, _decoders, _isSubTrait)
               case None =>
                 Left(DecodingFailure("Expected JSON object for sum type", c.history))
       }
@@ -159,6 +141,13 @@ object SanelyDecoder:
           return cached.asInstanceOf[Expr[Decoder[T]]]
         case None => ()
 
+      tryResolveBuiltinDecoder[T] match
+        case Some(dec) =>
+          timer.count("builtinHit")
+          exprCache(cacheKey) = dec
+          return dec
+        case None => ()
+
       val resolved: Expr[Decoder[T]] =
         timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match
           case Some(dec) => dec
@@ -185,6 +174,22 @@ object SanelyDecoder:
         case AndType(left, right) => containsType(left, target) || containsType(right, target)
         case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
+
+    private def tryResolveBuiltinDecoder[T: Type]: Option[Expr[Decoder[T]]] =
+      val tpe = TypeRepr.of[T].dealias
+      val result: Option[Expr[Decoder[?]]] =
+        if tpe =:= TypeRepr.of[String] then Some('{ Decoder.decodeString })
+        else if tpe =:= TypeRepr.of[Int] then Some('{ Decoder.decodeInt })
+        else if tpe =:= TypeRepr.of[Long] then Some('{ Decoder.decodeLong })
+        else if tpe =:= TypeRepr.of[Double] then Some('{ Decoder.decodeDouble })
+        else if tpe =:= TypeRepr.of[Float] then Some('{ Decoder.decodeFloat })
+        else if tpe =:= TypeRepr.of[Boolean] then Some('{ Decoder.decodeBoolean })
+        else if tpe =:= TypeRepr.of[Short] then Some('{ Decoder.decodeShort })
+        else if tpe =:= TypeRepr.of[Byte] then Some('{ Decoder.decodeByte })
+        else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ Decoder.decodeBigDecimal })
+        else if tpe =:= TypeRepr.of[BigInt] then Some('{ Decoder.decodeBigInt })
+        else None
+      result.map(_.asInstanceOf[Expr[Decoder[T]]])
 
     private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]

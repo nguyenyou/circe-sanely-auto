@@ -45,44 +45,6 @@ object SanelyConfiguredDecoder:
       val fields = resolveFields[Types, Labels](selfRef)
       val defaults = timer.time("resolveDefaults") { resolveDefaults[P] }
 
-      def buildDecodeChain(c: Expr[HCursor], fieldNames: Expr[Array[String]], remaining: List[(String, Type[?], Expr[Decoder[?]], Option[Expr[Any]])], fieldIdx: Int, acc: List[Expr[Any]]): Expr[Decoder.Result[P]] =
-        remaining match
-          case Nil =>
-            val tupleExpr = acc.reverse.foldRight('{ EmptyTuple }: Expr[Tuple]) { (elem, tuple) =>
-              '{ $elem *: $tuple }
-            }
-            '{ Right($mirror.fromProduct($tupleExpr)) }
-          case (label, tpe, dec, defaultOpt) :: rest =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                val fieldIdxExpr = Expr(fieldIdx)
-                defaultOpt match
-                  case Some(defaultExpr) =>
-                    val typedDefault = defaultExpr.asInstanceOf[Expr[t]]
-                    // For Option types, null should decode normally as None, not trigger default
-                    val isOptionType = TypeRepr.of[t].dealias match
-                      case AppliedType(tycon, _) => tycon.typeSymbol.fullName == "scala.Option"
-                      case _ => false
-                    if isOptionType then
-                      '{
-                        SanelyRuntime.tryDecodeOptionFieldWithDefault($c, $fieldNames($fieldIdxExpr), $typedDec, $conf.useDefaults, $typedDefault) match
-                          case Right(v) => ${ buildDecodeChain(c, fieldNames, rest, fieldIdx + 1, 'v :: acc) }
-                          case Left(e)  => Left(e)
-                      }
-                    else
-                      '{
-                        SanelyRuntime.tryDecodeFieldWithDefault($c, $fieldNames($fieldIdxExpr), $typedDec, $conf.useDefaults, $typedDefault) match
-                          case Right(v) => ${ buildDecodeChain(c, fieldNames, rest, fieldIdx + 1, 'v :: acc) }
-                          case Left(e)  => Left(e)
-                      }
-                  case None =>
-                    '{
-                      $typedDec.tryDecode($c.downField($fieldNames($fieldIdxExpr))) match
-                        case Right(v) => ${ buildDecodeChain(c, fieldNames, rest, fieldIdx + 1, 'v :: acc) }
-                        case Left(e)  => Left(e)
-                    }
-
       val fieldsWithDefaults = fields.zipWithIndex.map { case ((label, tpe, dec), idx) =>
         (label, tpe, dec, defaults.lift(idx).flatten)
       }
@@ -90,9 +52,37 @@ object SanelyConfiguredDecoder:
       val fieldLabels = fields.map(_._1)
       val fieldLabelsExpr = Expr(fieldLabels)
 
+      val decoderExprs = fieldsWithDefaults.map { case (_, tpe, dec, _) =>
+        tpe match
+          case '[t] => '{ ${dec.asInstanceOf[Expr[Decoder[t]]]}.asInstanceOf[Decoder[Any]] }
+      }
+      val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
+
+      val hasDefaultExprs = fieldsWithDefaults.map(f => Expr(f._4.isDefined))
+      val hasDefaultArrayExpr = '{ Array(${Varargs(hasDefaultExprs)}*) }
+
+      val defaultExprs = fieldsWithDefaults.map { case (_, _, _, defaultOpt) =>
+        defaultOpt.getOrElse('{ null })
+      }
+      val defaultsArrayExpr = '{ Array[Any](${Varargs(defaultExprs)}*) }
+
+      val isOptionExprs = fieldsWithDefaults.map { case (_, tpe, _, _) =>
+        tpe match
+          case '[t] =>
+            val isOpt = TypeRepr.of[t].dealias match
+              case AppliedType(tycon, _) => tycon.typeSymbol.fullName == "scala.Option"
+              case _ => false
+            Expr(isOpt)
+      }
+      val isOptionArrayExpr = '{ Array(${Varargs(isOptionExprs)}*) }
+
       '{
         val _fieldNames = $fieldLabelsExpr.map($conf.transformMemberNames).toArray
         new Decoder[P]:
+          private lazy val _decoders = $decodersArrayExpr
+          private val _hasDefault = $hasDefaultArrayExpr
+          private val _defaults = $defaultsArrayExpr
+          private val _isOption = $isOptionArrayExpr
           def apply(c: HCursor): Decoder.Result[P] =
             if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
             else
@@ -100,7 +90,7 @@ object SanelyConfiguredDecoder:
                 SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet) match
                   case Left(err) => return Left(err)
                   case _ => ()
-              ${ buildDecodeChain('c, '{ _fieldNames }, fieldsWithDefaults, 0, Nil) }
+              SanelyRuntime.decodeProductFieldsConfigured(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults)
       }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
@@ -124,37 +114,25 @@ object SanelyConfiguredDecoder:
       val directLabels = casesWithSubTrait.collect { case (label, _, _, false) => label }
       val directLabelsExpr = Expr(directLabels)
 
-      def buildMatch(c: Expr[HCursor], matchValue: Expr[String], decodeCursor: Expr[ACursor]): Expr[Decoder.Result[S]] =
-        val fallback: Expr[Decoder.Result[S]] = '{
-          $conf.discriminator match
-            case Some(_) => Left(DecodingFailure("Unknown variant: " + $matchValue, $c.history))
-            case None    => Left(DecodingFailure("Unknown variant", $c.history))
-        }
-        casesWithSubTrait.foldRight(fallback) {
-          case ((label, tpe, dec, true), elseExpr) =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                '{ $typedDec.tryDecode($c) match
-                    case Right(v) => Right(v.asInstanceOf[S])
-                    case Left(_)  => $elseExpr
-                }
-          case ((label, tpe, dec, false), elseExpr) =>
-            tpe match
-              case '[t] =>
-                val typedDec = dec.asInstanceOf[Expr[Decoder[t]]]
-                val labelExpr = Expr(label)
-                '{ if $matchValue == $conf.transformConstructorNames($labelExpr) then $typedDec.tryDecode($decodeCursor).asInstanceOf[Decoder.Result[S]] else $elseExpr }
-        }
+      val allLabelsExpr = Expr(casesWithSubTrait.map(_._1).toArray)
+      val isSubTraitExpr = Expr(casesWithSubTrait.map(_._4).toArray)
+      val decoderExprs = casesWithSubTrait.map { case (_, tpe, dec, _) =>
+        tpe match
+          case '[t] => '{ ${dec.asInstanceOf[Expr[Decoder[t]]]}.asInstanceOf[Decoder[Any]] }
+      }
+      val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
 
       '{
         new Decoder[S]:
           private val _transformedLabels: Set[String] = $directLabelsExpr.map(l => $conf.transformConstructorNames(l)).toSet
+          private val _labels = $allLabelsExpr
+          private lazy val _decoders = $decodersArrayExpr
+          private val _isSubTrait = $isSubTraitExpr
           def apply(c: HCursor): Decoder.Result[S] =
             SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding) match
               case Left(err) => Left(err)
               case Right(pair) =>
-                ${ buildMatch('c, '{ pair._1 }, '{ pair._2 }) }
+                SanelyRuntime.decodeSumConfigured(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator)
       }
 
     private def resolveFields[Types: Type, Labels: Type](
@@ -225,6 +203,13 @@ object SanelyConfiguredDecoder:
           return cached.asInstanceOf[Expr[Decoder[T]]]
         case None => ()
 
+      tryResolveBuiltinDecoder[T] match
+        case Some(dec) =>
+          timer.count("builtinHit")
+          exprCache(cacheKey) = dec
+          return dec
+        case None => ()
+
       val resolved: Expr[Decoder[T]] =
         timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match
           case Some(dec) => dec
@@ -251,6 +236,22 @@ object SanelyConfiguredDecoder:
         case AndType(left, right) => containsType(left, target) || containsType(right, target)
         case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
+
+    private def tryResolveBuiltinDecoder[T: Type]: Option[Expr[Decoder[T]]] =
+      val tpe = TypeRepr.of[T].dealias
+      val result: Option[Expr[Decoder[?]]] =
+        if tpe =:= TypeRepr.of[String] then Some('{ Decoder.decodeString })
+        else if tpe =:= TypeRepr.of[Int] then Some('{ Decoder.decodeInt })
+        else if tpe =:= TypeRepr.of[Long] then Some('{ Decoder.decodeLong })
+        else if tpe =:= TypeRepr.of[Double] then Some('{ Decoder.decodeDouble })
+        else if tpe =:= TypeRepr.of[Float] then Some('{ Decoder.decodeFloat })
+        else if tpe =:= TypeRepr.of[Boolean] then Some('{ Decoder.decodeBoolean })
+        else if tpe =:= TypeRepr.of[Short] then Some('{ Decoder.decodeShort })
+        else if tpe =:= TypeRepr.of[Byte] then Some('{ Decoder.decodeByte })
+        else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ Decoder.decodeBigDecimal })
+        else if tpe =:= TypeRepr.of[BigInt] then Some('{ Decoder.decodeBigInt })
+        else None
+      result.map(_.asInstanceOf[Expr[Decoder[T]]])
 
     private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]
