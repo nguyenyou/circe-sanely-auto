@@ -18,7 +18,7 @@
 
 ### Added
 - **Compile-time macro profiling** — enable with `SANELY_PROFILE=true` to get per-expansion timing breakdown. Shows time spent in implicit search (`summonIgnoring`), mirror summoning, AST derivation, sub-trait detection, and cache hits. Includes a global summary across all expansions. Zero cost when disabled.
-- **Profiling analysis skill** — `.claude/skills/sanely-profile/` with a Python script (`scripts/analyze_profile.py`) that aggregates profile data, ranks slowest types, and generates actionable optimization insights.
+- **Profiling analysis skill** — `.claude/skills/macro-profile/` with a Python script (`scripts/analyze_profile.py`) that aggregates profile data, ranks slowest types, and generates actionable optimization insights.
 
 ## [0.6.1] - 2026-03-05
 

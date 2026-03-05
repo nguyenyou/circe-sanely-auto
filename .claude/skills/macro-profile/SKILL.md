@@ -1,5 +1,5 @@
 ---
-name: sanely-profile
+name: macro-profile
 description: >
   Profile and analyze circe-sanely-auto macro expansion performance.
   Use this skill whenever investigating compile time, macro performance,
@@ -38,16 +38,16 @@ Use `--no-server` so Mill doesn't reuse a cached compilation.
 
 ```bash
 # Full report
-python .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt
+python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt
 
 # Top 20 slowest, sorted by summonIgnoring time
-python .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --top 20 --sort summonIgnoring
+python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --top 20 --sort summonIgnoring
 
 # Only Decoder expansions
-python .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --kind Decoder
+python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --kind Decoder
 
 # JSON output for programmatic use
-python .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --json
+python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --json
 ```
 
 ### 3. Interpret the results
