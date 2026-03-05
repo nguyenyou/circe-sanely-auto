@@ -17,9 +17,9 @@ Mill 1.1.2. Run from repo root:
 ```bash
 ./mill sanely.jvm.compile       # compile (JVM)
 ./mill sanely.js.compile        # compile (Scala.js)
-./mill sanely.jvm.test          # unit tests - JVM (109 tests, utest)
-./mill sanely.js.test           # unit tests - Scala.js (109 tests, utest)
-./mill compat.test              # circe compat tests (253 tests, munit + discipline)
+./mill sanely.jvm.test          # unit tests - JVM (122 tests, utest)
+./mill sanely.js.test           # unit tests - Scala.js (122 tests, utest)
+./mill compat.test              # circe compat tests (318 tests, munit + discipline)
 ./mill demo.run                 # run demo
 ```
 
