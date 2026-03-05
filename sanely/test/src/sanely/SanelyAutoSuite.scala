@@ -200,6 +200,12 @@ case object CodecObj extends CodecTestAdt
 object CodecTestAdt:
   given Codec.AsObject[CodecTestAdt] = SanelyCodec.derived
 
+// Phase 10 types — Either and Tuple fields
+case class WithEither(label: String, value: Either[String, Int])
+case class WithTuple2(name: String, pair: (Int, String))
+case class WithTuple3(data: (Boolean, Int, String))
+case class WithTuple1(wrapped: Tuple1[Double])
+
 // Phase 9 types — semiauto (explicit derived) in companion objects
 case class SemiAutoProduct(x: Int, y: String)
 object SemiAutoProduct:
@@ -573,6 +579,68 @@ object SanelyAutoSuite extends TestSuite:
       assert(decode[Adt1]("""{"extraField":true,"Adt1Class1":{"int":3}}""") == expected)
       assert(decode[Adt1]("""{"extraField":true,"extraField2":15,"Adt1Class1":{"int":3}}""") == expected)
       assert(decode[Adt1]("""{"Adt1Class1":{"int":3},"extraField":true}""") == expected)
+    }
+
+    // --- Phase 10: Either and Tuple Fields ---
+
+    test("Either[String, Int] field round-trip (Right)") {
+      import io.circe.disjunctionCodecs.given
+      val v = WithEither("test", Right(42))
+      val json = v.asJson
+      val expected = Json.obj(
+        "label" -> Json.fromString("test"),
+        "value" -> Json.obj("Right" -> Json.fromInt(42))
+      )
+      assert(json == expected)
+      val decoded = decode[WithEither](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Either[String, Int] field round-trip (Left)") {
+      import io.circe.disjunctionCodecs.given
+      val v = WithEither("err", Left("oops"))
+      val json = v.asJson
+      val expected = Json.obj(
+        "label" -> Json.fromString("err"),
+        "value" -> Json.obj("Left" -> Json.fromString("oops"))
+      )
+      assert(json == expected)
+      val decoded = decode[WithEither](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Tuple2 field round-trip") {
+      val v = WithTuple2("pair", (1, "hello"))
+      val json = v.asJson
+      val expected = Json.obj(
+        "name" -> Json.fromString("pair"),
+        "pair" -> Json.arr(Json.fromInt(1), Json.fromString("hello"))
+      )
+      assert(json == expected)
+      val decoded = decode[WithTuple2](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Tuple3 field round-trip") {
+      val v = WithTuple3((true, 42, "x"))
+      val json = v.asJson
+      val expected = Json.obj(
+        "data" -> Json.arr(Json.fromBoolean(true), Json.fromInt(42), Json.fromString("x"))
+      )
+      assert(json == expected)
+      val decoded = decode[WithTuple3](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Tuple1 field round-trip") {
+      val v = WithTuple1(Tuple1(3.14))
+      val json = v.asJson
+      val expected = Json.obj(
+        "wrapped" -> Json.arr(Json.fromDoubleOrNull(3.14))
+      )
+      assert(json == expected)
+      val decoded = decode[WithTuple1](json.noSpaces)
+      assert(decoded == Right(v))
     }
 
     // --- Phase 9: Semiauto API ---
