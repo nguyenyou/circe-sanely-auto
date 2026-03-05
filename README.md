@@ -226,6 +226,49 @@ JVM-level profiling with async-profiler shows where the Scala compiler spends ti
 
 **Key pattern**: Sanely trades inlining for quote reflection. circe-generic/circe-core's `inline` + `summonInline` approach forces the compiler to do heavy inlining work (43 samples for auto, 19 for configured). Sanely's `Expr.summonIgnoring` approach shifts that work to the quote reflection phase (17/8 samples) which is cheaper. For auto derivation, the total compiler workload is **27% lighter**. For configured, single-pass codec derivation reduces compiler work by **8%** — the 38% wall-clock speedup comes from both reduced compiler work and reduced JIT/classload overhead due to fewer macro expansions (230 vs 460).
 
+### Memory profiling
+
+Peak RSS via `/usr/bin/time -l`, allocation samples via async-profiler `event=alloc`.
+
+#### Peak RSS
+
+| Suite | sanely | circe baseline | Delta |
+|---|---|---|---|
+| **Auto derivation** (~300 types) | **923 MB** | 938 MB (circe-generic) | -2% |
+| **Configured derivation** (~230 types) | **789 MB** | 751 MB (circe-core) | +5% |
+
+Both libraries use comparable peak memory. RSS includes compiler heap, JIT code, metaspace, and OS buffers — differences are within run-to-run variance.
+
+#### Allocation pressure — auto derivation
+
+| Category | sanely | circe-generic | Delta |
+|---|---|---|---|
+| **total** | **5,236** | **8,170** | **-36%** |
+| compiler | 4,272 (82%) | 7,340 (90%) | -42% |
+| compiler.core | 1,444 | 2,672 | -46% |
+| compiler.core.types | 427 | 1,081 | **-60%** |
+| compiler.ast | 426 | 982 | **-57%** |
+| compiler.macro.inlines | 72 | 485 | **-85%** |
+| compiler.typer | 247 | 401 | -38% |
+| compiler.backend | 462 | 281 | +64% |
+| mill / zinc / jvm | 908 | 762 | +19% |
+
+#### Allocation pressure — configured derivation
+
+| Category | sanely | circe-core | Delta |
+|---|---|---|---|
+| **total** | **3,774** | **4,102** | **-8%** |
+| compiler | 2,939 (78%) | 3,269 (80%) | -10% |
+| compiler.core | 984 | 1,115 | -12% |
+| compiler.core.types | 242 | 381 | **-36%** |
+| compiler.ast | 236 | 380 | **-38%** |
+| compiler.macro.inlines | 51 | 178 | **-71%** |
+| compiler.typer | 169 | 173 | -2% |
+| compiler.backend | 366 | 187 | +96% |
+| mill / zinc / jvm | 767 | 764 | ~0% |
+
+**Auto derivation** allocates **36% fewer objects** — the biggest wins are in `compiler.core.types` (-60%, fewer type representations), `compiler.ast` (-57%, smaller generated ASTs), and `compiler.macro.inlines` (-85%, no inline expansion chains). **Configured derivation** allocates **8% fewer objects** with the same pattern at smaller magnitude. In both cases, backend allocations increase (+64%/+96%) reflecting more bytecode generation from macro-generated code — a trade-off for doing less compiler work elsewhere.
+
 ### Macro profiling
 
 Built-in compile-time profiling via `SANELY_PROFILE=true` tracks where time is spent inside our macros:
