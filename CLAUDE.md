@@ -19,7 +19,7 @@ Mill 1.1.2. Run from repo root:
 ./mill sanely.js.compile        # compile (Scala.js)
 ./mill sanely.jvm.test          # unit tests - JVM (109 tests, utest)
 ./mill sanely.js.test           # unit tests - Scala.js (109 tests, utest)
-./mill compat.test              # circe compat tests (160 tests, munit + discipline)
+./mill compat.test              # circe compat tests (253 tests, munit + discipline)
 ./mill demo.run                 # run demo
 ```
 
@@ -42,19 +42,19 @@ bash bench.sh --configured 5    # configured derivation timed comparison (~230 t
 # Macro-level profiling (our MacroTimer)
 rm -rf out/benchmark/sanely
 SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/profile.txt
-python3 .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/profile.txt
+python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 
 # Configured derivation macro profiling
 rm -rf out/benchmark-configured/sanely
 SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee /tmp/profile.txt
-python3 .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/profile.txt
+python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 
 # JVM-level profiling (async-profiler, requires: brew install async-profiler)
 # Use JAVA_TOOL_OPTIONS (not JAVA_OPTS) to profile ALL JVMs including zinc worker
 rm -rf out/benchmark/sanely
 JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/collapsed.txt,collapsed" \
   ./mill --no-server benchmark.sanely.compile
-python3 .claude/skills/compile-profile/scripts/analyze_jvm_profile.py /tmp/collapsed.txt
+python3 .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/collapsed.txt
 
 # HTML flame graph (for visual inspection)
 rm -rf out/benchmark/sanely

@@ -1,11 +1,11 @@
 ---
-name: compile-profile
+name: jvm-profile
 description: >
   Profile Scala compilation at the JVM level using async-profiler to identify
   bottlenecks in the compiler, JIT, GC, and macro expansion. Use this skill
   whenever investigating why compilation is slow at the JVM level, generating
   flame graphs, analyzing async-profiler output, or understanding where the
-  Scala compiler spends time. Complements the sanely-profile skill (macro-level)
+  Scala compiler spends time. Complements the macro-profile skill (macro-level)
   with JVM-level visibility. Triggers on: "flame graph", "async-profiler",
   "JVM profile", "compilation bottleneck", "where does the compiler spend time",
   "JIT warmup", "GC during compilation", "profile the build".
@@ -15,7 +15,7 @@ description: >
 
 Profile Scala compilation at the JVM level using async-profiler. This gives
 visibility into JIT compilation, GC pressure, and Scala compiler internals
-that the macro-level `sanely-profile` skill can't see.
+that the macro-level `macro-profile` skill can't see.
 
 ## Prerequisites
 
@@ -54,13 +54,13 @@ and will miss the actual Scala compiler.
 
 ```bash
 # Full report
-python .claude/skills/compile-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt
+python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt
 
 # Focus on compiler internals only
-python .claude/skills/compile-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt --focus compiler
+python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt --focus compiler
 
 # JSON for programmatic use
-python .claude/skills/compile-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt --json
+python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt --json
 ```
 
 ### 3. Interpret the results
@@ -91,12 +91,12 @@ To see actual compiler performance:
 - **Or** use Mill daemon mode (no `--no-server`) for a warm JVM — but you
   need to invalidate caches between runs
 
-## Combining with sanely-profile
+## Combining with macro-profile
 
 For the full picture, run both profilers:
 
-1. **compile-profile** (this skill) — shows WHERE in the JVM time is spent
-2. **sanely-profile** — shows WHERE in our macro code time is spent
+1. **jvm-profile** (this skill) — shows WHERE in the JVM time is spent
+2. **macro-profile** — shows WHERE in our macro code time is spent
 
 ```bash
 # Both at once:
@@ -106,10 +106,10 @@ JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfil
   ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/full-profile.txt
 
 # Analyze JVM level:
-python .claude/skills/compile-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt
+python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt
 
 # Analyze macro level:
-python .claude/skills/sanely-profile/scripts/analyze_profile.py /tmp/full-profile.txt
+python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/full-profile.txt
 ```
 
 ## Optimization decision tree
@@ -118,7 +118,7 @@ Based on profile results:
 
 1. **JIT > 50%**: Cold JVM problem. Not actionable for our code. Use warm JVM for representative numbers.
 2. **GC > 10%**: Increase heap (`-Xmx4g`) or switch to ZGC (`-XX:+UseZGC`).
-3. **compiler.macro > 30% of compiler time**: Our macros are the bottleneck. Use `sanely-profile` for details.
+3. **compiler.macro > 30% of compiler time**: Our macros are the bottleneck. Use `macro-profile` for details.
 4. **compiler.typer.implicits > 20% of compiler time**: Implicit search is expensive. Reduce `summonIgnoring` calls.
 5. **compiler.backend > 25% of compiler time**: Generated code is too large. Extract more to `SanelyRuntime`.
 6. **compiler.transform > 20% of compiler time**: Post-typer phases are expensive. Usually not actionable from our side.
