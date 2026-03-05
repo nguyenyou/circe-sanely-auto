@@ -194,6 +194,22 @@ object SanelyConfiguredEncoder:
       }
 
     private def resolvePrimEncoder(tpe: TypeRepr): Option[Expr[Encoder[?]]] =
+      tpe match
+        case ConstantType(StringConstant(s)) =>
+          return Some('{ Encoder.instance[Any]((_: Any) => Json.fromString(${Expr(s)})) })
+        case ConstantType(IntConstant(i)) =>
+          return Some('{ Encoder.instance[Any]((_: Any) => Json.fromInt(${Expr(i)})) })
+        case ConstantType(LongConstant(l)) =>
+          return Some('{ Encoder.instance[Any]((_: Any) => Json.fromLong(${Expr(l)})) })
+        case ConstantType(DoubleConstant(d)) =>
+          return Some('{ Encoder.instance[Any]((_: Any) => Json.fromDoubleOrNull(${Expr(d)})) })
+        case ConstantType(FloatConstant(f)) =>
+          return Some('{ Encoder.instance[Any]((_: Any) => Json.fromFloatOrNull(${Expr(f)})) })
+        case ConstantType(BooleanConstant(b)) =>
+          return Some('{ Encoder.instance[Any]((_: Any) => Json.fromBoolean(${Expr(b)})) })
+        case ConstantType(CharConstant(ch)) =>
+          return Some('{ Encoder.instance[Any]((_: Any) => Json.fromString(${Expr(ch.toString)})) })
+        case _ => ()
       if tpe =:= TypeRepr.of[String] then Some('{ Encoder.encodeString })
       else if tpe =:= TypeRepr.of[Int] then Some('{ Encoder.encodeInt })
       else if tpe =:= TypeRepr.of[Long] then Some('{ Encoder.encodeLong })

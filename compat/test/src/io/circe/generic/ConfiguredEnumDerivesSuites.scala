@@ -14,6 +14,11 @@ import org.scalacheck.{Arbitrary, Gen}
 import org.scalacheck.Prop.forAll
 
 object ConfiguredEnumDerivesSuites:
+  // Enum with non-singleton case (for compile error test)
+  enum WithNonSingletonCase:
+    case SingletonCase
+    case NonSingletonCase(field: Int)
+
   enum IntercardinalDirections:
     case NorthEast, SouthEast, SouthWest, NorthWest
   object IntercardinalDirections:
@@ -50,6 +55,11 @@ object ConfiguredEnumDerivesSuites:
 class ConfiguredEnumDerivesSuites extends CirceMunitSuite:
   import ConfiguredEnumDerivesSuites.*
 
+  test("ConfiguredEnum derivation must fail to compile for enums with non singleton cases") {
+    given Configuration = Configuration.default
+    assert(compileErrors("deriveEnumCodec[ConfiguredEnumDerivesSuites.WithNonSingletonCase]").nonEmpty)
+  }
+
   {
     given Configuration = Configuration.default
     given Codec[IntercardinalDirections] = deriveEnumCodec
@@ -60,10 +70,9 @@ class ConfiguredEnumDerivesSuites extends CirceMunitSuite:
     given Configuration = Configuration.default
     given Codec[IntercardinalDirections] = deriveEnumCodec
     val json = Json.fromString("NorthNorth")
-    val result = Decoder[IntercardinalDirections].decodeJson(json)
-    assert(result.isLeft)
-    val accResult = Decoder[IntercardinalDirections].decodeAccumulating(json.hcursor)
-    assert(accResult.isInvalid)
+    val failure = DecodingFailure("enum IntercardinalDirections does not contain case: NorthNorth", List())
+    assert(Decoder[IntercardinalDirections].decodeJson(json) === Left(failure))
+    assert(Decoder[IntercardinalDirections].decodeAccumulating(json.hcursor) === Validated.invalidNel(failure))
   }
 
   test("Configuration#transformConstructorNames should support constructor name transformation with snake_case") {

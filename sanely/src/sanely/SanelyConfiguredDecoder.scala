@@ -44,6 +44,7 @@ object SanelyConfiguredDecoder:
     ): Expr[Decoder[P]] =
       val fields = resolveFields[Types, Labels](selfRef)
       val defaults = timer.time("resolveDefaults") { resolveDefaults[P] }
+      val productTypeName = Expr(TypeRepr.of[P].typeSymbol.name)
 
       val fieldsWithDefaults = fields.zipWithIndex.map { case ((label, tpe, dec), idx) =>
         (label, tpe, dec, defaults.lift(idx).flatten)
@@ -78,25 +79,26 @@ object SanelyConfiguredDecoder:
 
       '{
         val _fieldNames = $fieldLabelsExpr.map($conf.transformMemberNames).toArray
+        val _typeName = $productTypeName
         new Decoder[P]:
           private lazy val _decoders = $decodersArrayExpr
           private val _hasDefault = $hasDefaultArrayExpr
           private val _defaults = $defaultsArrayExpr
           private val _isOption = $isOptionArrayExpr
           def apply(c: HCursor): Decoder.Result[P] =
-            if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
+            if !c.value.isObject then Left(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
             else
               if $conf.strictDecoding then
-                SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet) match
+                SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet, _typeName, _fieldNames) match
                   case Left(err) => return Left(err)
                   case _ => ()
               SanelyRuntime.decodeProductFieldsConfigured(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults)
           override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
-            if !c.value.isObject then cats.data.Validated.invalidNel(DecodingFailure("Expected JSON object for product type", c.history))
+            if !c.value.isObject then cats.data.Validated.invalidNel(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
             else
               val strictErrors: List[DecodingFailure] =
                 if $conf.strictDecoding then
-                  SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet) match
+                  SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet, _typeName, _fieldNames) match
                     case Left(err) => List(err)
                     case _ => Nil
                 else Nil
@@ -108,6 +110,7 @@ object SanelyConfiguredDecoder:
       selfRef: Expr[Decoder[A]]
     ): Expr[Decoder[S]] =
       val cases = resolveFields[Types, Labels](selfRef)
+      val sumTypeName = Expr(TypeRepr.of[S].typeSymbol.name)
 
       // Only flatten sub-traits when no user-provided decoder exists
       val ignoreSymbols = cachedIgnoreSymbols
@@ -133,21 +136,23 @@ object SanelyConfiguredDecoder:
       val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
 
       '{
+        val _typeName = $sumTypeName
         new Decoder[S]:
-          private val _transformedLabels: Set[String] = $directLabelsExpr.map(l => $conf.transformConstructorNames(l)).toSet
+          private val _allTransformedLabels: Array[String] = $directLabelsExpr.map(l => $conf.transformConstructorNames(l)).toArray
+          private val _transformedLabels: Set[String] = _allTransformedLabels.toSet
           private val _labels = $allLabelsExpr
           private lazy val _decoders = $decodersArrayExpr
           private val _isSubTrait = $isSubTraitExpr
           def apply(c: HCursor): Decoder.Result[S] =
-            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding) match
+            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding, _typeName, _allTransformedLabels) match
               case Left(err) => Left(err)
               case Right(pair) =>
-                SanelyRuntime.decodeSumConfigured(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator)
+                SanelyRuntime.decodeSumConfigured(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator, _typeName)
           override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
-            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding) match
+            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding, _typeName, _allTransformedLabels) match
               case Left(err) => cats.data.Validated.invalidNel(err)
               case Right(pair) =>
-                SanelyRuntime.decodeSumConfiguredAccumulating(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator)
+                SanelyRuntime.decodeSumConfiguredAccumulating(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator, _typeName)
       }
 
     private def resolveFields[Types: Type, Labels: Type](
@@ -282,6 +287,22 @@ object SanelyConfiguredDecoder:
       }
 
     private def resolvePrimDecoder(tpe: TypeRepr): Option[Expr[Decoder[?]]] =
+      tpe match
+        case ConstantType(StringConstant(s)) =>
+          return Some('{ Decoder.decodeString.emap(v => if v == ${Expr(s)} then Right(v) else Left(${Expr(s"""String("$s")""")})) })
+        case ConstantType(IntConstant(i)) =>
+          return Some('{ Decoder.decodeInt.emap(v => if v == ${Expr(i)} then Right(v) else Left(${Expr(s"Int($i)")})) })
+        case ConstantType(LongConstant(l)) =>
+          return Some('{ Decoder.decodeLong.emap(v => if v == ${Expr(l)} then Right(v) else Left(${Expr(s"Long($l)")})) })
+        case ConstantType(DoubleConstant(d)) =>
+          return Some('{ Decoder.decodeDouble.emap(v => if java.lang.Double.compare(v, ${Expr(d)}) == 0 then Right(v) else Left(${Expr(s"Double($d)")})) })
+        case ConstantType(FloatConstant(f)) =>
+          return Some('{ Decoder.decodeFloat.emap(v => if java.lang.Float.compare(v, ${Expr(f)}) == 0 then Right(v) else Left(${Expr(s"Float($f)")})) })
+        case ConstantType(BooleanConstant(b)) =>
+          return Some('{ Decoder.decodeBoolean.emap(v => if v == ${Expr(b)} then Right(v) else Left(${Expr(s"Boolean($b)")})) })
+        case ConstantType(CharConstant(ch)) =>
+          return Some('{ Decoder.decodeChar.emap(v => if v == ${Expr(ch)} then Right(v) else Left(${Expr(s"Char($ch)")})) })
+        case _ => ()
       if tpe =:= TypeRepr.of[String] then Some('{ Decoder.decodeString })
       else if tpe =:= TypeRepr.of[Int] then Some('{ Decoder.decodeInt })
       else if tpe =:= TypeRepr.of[Long] then Some('{ Decoder.decodeLong })

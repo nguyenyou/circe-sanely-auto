@@ -2,6 +2,7 @@ package sanely
 
 import cats.data.{NonEmptyList, Validated}
 import io.circe.{ACursor, Decoder, DecodingFailure, Encoder, HCursor, Json, JsonObject}
+import io.circe.CursorOp.DownField
 
 /** Runtime utility methods called by macro-generated code.
   * Reduces generated AST size by moving common patterns out of inline expansions.
@@ -122,7 +123,8 @@ object SanelyRuntime:
   def decodeSumConfigured[S](
     c: HCursor, matchValue: String, decodeCursor: ACursor,
     labels: Array[String], decoders: Array[Decoder[Any]], isSubTrait: Array[Boolean],
-    transformConstructorNames: String => String, discriminator: Option[String]
+    transformConstructorNames: String => String, discriminator: Option[String],
+    typeName: String
   ): Decoder.Result[S] =
     // Try sub-traits first (they need to attempt decode on full cursor)
     // Then try direct variants (key equality match)
@@ -137,17 +139,18 @@ object SanelyRuntime:
         if matchValue == transformConstructorNames(labels(i)) then
           return decoders(i).tryDecode(decodeCursor).asInstanceOf[Decoder.Result[S]]
       i += 1
-    discriminator match
-      case Some(_) => Left(DecodingFailure("Unknown variant: " + matchValue, c.history))
-      case None    => Left(DecodingFailure("Unknown variant", c.history))
+    if matchValue.isEmpty then
+      Left(DecodingFailure(s"type $typeName: could not find matching key.", c.history))
+    else
+      Left(DecodingFailure(s"type $typeName has no class/object/case named '$matchValue'.", List(DownField(matchValue))))
 
   /** Validate strict decoding: reject unexpected fields in the JSON object. */
-  def checkStrictDecoding(c: HCursor, expectedKeys: Set[String]): Decoder.Result[Unit] =
+  def checkStrictDecoding(c: HCursor, expectedKeys: Set[String], typeName: String, validFieldNames: Array[String]): Decoder.Result[Unit] =
     c.keys match
       case Some(keys) =>
         val unexpected = keys.filterNot(expectedKeys.contains).toList
         if unexpected.nonEmpty then
-          Left(DecodingFailure(s"Unexpected field(s): ${unexpected.mkString(", ")}", c.history))
+          Left(DecodingFailure(s"Strict decoding $typeName - unexpected fields: ${unexpected.mkString(", ")}; valid fields: ${validFieldNames.mkString(", ")}.", c.history))
         else Right(())
       case None => Right(())
 
@@ -158,24 +161,35 @@ object SanelyRuntime:
     c: HCursor,
     discriminator: Option[String],
     transformedLabels: Set[String],
-    strictDecoding: Boolean
+    strictDecoding: Boolean,
+    typeName: String,
+    allTransformedLabels: Array[String]
   ): Either[DecodingFailure, (String, ACursor)] =
     discriminator match
       case Some(discField) =>
         c.downField(discField).as[String] match
           case Right(typeName) => Right((typeName, c))
-          case Left(_) => Left(DecodingFailure(s"Missing discriminator field '$discField'", c.history))
+          case Left(_) => Left(DecodingFailure(s"$typeName: could not find discriminator field '$discField' or its null.", List(DownField(discField))))
       case None =>
-        c.keys match
-          case Some(keys) =>
-            val keysList = keys.toList
-            if strictDecoding && keysList.size > 1 then
-              Left(DecodingFailure("Expected single-key JSON object for sum type", c.history))
-            else
-              val key = keysList.find(transformedLabels.contains).getOrElse("")
-              Right((key, c.downField(key)))
-          case None =>
-            Left(DecodingFailure("Expected JSON object for sum type", c.history))
+        if !c.value.isObject then
+          Left(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
+        else
+          c.keys match
+            case Some(keys) =>
+              val keysList = keys.toList
+              if strictDecoding && keysList.size > 1 then
+                Left(DecodingFailure(s"Strict decoding $typeName - expected a single key json object with one of: ${allTransformedLabels.mkString(", ")}.", c.history))
+              else
+                keysList.find(transformedLabels.contains) match
+                  case Some(key) => Right((key, c.downField(key)))
+                  case None =>
+                    val triedKey = keysList.headOption.getOrElse("")
+                    if triedKey.isEmpty then
+                      Left(DecodingFailure(s"type $typeName: empty JSON object.", c.history))
+                    else
+                      Left(DecodingFailure(s"type $typeName has no class/object/case named '$triedKey'.", List(DownField(triedKey))))
+            case None =>
+              Left(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
 
   /** Decode a field with default value support (for non-Option types).
     * When useDefaults is true and the field is missing or null, returns the default.
@@ -277,7 +291,8 @@ object SanelyRuntime:
   def decodeSumConfiguredAccumulating[S](
     c: HCursor, matchValue: String, decodeCursor: ACursor,
     labels: Array[String], decoders: Array[Decoder[Any]], isSubTrait: Array[Boolean],
-    transformConstructorNames: String => String, discriminator: Option[String]
+    transformConstructorNames: String => String, discriminator: Option[String],
+    typeName: String
   ): Decoder.AccumulatingResult[S] =
     var i = 0
     while i < labels.length do
@@ -289,9 +304,10 @@ object SanelyRuntime:
         if matchValue == transformConstructorNames(labels(i)) then
           return decoders(i).tryDecodeAccumulating(decodeCursor).asInstanceOf[Decoder.AccumulatingResult[S]]
       i += 1
-    discriminator match
-      case Some(_) => Validated.invalidNel(DecodingFailure("Unknown variant: " + matchValue, c.history))
-      case None    => Validated.invalidNel(DecodingFailure("Unknown variant", c.history))
+    if matchValue.isEmpty then
+      Validated.invalidNel(DecodingFailure(s"type $typeName: could not find matching key.", c.history))
+    else
+      Validated.invalidNel(DecodingFailure(s"type $typeName has no class/object/case named '$matchValue'.", List(DownField(matchValue))))
 
   /** Accumulating version of tryDecodeFieldWithDefault. */
   def tryDecodeFieldWithDefaultAccumulating[T](

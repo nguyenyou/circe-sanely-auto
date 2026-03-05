@@ -131,6 +131,139 @@ object AutoDerivedSuite {
         s31, s32, s33)
     }
   }
+
+  // Enum with mixed singleton and data cases (from circe DerivesSuite)
+  enum Vegetable:
+    case Potato(species: String)
+    case Carrot(length: Double)
+    case Onion(layers: Int)
+    case Turnip
+  object Vegetable:
+    given Eq[Vegetable] = Eq.fromUniversalEquals
+    given Arbitrary[Vegetable.Potato] = Arbitrary(
+      Arbitrary.arbitrary[String].map(Vegetable.Potato.apply)
+    )
+    given Arbitrary[Vegetable.Carrot] = Arbitrary(
+      Arbitrary.arbitrary[Double].map(Vegetable.Carrot.apply)
+    )
+    given Arbitrary[Vegetable.Onion] = Arbitrary(
+      Arbitrary.arbitrary[Int].map(Vegetable.Onion.apply)
+    )
+    given Arbitrary[Vegetable.Turnip.type] = Arbitrary(Gen.const(Vegetable.Turnip))
+    given Arbitrary[Vegetable] = Arbitrary(
+      Gen.oneOf(
+        Arbitrary.arbitrary[Vegetable.Potato],
+        Arbitrary.arbitrary[Vegetable.Carrot],
+        Arbitrary.arbitrary[Vegetable.Onion],
+        Arbitrary.arbitrary[Vegetable.Turnip.type]
+      )
+    )
+
+  // Recursive enum ADT (from circe DerivesSuite)
+  enum RecursiveEnumAdt:
+    case BaseAdtExample(a: String)
+    case NestedAdtExample(r: RecursiveEnumAdt)
+  object RecursiveEnumAdt:
+    given Eq[RecursiveEnumAdt] = Eq.fromUniversalEquals
+
+    private def atDepth(depth: Int): Gen[RecursiveEnumAdt] = if (depth < 3)
+      Gen.oneOf(
+        Arbitrary.arbitrary[String].map(RecursiveEnumAdt.BaseAdtExample(_)),
+        atDepth(depth + 1).map(RecursiveEnumAdt.NestedAdtExample(_))
+      )
+    else Arbitrary.arbitrary[String].map(RecursiveEnumAdt.BaseAdtExample(_))
+
+    given Arbitrary[RecursiveEnumAdt] = Arbitrary(atDepth(0))
+
+  // Phantom type tagging (from circe DerivesSuite #2135)
+  case class ProductWithTaggedMember(x: ProductWithTaggedMember.TaggedString)
+
+  object ProductWithTaggedMember:
+    sealed trait Tag
+
+    type TaggedString = String & Tag
+
+    object TaggedString:
+      val decoder: Decoder[TaggedString] =
+        summon[Decoder[String]].map(_.asInstanceOf[TaggedString])
+      val encoder: Encoder[TaggedString] =
+        summon[Encoder[String]].contramap(x => x)
+
+    given Codec[TaggedString] =
+      Codec.from(TaggedString.decoder, TaggedString.encoder)
+
+    def fromUntagged(x: String): ProductWithTaggedMember =
+      ProductWithTaggedMember(x.asInstanceOf[TaggedString])
+
+    given Arbitrary[ProductWithTaggedMember] =
+      Arbitrary {
+        Arbitrary.arbitrary[String].map(fromUntagged)
+      }
+    given Eq[ProductWithTaggedMember] = Eq.fromUniversalEquals
+
+  // 33-variant singleton enum (from circe DerivesSuite)
+  enum LongEnum:
+    case v1, v2, v3, v4, v5, v6, v7, v8, v9, v10,
+      v11, v12, v13, v14, v15, v16, v17, v18, v19, v20,
+      v21, v22, v23, v24, v25, v26, v27, v28, v29, v30,
+      v31, v32, v33
+
+  object LongEnum:
+    given Eq[LongEnum] = Eq.fromUniversalEquals
+    given Arbitrary[LongEnum] = Arbitrary(Gen.oneOf(LongEnum.values.toSeq))
+
+  // 33-variant sum enum with data fields (from circe DerivesSuite)
+  enum LongSum:
+    case v1(str: String)
+    case v2(str: String)
+    case v3(str: String)
+    case v4(str: String)
+    case v5(str: String)
+    case v6(str: String)
+    case v7(str: String)
+    case v8(str: String)
+    case v9(str: String)
+    case v10(str: String)
+    case v11(str: String)
+    case v12(str: String)
+    case v13(str: String)
+    case v14(str: String)
+    case v15(str: String)
+    case v16(str: String)
+    case v17(str: String)
+    case v18(str: String)
+    case v19(str: String)
+    case v20(str: String)
+    case v21(str: String)
+    case v22(str: String)
+    case v23(str: String)
+    case v24(str: String)
+    case v25(str: String)
+    case v26(str: String)
+    case v27(str: String)
+    case v28(str: String)
+    case v29(str: String)
+    case v30(str: String)
+    case v31(str: String)
+    case v32(str: String)
+    case v33(str: String)
+
+  object LongSum:
+    given Eq[LongSum] = Eq.fromUniversalEquals
+    given Arbitrary[LongSum] = Arbitrary(
+      for
+        v <- Arbitrary.arbitrary[String]
+        res <- Gen.oneOf(Seq(
+          LongSum.v1(v), LongSum.v2(v), LongSum.v3(v), LongSum.v4(v), LongSum.v5(v),
+          LongSum.v6(v), LongSum.v7(v), LongSum.v8(v), LongSum.v9(v), LongSum.v10(v),
+          LongSum.v11(v), LongSum.v12(v), LongSum.v13(v), LongSum.v14(v), LongSum.v15(v),
+          LongSum.v16(v), LongSum.v17(v), LongSum.v18(v), LongSum.v19(v), LongSum.v20(v),
+          LongSum.v21(v), LongSum.v22(v), LongSum.v23(v), LongSum.v24(v), LongSum.v25(v),
+          LongSum.v26(v), LongSum.v27(v), LongSum.v28(v), LongSum.v29(v), LongSum.v30(v),
+          LongSum.v31(v), LongSum.v32(v), LongSum.v33(v)
+        ))
+      yield res
+    )
 }
 
 class AutoDerivedSuite extends CirceMunitSuite {
@@ -138,6 +271,8 @@ class AutoDerivedSuite extends CirceMunitSuite {
 
   checkAll("Codec[Tuple1[Int]]", CodecTests[Tuple1[Int]].codec)
   checkAll("Codec[(Int, Int, Foo)]", CodecTests[(Int, Int, Foo)].codec)
+  checkAll("Codec[Box[Wub]]", CodecTests[Box[Wub]].codec)
+  checkAll("Codec[Box[Long]]", CodecTests[Box[Long]].codec)
   checkAll("Codec[Qux[Int]]", CodecTests[Qux[Int]].codec)
   checkAll("Codec[Seq[Foo]]", CodecTests[Seq[Foo]].codec)
   checkAll("Codec[Baz]", CodecTests[Baz].codec)
@@ -145,9 +280,14 @@ class AutoDerivedSuite extends CirceMunitSuite {
   checkAll("Codec[OuterCaseClassExample]", CodecTests[OuterCaseClassExample].codec)
   checkAll("Codec[RecursiveAdtExample]", CodecTests[RecursiveAdtExample].unserializableCodec)
   checkAll("Codec[RecursiveWithOptionExample]", CodecTests[RecursiveWithOptionExample].unserializableCodec)
+  checkAll("Codec[Vegetable]", CodecTests[Vegetable].unserializableCodec)
+  checkAll("Codec[RecursiveEnumAdt]", CodecTests[RecursiveEnumAdt].unserializableCodec)
   checkAll("Codec[ADTWithSubTraitExample]", CodecTests[ADTWithSubTraitExample].codec)
+  checkAll("Codec[ProductWithTaggedMember]", CodecTests[ProductWithTaggedMember].codec)
   checkAll("Codec[Outer]", CodecTests[Outer].codec)
   checkAll("Codec[LongClass]", CodecTests[LongClass].codec)
+  checkAll("Codec[LongSum]", CodecTests[LongSum].unserializableCodec)
+  checkAll("Codec[LongEnum]", CodecTests[LongEnum].codec)
 
   property("A generically derived codec should not interfere with base instances") {
     Prop.forAll { (is: List[Int]) =>

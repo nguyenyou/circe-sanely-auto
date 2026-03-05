@@ -56,7 +56,7 @@ object SanelyEnumCodec:
       mirror: Expr[Mirror.SumOf[S]],
       cases: List[(String, Expr[S])]
     ): Expr[Codec[S]] =
-      val typeName = Expr(Type.show[S])
+      val typeName = Expr(TypeRepr.of[S].typeSymbol.name)
 
       // Deduplicate cases (diamond inheritance can produce the same singleton via multiple paths)
       val deduped = cases.distinctBy(_._1)

@@ -5,6 +5,7 @@ import cats.kernel.instances.all.*
 import cats.syntax.eq.*
 import cats.data.{NonEmptyList, Validated}
 import io.circe.{Codec, Decoder, DecodingFailure, Encoder, Json}
+import io.circe.DecodingFailure.Reason.WrongTypeExpectation
 import io.circe.CursorOp.DownField
 import io.circe.derivation.Configuration
 import io.circe.generic.semiauto.*
@@ -22,12 +23,12 @@ object ConfiguredDerivesSuite:
   object GrandParent:
     given Eq[GrandParent] = Eq.fromUniversalEquals
 
-  // Hierarchy of 2+ levels
+  // Hierarchy of 2+ levels with field name collision
   sealed trait GreatGrandParent
   sealed trait GrandParent2 extends GreatGrandParent
-  case class Uncle(Child: Int) extends GrandParent2
+  case class Uncle(Child: Int) extends GrandParent2 // Field name `Child` matches case class `Child` below
   sealed trait Parent2 extends GrandParent2
-  case class Child2(a: Int, b: String) extends Parent2
+  case class Child(a: Int, b: String) extends Parent2
   object GreatGrandParent:
     given Eq[GreatGrandParent] = Eq.fromUniversalEquals
 
@@ -187,14 +188,19 @@ class ConfiguredDerivesSuite extends CirceMunitSuite:
 
     test("Option[T] with default should fail to decode if type in json is not correct") {
       val json = Json.obj("a" -> "NotAnInt".asJson)
-      assert(Decoder[FooWithDefault].decodeJson(json).isLeft)
-      assert(Decoder[FooWithDefault].decodeAccumulating(json.hcursor).isInvalid)
+      assert(Decoder[FooWithDefault].decodeJson(json) === Left(DecodingFailure("Int", List(DownField("a")))))
+      assert(
+        Decoder[FooWithDefault].decodeAccumulating(json.hcursor)
+          === Validated.invalidNel(DecodingFailure("Int", List(DownField("a"))))
+      )
     }
 
     test("Field with default should fail to decode if type in json is not correct") {
       val json = Json.obj("b" -> 25.asJson)
-      assert(Decoder[FooWithDefault].decodeJson(json).isLeft)
-      assert(Decoder[FooWithDefault].decodeAccumulating(json.hcursor).isInvalid)
+      val reason = DecodingFailure.Reason.WrongTypeExpectation("string", 25.asJson)
+      val failure = DecodingFailure(reason, List(DownField("b")))
+      assert(Decoder[FooWithDefault].decodeJson(json) === Left(failure))
+      assert(Decoder[FooWithDefault].decodeAccumulating(json.hcursor) === Validated.invalidNel(failure))
     }
   }
 
@@ -212,12 +218,15 @@ class ConfiguredDerivesSuite extends CirceMunitSuite:
     }
   }
 
-  test("Fail when the json to be decoded is not a Json object (product)") {
+  test("Fail when the json to be decoded is not a Json object") {
     given Configuration = Configuration.default
+    given Codec.AsObject[ConfigExampleBase] = deriveConfiguredCodec
     given Codec.AsObject[ConfigExampleBase.ConfigExampleFoo] = deriveConfiguredCodec
 
     val json = Json.fromString("a string")
-    assert(Decoder[ConfigExampleBase.ConfigExampleFoo].decodeJson(json).isLeft)
+    val failure = DecodingFailure(WrongTypeExpectation("object", json), List())
+    assert(Decoder[ConfigExampleBase].decodeJson(json) === Left(failure)) // sum type
+    assert(Decoder[ConfigExampleBase.ConfigExampleFoo].decodeJson(json) === Left(failure)) // product type
   }
 
   test("Fail to decode if case name does not exist") {
@@ -231,8 +240,12 @@ class ConfiguredDerivesSuite extends CirceMunitSuite:
         "b" -> 2.5.asJson
       )
     )
-    assert(Decoder[ConfigExampleBase].decodeJson(json).isLeft)
-    assert(Decoder[ConfigExampleBase].decodeAccumulating(json.hcursor).isInvalid)
+    val failure = DecodingFailure(
+      "type ConfigExampleBase has no class/object/case named 'invalid-name'.",
+      List(DownField("invalid-name"))
+    )
+    assert(Decoder[ConfigExampleBase].decodeJson(json) === Left(failure))
+    assert(Decoder[ConfigExampleBase].decodeAccumulating(json.hcursor) === Validated.invalidNel(failure))
   }
 
   test("Fail to decode if case name does not exist when constructor names are being transformed") {
@@ -246,8 +259,12 @@ class ConfiguredDerivesSuite extends CirceMunitSuite:
         "b" -> 2.5.asJson
       )
     )
-    assert(Decoder[ConfigExampleBase].decodeJson(json).isLeft)
-    assert(Decoder[ConfigExampleBase].decodeAccumulating(json.hcursor).isInvalid)
+    val failure = DecodingFailure(
+      "type ConfigExampleBase has no class/object/case named 'ConfigExampleFoo'.",
+      List(DownField("ConfigExampleFoo"))
+    )
+    assert(Decoder[ConfigExampleBase].decodeJson(json) === Left(failure))
+    assert(Decoder[ConfigExampleBase].decodeAccumulating(json.hcursor) === Validated.invalidNel(failure))
   }
 
   test(
@@ -256,14 +273,19 @@ class ConfiguredDerivesSuite extends CirceMunitSuite:
     given Configuration = Configuration.default.withDiscriminator("type")
     given Codec.AsObject[ConfigExampleBase] = deriveConfiguredCodec
 
+    val failure = DecodingFailure(
+      "ConfigExampleBase: could not find discriminator field 'type' or its null.",
+      List(DownField("type"))
+    )
+
     val json1 = Json.obj(
       "_notType" -> "ConfigExampleFoo".asJson,
       "thisIsAField" -> "not used".asJson,
       "a" -> 0.asJson,
       "b" -> 2.5.asJson
     )
-    assert(Decoder[ConfigExampleBase].decodeJson(json1).isLeft)
-    assert(Decoder[ConfigExampleBase].decodeAccumulating(json1.hcursor).isInvalid)
+    assert(Decoder[ConfigExampleBase].decodeJson(json1) === Left(failure))
+    assert(Decoder[ConfigExampleBase].decodeAccumulating(json1.hcursor) === Validated.invalidNel(failure))
 
     val json2 = Json.obj(
       "_notType" -> Json.Null,
@@ -271,8 +293,8 @@ class ConfiguredDerivesSuite extends CirceMunitSuite:
       "a" -> 0.asJson,
       "b" -> 2.5.asJson
     )
-    assert(Decoder[ConfigExampleBase].decodeJson(json2).isLeft)
-    assert(Decoder[ConfigExampleBase].decodeAccumulating(json2.hcursor).isInvalid)
+    assert(Decoder[ConfigExampleBase].decodeJson(json2) === Left(failure))
+    assert(Decoder[ConfigExampleBase].decodeAccumulating(json2.hcursor) === Validated.invalidNel(failure))
   }
 
   property("Configuration#discriminator should support a field indicating constructor") {
@@ -393,48 +415,67 @@ class ConfiguredDerivesSuite extends CirceMunitSuite:
       ),
       "anotherField" -> "some value".asJson
     )
-    assert(Decoder[ConfigExampleBase].decodeJson(json).isLeft)
-    assert(Decoder[ConfigExampleBase].decodeAccumulating(json.hcursor).isInvalid)
+    val failure = DecodingFailure(
+      s"Strict decoding ConfigExampleBase - expected a single key json object with one of: ConfigExampleFoo, ConfigExampleBar.",
+      List()
+    )
+    assert(Decoder[ConfigExampleBase].decodeJson(json) === Left(failure))
+    assert(Decoder[ConfigExampleBase].decodeAccumulating(json.hcursor) === Validated.invalidNel(failure))
   }
 
   test(
     "Configuration#strictDecoding should fail for product types when the json object has more fields than expected"
   ) {
     given Configuration = Configuration.default.withStrictDecoding
-    given Codec.AsObject[ConfigExampleBase.ConfigExampleFoo] = deriveConfiguredCodec
+    given Codec.AsObject[ConfigExampleBase] = deriveConfiguredCodec
 
     val json = Json.obj(
-      "thisIsAField" -> "not used".asJson,
-      "a" -> 0.asJson,
-      "b" -> 2.5.asJson,
-      "anotherField" -> "some value".asJson
+      "ConfigExampleFoo" -> Json.obj(
+        "thisIsAField" -> "not used".asJson,
+        "a" -> 0.asJson,
+        "b" -> 2.5.asJson,
+        "anotherField" -> "some value".asJson
+      )
     )
-    assert(Decoder[ConfigExampleBase.ConfigExampleFoo].decodeJson(json).isLeft)
-    assert(Decoder[ConfigExampleBase.ConfigExampleFoo].decodeAccumulating(json.hcursor).isInvalid)
+    def failure(submessage: String) = DecodingFailure(
+      s"Strict decoding ConfigExampleFoo - $submessage; valid fields: thisIsAField, a, b.",
+      List(DownField("ConfigExampleFoo"))
+    )
+    assert(Decoder[ConfigExampleBase].decodeJson(json) === Left(failure("unexpected fields: anotherField")))
+    assert(
+      Decoder[ConfigExampleBase].decodeAccumulating(json.hcursor) === Validated.invalidNel(
+        failure("unexpected fields: anotherField")
+      )
+    )
   }
 
   test(
     "Configuration#strictDecoding on product types should not fail fast on decodeAccumulating if there are unexpected fields"
   ) {
     given Configuration = Configuration.default.withStrictDecoding
-    given Codec.AsObject[ConfigExampleBase.ConfigExampleFoo] = deriveConfiguredCodec
+    given Codec.AsObject[ConfigExampleBase] = deriveConfiguredCodec
 
     val json = Json.obj(
-      "thisIsAField" -> "not used".asJson,
-      "a" -> 0.asJson,
-      "b" -> "should be a double".asJson,
-      "invalidField" -> "some value".asJson
+      "ConfigExampleFoo" -> Json.obj(
+        "thisIsAField" -> "not used".asJson,
+        "a" -> 0.asJson,
+        "b" -> "should be a double".asJson,
+        "invalidField" -> "some value".asJson
+      )
     )
-    // decodeJson should fail (strict decoding error)
-    assert(Decoder[ConfigExampleBase.ConfigExampleFoo].decodeJson(json).isLeft)
-    // decodeAccumulating should collect both the strict error and the field type error
-    val accResult = Decoder[ConfigExampleBase.ConfigExampleFoo].decodeAccumulating(json.hcursor)
-    assert(accResult.isInvalid)
-    accResult match
-      case Validated.Invalid(errors) =>
-        // Should have at least 2 errors: strict decoding + type mismatch on "b"
-        assert(errors.size >= 2, s"Expected at least 2 errors but got ${errors.size}: $errors")
-      case _ => fail("Expected invalid result")
+    def strictFailure(submessage: String) = DecodingFailure(
+      s"Strict decoding ConfigExampleFoo - $submessage; valid fields: thisIsAField, a, b.",
+      List(DownField("ConfigExampleFoo"))
+    )
+    assert(Decoder[ConfigExampleBase].decodeJson(json) === Left(strictFailure("unexpected fields: invalidField")))
+    assert(
+      Decoder[ConfigExampleBase].decodeAccumulating(json.hcursor) === Validated.invalid(
+        NonEmptyList(
+          strictFailure("unexpected fields: invalidField"),
+          List(DecodingFailure("Double", List(DownField("b"), DownField("ConfigExampleFoo"))))
+        )
+      )
+    )
   }
 
   test("Codec for hierarchy of more than 1 level with discriminator should encode and decode correctly") {
@@ -448,12 +489,12 @@ class ConfiguredDerivesSuite extends CirceMunitSuite:
   }
 
   test(
-    "Codec for hierarchy of more than 2 levels with discriminator should encode and decode correctly"
+    "Codec for hierarchy of more than 2 levels with discriminator should encode and decode correctly, even if a parent's sibling has a field with the same name as a Child type"
   ) {
     given Configuration = Configuration.default.withDiscriminator("type")
     given Codec.AsObject[ConfiguredDerivesSuite.GreatGrandParent] = deriveConfiguredCodec
 
-    val child: ConfiguredDerivesSuite.GreatGrandParent = ConfiguredDerivesSuite.Child2(1, "a")
+    val child: ConfiguredDerivesSuite.GreatGrandParent = ConfiguredDerivesSuite.Child(1, "a")
     val json = Encoder.AsObject[ConfiguredDerivesSuite.GreatGrandParent].apply(child)
     val result = Decoder[ConfiguredDerivesSuite.GreatGrandParent].decodeJson(json)
     assert(result === Right(child), result.toString)

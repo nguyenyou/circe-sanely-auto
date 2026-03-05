@@ -78,6 +78,38 @@ object SemiautoDerivedSuite {
   case class OvergenerationExampleOuter0(i: OvergenerationExampleInner)
   case class OvergenerationExampleOuter1(oi: Option[OvergenerationExampleInner])
 
+  // Semiauto composition types (from circe SemiautoDerivationSuite)
+  case class SFoo(int: Int)
+  object SFoo {
+    given decoder: Decoder[SFoo] = deriveDecoder
+    given encoder: Encoder.AsObject[SFoo] = deriveEncoder
+
+    given eq: Eq[SFoo] = Eq.by(_.int)
+    given arbitrary: Arbitrary[SFoo] = Arbitrary(Arbitrary.arbitrary[Int].map(SFoo(_)))
+  }
+
+  case class SBar(foo: Box[SFoo])
+  object SBar {
+    given decoder: Decoder[SBar] = deriveDecoder
+    given encoder: Encoder.AsObject[SBar] = deriveEncoder
+
+    given eq: Eq[SBar] = Eq.by(_.foo)
+    given arbitrary: Arbitrary[SBar] = Arbitrary(Arbitrary.arbitrary[Box[SFoo]].map(SBar(_)))
+  }
+
+  case class SBaz(str: String)
+
+  // Non-derivable: Box[SBaz] has no Decoder/Encoder for SBaz
+  case class SQuux(baz: Box[SBaz])
+
+  sealed trait Adt5
+  object Adt5 {
+    case class Nested()
+    case class Class1(nested: Nested) extends Adt5
+    case object Object1 extends Adt5
+    // Non-derivable: no instances for Nested
+  }
+
   // ADT variants matching circe's SemiautoDerivationSuite
 
   sealed trait Adt1
@@ -201,10 +233,102 @@ class SemiautoDerivedSuite extends CirceMunitSuite {
     ).codec
   )
 
+  checkAll("Codec[SFoo]", CodecTests[SFoo].codec)
+  checkAll("Codec[Box[SFoo]]", CodecTests[Box[SFoo]].codec)
+  checkAll("Codec[SBar]", CodecTests[SBar].codec)
+  checkAll("Codec[Box[SBar]]", CodecTests[Box[SBar]].codec)
   checkAll("Codec[Adt1]", CodecTests[Adt1].codec)
   checkAll("Codec[Adt2]", CodecTests[Adt2].codec)
   checkAll("Codec[Adt3]", CodecTests[Adt3].codec)
   checkAll("Codec[Adt4]", CodecTests[Adt4].codec)
+
+  // Note: Unlike circe's built-in derivation, our library CAN derive nested types
+  // that lack explicit instances (via recursive macro derivation with Expr.summonIgnoring).
+  // This is a deliberate feature, not a bug. Circe's SemiautoDerivationSuite tests that
+  // Decoder.derived[Quux] and Decoder.derived[Adt5] fail — but our deriveDecoder succeeds.
+
+  // Local classes use `implicit val` instead of `given` to ensure derivation is strictly evaluated
+  // `given`s are desugared to `lazy val`s and part of the point of these tests is to ensure that
+  // deriving with strict `val`s doesn't cause `StackOverflowError`s
+  // See https://github.com/circe/circe/pull/2278
+  def testLocalCaseClasses(): Unit = {
+    case class LocalCaseClass1(int: Int)
+    object LocalCaseClass1 {
+      implicit val decoder: Decoder[LocalCaseClass1] = deriveDecoder
+      implicit val encoder: Encoder.AsObject[LocalCaseClass1] = deriveEncoder
+
+      given eq: Eq[LocalCaseClass1] = Eq.by(_.int)
+      given arbitrary: Arbitrary[LocalCaseClass1] = Arbitrary(Arbitrary.arbitrary[Int].map(LocalCaseClass1(_)))
+    }
+
+    case class LocalCaseClass2(int: Int)
+    object LocalCaseClass2 {
+      implicit val decoder: Decoder[LocalCaseClass2] = deriveDecoder
+      implicit val encoder: Encoder.AsObject[LocalCaseClass2] = deriveEncoder
+
+      given eq: Eq[LocalCaseClass2] = Eq.by(_.int)
+      given arbitrary: Arbitrary[LocalCaseClass2] = Arbitrary(Arbitrary.arbitrary[Int].map(LocalCaseClass2(_)))
+    }
+
+    case class LocalCaseClass3(int: Int)
+    object LocalCaseClass3 {
+      implicit val codec: Codec.AsObject[LocalCaseClass3] = deriveCodec
+
+      given eq: Eq[LocalCaseClass3] = Eq.by(_.int)
+      given arbitrary: Arbitrary[LocalCaseClass3] = Arbitrary(Arbitrary.arbitrary[Int].map(LocalCaseClass3(_)))
+    }
+
+    checkAll("Codec[LocalCaseClass1]", CodecTests[LocalCaseClass1].unserializableCodec)
+    checkAll("Codec[LocalCaseClass2]", CodecTests[LocalCaseClass2].unserializableCodec)
+    checkAll("Codec[LocalCaseClass3]", CodecTests[LocalCaseClass3].unserializableCodec)
+  }
+
+  def testLocalAdts(): Unit = {
+    sealed trait LocalAdt1
+    object LocalAdt1 {
+      case class Class(int: Int) extends LocalAdt1
+      object Class {
+        given eq: Eq[Class] = Eq.by(_.int)
+        given arbitrary: Arbitrary[Class] = Arbitrary(Arbitrary.arbitrary[Int].map(Class(_)))
+      }
+      case object Object extends LocalAdt1
+
+      implicit val decoder: Decoder[LocalAdt1] = deriveDecoder
+      implicit val encoder: Encoder.AsObject[LocalAdt1] = deriveEncoder
+
+      given eq: Eq[LocalAdt1] = Eq.instance {
+        case (x: Class, y: Class) => x === y
+        case (Object, Object)     => true
+        case _                    => false
+      }
+      given arbitrary: Arbitrary[LocalAdt1] = Arbitrary(Gen.oneOf(Arbitrary.arbitrary[Class], Gen.const(Object)))
+    }
+
+    sealed trait LocalAdt2
+    object LocalAdt2 {
+      case class Class(int: Int) extends LocalAdt2
+      object Class {
+        given eq: Eq[Class] = Eq.by(_.int)
+        given arbitrary: Arbitrary[Class] = Arbitrary(Arbitrary.arbitrary[Int].map(Class(_)))
+      }
+      case object Object extends LocalAdt2
+
+      implicit val codec: Codec.AsObject[LocalAdt2] = deriveCodec
+
+      given eq: Eq[LocalAdt2] = Eq.instance {
+        case (x: Class, y: Class) => x === y
+        case (Object, Object)     => true
+        case _                    => false
+      }
+      given arbitrary: Arbitrary[LocalAdt2] = Arbitrary(Gen.oneOf(Arbitrary.arbitrary[Class], Gen.const(Object)))
+    }
+
+    checkAll("Codec[LocalAdt1]", CodecTests[LocalAdt1].unserializableCodec)
+    checkAll("Codec[LocalAdt2]", CodecTests[LocalAdt2].unserializableCodec)
+  }
+
+  testLocalCaseClasses()
+  testLocalAdts()
 
   property("A generically derived codec should not interfere with base instances") {
     Prop.forAll { (is: List[Int]) =>

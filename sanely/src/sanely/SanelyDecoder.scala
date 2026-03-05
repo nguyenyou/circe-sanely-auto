@@ -214,6 +214,22 @@ object SanelyDecoder:
       }
 
     private def resolvePrimDecoder(tpe: TypeRepr): Option[Expr[Decoder[?]]] =
+      tpe match
+        case ConstantType(StringConstant(s)) =>
+          return Some('{ Decoder.decodeString.emap(v => if v == ${Expr(s)} then Right(v) else Left(${Expr(s"""String("$s")""")})) })
+        case ConstantType(IntConstant(i)) =>
+          return Some('{ Decoder.decodeInt.emap(v => if v == ${Expr(i)} then Right(v) else Left(${Expr(s"Int($i)")})) })
+        case ConstantType(LongConstant(l)) =>
+          return Some('{ Decoder.decodeLong.emap(v => if v == ${Expr(l)} then Right(v) else Left(${Expr(s"Long($l)")})) })
+        case ConstantType(DoubleConstant(d)) =>
+          return Some('{ Decoder.decodeDouble.emap(v => if java.lang.Double.compare(v, ${Expr(d)}) == 0 then Right(v) else Left(${Expr(s"Double($d)")})) })
+        case ConstantType(FloatConstant(f)) =>
+          return Some('{ Decoder.decodeFloat.emap(v => if java.lang.Float.compare(v, ${Expr(f)}) == 0 then Right(v) else Left(${Expr(s"Float($f)")})) })
+        case ConstantType(BooleanConstant(b)) =>
+          return Some('{ Decoder.decodeBoolean.emap(v => if v == ${Expr(b)} then Right(v) else Left(${Expr(s"Boolean($b)")})) })
+        case ConstantType(CharConstant(ch)) =>
+          return Some('{ Decoder.decodeChar.emap(v => if v == ${Expr(ch)} then Right(v) else Left(${Expr(s"Char($ch)")})) })
+        case _ => ()
       if tpe =:= TypeRepr.of[String] then Some('{ Decoder.decodeString })
       else if tpe =:= TypeRepr.of[Int] then Some('{ Decoder.decodeInt })
       else if tpe =:= TypeRepr.of[Long] then Some('{ Decoder.decodeLong })
