@@ -21,8 +21,11 @@ jobs:
       - name: Test Scala.js
         run: ./mill sanely.js.test
 
-      - name: Test Compat
-        run: ./mill compat.test
+      - name: Test Compat (JVM)
+        run: ./mill compat.jvm.test
+
+      - name: Test Compat (Scala.js)
+        run: ./mill compat.js.test
 
   publish:
     needs: test

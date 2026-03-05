@@ -5,32 +5,6 @@ import mill._, scalalib._, publish._
 val circeVersion = "0.14.15"
 val scala3Version = "3.8.2"
 
-object compat extends ScalaModule {
-  def scalaVersion = scala3Version
-  def moduleDeps = Seq(sanely.jvm)
-  def mvnDeps = Task {
-    super.mvnDeps() ++ Seq(
-      mvn"io.circe::circe-core:$circeVersion",
-      mvn"io.circe::circe-parser:$circeVersion",
-      mvn"io.circe::circe-testing:$circeVersion",
-      mvn"org.scalameta::munit:1.2.0",
-      mvn"org.scalameta::munit-scalacheck:1.2.0",
-      mvn"org.typelevel::discipline-munit:2.0.0",
-    )
-  }
-  def scalacOptions = Task {
-    super.scalacOptions() ++ Seq(
-      "-Xmax-inlines", "64",
-      "-Werror",
-      "-Wconf:msg=Implicit parameters should be provided with a `using` clause:s",
-    )
-  }
-  object test extends ScalaTests with TestModule.Munit {
-    def mvnDeps = Task { super.mvnDeps() ++ compat.mvnDeps() }
-    def scalacOptions = Task { compat.scalacOptions() }
-  }
-}
-
 object demo extends ScalaModule {
   def scalaVersion = scala3Version
   def moduleDeps = Seq(sanely.jvm)

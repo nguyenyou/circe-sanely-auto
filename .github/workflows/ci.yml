@@ -18,8 +18,10 @@ jobs:
             command: ./mill sanely.jvm.test
           - name: Scala.js unit tests
             command: ./mill sanely.js.test
-          - name: Compat tests
-            command: ./mill compat.test
+          - name: Compat tests (JVM)
+            command: ./mill compat.jvm.test
+          - name: Compat tests (Scala.js)
+            command: ./mill compat.js.test
     name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v6
