@@ -209,6 +209,13 @@ Requires [Mill](https://mill-build.org/) 1.1.2+.
 
 This entire library — every macro, every test, every line of build config, and this README — was written by [Claude Code](https://claude.com/claude-code) with Claude Opus 4.6. 100% vibe coded.
 
+## Roadmap
+
+- [ ] **Emit `lazy val` for derived codecs in generated code** — when a derived `Encoder[Foo]` is used by multiple fields in the same product, the full AST tree is currently duplicated at each splice site. Emit a single `lazy val encoder_Foo = ...` and reference it by name to deduplicate.
+- [ ] **Accumulating decoder** (`decodeAccumulating`) — generate both fail-fast and accumulating decode paths, matching circe-generic's behavior for collecting all errors instead of stopping at the first.
+- [ ] **Profile macro expansion** — add `System.nanoTime` measurements around key phases (Mirror summoning, `Expr.summonIgnoring`, recursive derivation) to identify actual bottlenecks and guide further optimization.
+- [ ] **Derive key encoders/decoders inline for built-in types** — generate `key.toString` directly for `Int`, `Long`, etc. instead of summoning `KeyEncoder[K]` via implicit search.
+
 ## Contributing
 
 Since this project is 100% vibe coded, I follow a strict test-driven workflow to make sure everything actually works: **every change starts with a test**. Write the test first, then write the code that makes it pass.
