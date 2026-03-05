@@ -23,6 +23,7 @@ object SanelyEncoder:
     val selfType: TypeRepr = TypeRepr.of[A]
     val timer: MacroTimer = MacroTimer.create(Type.show[A], "Encoder")
     private val exprCache = mutable.Map.empty[String, Expr[?]]
+    private val negativeBuiltinCache = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Encoder.AsObject[A]] =
       // Wrap in lazy val for recursive self-reference support
@@ -127,12 +128,14 @@ object SanelyEncoder:
           return cached.asInstanceOf[Expr[Encoder[T]]]
         case None => ()
 
-      tryResolveBuiltinEncoder[T] match
-        case Some(enc) =>
-          timer.count("builtinHit")
-          exprCache(cacheKey) = enc
-          return enc
-        case None => ()
+      if !negativeBuiltinCache.contains(cacheKey) then
+        tryResolveBuiltinEncoder[T] match
+          case Some(enc) =>
+            timer.count("builtinHit")
+            exprCache(cacheKey) = enc
+            return enc
+          case None =>
+            negativeBuiltinCache += cacheKey
 
       // Check if T contains the recursive type in its type params (e.g., Option[A], List[A])
       // Must check BEFORE Expr.summonIgnoring to avoid exponential implicit search
@@ -171,7 +174,10 @@ object SanelyEncoder:
       resolvePrimEncoder(tpe).map(_.asInstanceOf[Expr[Encoder[T]]]).orElse {
         tpe match
           case AppliedType(tycon, List(arg)) =>
-            val innerOpt = resolvePrimEncoder(arg.dealias).orElse(exprCache.get(MacroUtils.cheapTypeKey(arg)))
+            val argKey = MacroUtils.cheapTypeKey(arg)
+            val innerOpt =
+              if negativeBuiltinCache.contains(argKey) then exprCache.get(argKey)
+              else resolvePrimEncoder(arg.dealias).orElse(exprCache.get(argKey))
             innerOpt.flatMap { innerEnc =>
               arg.asType match
                 case '[a] =>
@@ -180,9 +186,11 @@ object SanelyEncoder:
             }
           case AppliedType(tycon, List(keyArg, valArg))
             if tycon.typeSymbol.fullName.endsWith(".Map") =>
+            val valKey = MacroUtils.cheapTypeKey(valArg)
             for
               keyEnc <- resolveBuiltinKeyEncoder(keyArg.dealias)
-              valEnc <- resolvePrimEncoder(valArg.dealias).orElse(exprCache.get(MacroUtils.cheapTypeKey(valArg)))
+              valEnc <- (if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
+                         else resolvePrimEncoder(valArg.dealias).orElse(exprCache.get(valKey)))
               result <- (keyArg.asType, valArg.asType) match
                 case ('[k], '[v]) =>
                   val ke = keyEnc.asInstanceOf[Expr[io.circe.KeyEncoder[k]]]

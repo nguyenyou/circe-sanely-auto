@@ -24,6 +24,7 @@ object SanelyCodec:
     val timer: MacroTimer = MacroTimer.create(Type.show[A], "Codec")
     // Cache stores (Encoder, Decoder) pairs — shared across both sides
     private val exprCache = mutable.Map.empty[String, (Expr[?], Expr[?])]
+    private val negativeBuiltinCache = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Codec.AsObject[A]] =
       '{
@@ -273,12 +274,14 @@ object SanelyCodec:
         case None => ()
 
       // Builtin check — resolves both encoder and decoder for primitives
-      tryResolveBuiltinCodec[T] match
-        case Some(pair) =>
-          timer.count("builtinHit")
-          exprCache(cacheKey) = pair
-          return pair.asInstanceOf[(Expr[Encoder[T]], Expr[Decoder[T]])]
-        case None => ()
+      if !negativeBuiltinCache.contains(cacheKey) then
+        tryResolveBuiltinCodec[T] match
+          case Some(pair) =>
+            timer.count("builtinHit")
+            exprCache(cacheKey) = pair
+            return pair.asInstanceOf[(Expr[Encoder[T]], Expr[Decoder[T]])]
+          case None =>
+            negativeBuiltinCache += cacheKey
 
       // Recursive type check
       if containsType(tpe, selfType) then
@@ -322,9 +325,12 @@ object SanelyCodec:
           // Try container of known inner type
           tpe match
             case AppliedType(tycon, List(arg)) =>
-              val innerPair = (resolvePrimEncoder(arg.dealias), resolvePrimDecoder(arg.dealias)) match
-                case (Some(e), Some(d)) => Some((e, d))
-                case _ => exprCache.get(MacroUtils.cheapTypeKey(arg))
+              val argKey = MacroUtils.cheapTypeKey(arg)
+              val innerPair =
+                if negativeBuiltinCache.contains(argKey) then exprCache.get(argKey)
+                else (resolvePrimEncoder(arg.dealias), resolvePrimDecoder(arg.dealias)) match
+                  case (Some(e), Some(d)) => Some((e, d))
+                  case _ => exprCache.get(argKey)
               innerPair.flatMap { case (innerEnc, innerDec) =>
                 arg.asType match
                   case '[a] =>
@@ -337,9 +343,12 @@ object SanelyCodec:
               }
             case AppliedType(tycon, List(keyArg, valArg))
               if tycon.typeSymbol.fullName.endsWith(".Map") =>
-              val valPair = (resolvePrimEncoder(valArg.dealias), resolvePrimDecoder(valArg.dealias)) match
-                case (Some(e), Some(d)) => Some((e, d))
-                case _ => exprCache.get(MacroUtils.cheapTypeKey(valArg))
+              val valKey = MacroUtils.cheapTypeKey(valArg)
+              val valPair =
+                if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
+                else (resolvePrimEncoder(valArg.dealias), resolvePrimDecoder(valArg.dealias)) match
+                  case (Some(e), Some(d)) => Some((e, d))
+                  case _ => exprCache.get(valKey)
               for
                 keyEnc <- resolveBuiltinKeyEncoder(keyArg.dealias)
                 keyDec <- resolveBuiltinKeyDecoder(keyArg.dealias)
