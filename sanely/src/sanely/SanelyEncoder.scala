@@ -43,24 +43,19 @@ object SanelyEncoder:
       selfRef: Expr[Encoder.AsObject[A]]
     ): Expr[Encoder.AsObject[P]] =
       val fields = resolveFields[Types, Labels](selfRef)
-
-      def addField(base: Expr[JsonObject], product: Expr[Product], label: String, idx: Int, tpe: Type[?], enc: Expr[Encoder[?]]): Expr[JsonObject] =
+      val namesExpr = Expr(fields.map(_._1).toArray)
+      val encoderExprs = fields.map { case (_, tpe, enc) =>
         tpe match
-          case '[t] =>
-            val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
-            val labelExpr = Expr(label)
-            val idxExpr = Expr(idx)
-            '{ $base.add($labelExpr, $typedEnc($product.productElement($idxExpr).asInstanceOf[t])) }
+          case '[t] => '{ ${enc.asInstanceOf[Expr[Encoder[t]]]}.asInstanceOf[Encoder[Any]] }
+      }
+      val encodersArrayExpr = '{ Array(${Varargs(encoderExprs)}*) }
 
       '{
         new Encoder.AsObject[P]:
+          private lazy val _encoders = $encodersArrayExpr
+          private val _names = $namesExpr
           def encodeObject(a: P): JsonObject =
-            ${
-              val product = '{ a.asInstanceOf[Product] }
-              fields.zipWithIndex.foldLeft('{ JsonObject.empty }) { case (acc, ((label, tpe, enc), idx)) =>
-                addField(acc, product, label, idx, tpe, enc)
-              }
-            }
+            SanelyRuntime.encodeProductFields(a.asInstanceOf[Product], _names, _encoders)
       }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
@@ -68,19 +63,6 @@ object SanelyEncoder:
       selfRef: Expr[Encoder.AsObject[A]]
     ): Expr[Encoder.AsObject[S]] =
       val cases = resolveFields[Types, Labels](selfRef)
-
-      def buildBranch(a: Expr[S], label: String, tpe: Type[?], enc: Expr[Encoder[?]], isSubTrait: Boolean): Expr[JsonObject] =
-        tpe match
-          case '[t] =>
-            if isSubTrait then
-              // Sub-trait: use AsObject encoder directly (it already wraps with variant name)
-              val typedEnc = enc.asInstanceOf[Expr[Encoder.AsObject[t]]]
-              '{ $typedEnc.encodeObject($a.asInstanceOf[t]) }
-            else
-              // Regular variant: use Encoder[t].apply() — may not be AsObject
-              val typedEnc = enc.asInstanceOf[Expr[Encoder[t]]]
-              val labelExpr = Expr(label)
-              '{ JsonObject.singleton($labelExpr, $typedEnc($a.asInstanceOf[t])) }
 
       // Detect which variants are themselves sum types (sub-traits).
       // Only flatten when no user-provided encoder exists — a custom Encoder
@@ -95,18 +77,22 @@ object SanelyEncoder:
         (label, tpe, enc, isSub)
       }
 
+      val labelsExpr = Expr(casesWithSubTrait.map(_._1).toArray)
+      val isSubTraitExpr = Expr(casesWithSubTrait.map(_._4).toArray)
+      val encoderExprs = casesWithSubTrait.map { case (_, tpe, enc, _) =>
+        tpe match
+          case '[t] => '{ ${enc.asInstanceOf[Expr[Encoder[t]]]}.asInstanceOf[Encoder[Any]] }
+      }
+      val encodersArrayExpr = '{ Array(${Varargs(encoderExprs)}*) }
+
       '{
         new Encoder.AsObject[S]:
+          private lazy val _encoders = $encodersArrayExpr
+          private val _labels = $labelsExpr
+          private val _isSubTrait = $isSubTraitExpr
           def encodeObject(a: S): JsonObject =
             val ord = $mirror.ordinal(a)
-            ${
-              casesWithSubTrait.zipWithIndex.foldRight('{ throw new MatchError(ord) }: Expr[JsonObject]) {
-                case (((label, tpe, enc, isSub), idx), elseExpr) =>
-                  val idxExpr = Expr(idx)
-                  val branch = buildBranch('a, label, tpe, enc, isSub)
-                  '{ if ord == $idxExpr then $branch else $elseExpr }
-              }
-            }
+            SanelyRuntime.encodeSum(a, ord, _labels, _encoders, _isSubTrait)
       }
 
     private def resolveFields[Types: Type, Labels: Type](
@@ -146,6 +132,13 @@ object SanelyEncoder:
           return cached.asInstanceOf[Expr[Encoder[T]]]
         case None => ()
 
+      tryResolveBuiltinEncoder[T] match
+        case Some(enc) =>
+          timer.count("builtinHit")
+          exprCache(cacheKey) = enc
+          return enc
+        case None => ()
+
       val resolved: Expr[Encoder[T]] =
         timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*)) match
           case Some(enc) => enc
@@ -172,6 +165,22 @@ object SanelyEncoder:
         case AndType(left, right) => containsType(left, target) || containsType(right, target)
         case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
+
+    private def tryResolveBuiltinEncoder[T: Type]: Option[Expr[Encoder[T]]] =
+      val tpe = TypeRepr.of[T].dealias
+      val result: Option[Expr[Encoder[?]]] =
+        if tpe =:= TypeRepr.of[String] then Some('{ Encoder.encodeString })
+        else if tpe =:= TypeRepr.of[Int] then Some('{ Encoder.encodeInt })
+        else if tpe =:= TypeRepr.of[Long] then Some('{ Encoder.encodeLong })
+        else if tpe =:= TypeRepr.of[Double] then Some('{ Encoder.encodeDouble })
+        else if tpe =:= TypeRepr.of[Float] then Some('{ Encoder.encodeFloat })
+        else if tpe =:= TypeRepr.of[Boolean] then Some('{ Encoder.encodeBoolean })
+        else if tpe =:= TypeRepr.of[Short] then Some('{ Encoder.encodeShort })
+        else if tpe =:= TypeRepr.of[Byte] then Some('{ Encoder.encodeByte })
+        else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ Encoder.encodeBigDecimal })
+        else if tpe =:= TypeRepr.of[BigInt] then Some('{ Encoder.encodeBigInt })
+        else None
+      result.map(_.asInstanceOf[Expr[Encoder[T]]])
 
     private lazy val cachedIgnoreSymbols: List[Symbol] =
       val buf = List.newBuilder[Symbol]

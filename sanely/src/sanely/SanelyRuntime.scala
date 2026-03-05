@@ -1,6 +1,6 @@
 package sanely
 
-import io.circe.{ACursor, Decoder, DecodingFailure, HCursor, Json, JsonObject}
+import io.circe.{ACursor, Decoder, DecodingFailure, Encoder, HCursor, Json, JsonObject}
 
 /** Runtime utility methods called by macro-generated code.
   * Reduces generated AST size by moving common patterns out of inline expansions.
@@ -11,6 +11,27 @@ object SanelyRuntime:
 
   // === Encoder helpers ===
 
+  /** Encode a sum type variant using ordinal-based dispatch (non-configured, external tagging). */
+  def encodeSum(a: Any, ord: Int, labels: Array[String], encoders: Array[Encoder[Any]], isSubTrait: Array[Boolean]): JsonObject =
+    if isSubTrait(ord) then
+      encoders(ord).asInstanceOf[Encoder.AsObject[Any]].encodeObject(a)
+    else
+      JsonObject.singleton(labels(ord), encoders(ord)(a))
+
+  /** Decode a sum type variant (non-configured, external tagging). */
+  def decodeSum[S](c: HCursor, key: String, labels: Array[String], decoders: Array[Decoder[Any]], isSubTrait: Array[Boolean]): Decoder.Result[S] =
+    var i = 0
+    while i < labels.length do
+      if isSubTrait(i) then
+        decoders(i).tryDecode(c) match
+          case Right(v) => return Right(v.asInstanceOf[S])
+          case Left(_) =>
+      else
+        if key == labels(i) then
+          return decoders(i).tryDecode(c.downField(labels(i))).asInstanceOf[Decoder.Result[S]]
+      i += 1
+    Left(DecodingFailure("Unknown variant", c.history))
+
   /** Encode a sum type variant with configured tagging (discriminator or external). */
   def encodeSumVariant(encoded: Json, label: String, discriminator: Option[String]): JsonObject =
     discriminator match
@@ -20,7 +41,104 @@ object SanelyRuntime:
         val base = encoded.asObject.getOrElse(JsonObject.empty)
         base.add(discr, Json.fromString(label))
 
+  /** Encode a product's fields into a JsonObject using runtime arrays.
+    * Reduces macro-generated AST from N nested .add() calls to flat arrays + 1 call.
+    */
+  def encodeProductFields(a: Product, names: Array[String], encoders: Array[Encoder[Any]]): JsonObject =
+    var obj = JsonObject.empty
+    var i = 0
+    while i < names.length do
+      obj = obj.add(names(i), encoders(i)(a.productElement(i)))
+      i += 1
+    obj
+
+  /** Encode a sum type variant using ordinal-based dispatch with runtime arrays. */
+  def encodeSumConfigured(
+    a: Any, ord: Int, labels: Array[String],
+    encoders: Array[Encoder[Any]], isSubTrait: Array[Boolean],
+    transformConstructorNames: String => String, discriminator: Option[String]
+  ): JsonObject =
+    if isSubTrait(ord) then
+      encoders(ord).asInstanceOf[Encoder.AsObject[Any]].encodeObject(a)
+    else
+      val encoded = encoders(ord)(a)
+      val transformedLabel = transformConstructorNames(labels(ord))
+      encodeSumVariant(encoded, transformedLabel, discriminator)
+
   // === Decoder helpers ===
+
+  /** Decode a product's fields using runtime arrays (non-configured, no defaults). */
+  def decodeProductFields[P](
+    c: HCursor, mirror: scala.deriving.Mirror.ProductOf[P],
+    fieldNames: Array[String], decoders: Array[Decoder[Any]]
+  ): Decoder.Result[P] =
+    val n = fieldNames.length
+    val results = new Array[Any](n)
+    var i = 0
+    while i < n do
+      decoders(i).tryDecode(c.downField(fieldNames(i))) match
+        case Right(v) => results(i) = v
+        case Left(e) => return Left(e)
+      i += 1
+    Right(mirror.fromProduct(new ArrayProduct(results)))
+
+  /** Lightweight Product wrapper over an Array for use with Mirror.fromProduct. */
+  private final class ArrayProduct(val arr: Array[Any]) extends Product:
+    def canEqual(that: Any): Boolean = true
+    def productArity: Int = arr.length
+    def productElement(n: Int): Any = arr(n)
+
+  /** Decode a product's fields using runtime arrays.
+    * Reduces macro-generated AST from N-deep nested match expressions to flat arrays + 1 call.
+    */
+  def decodeProductFieldsConfigured[P](
+    c: HCursor, mirror: scala.deriving.Mirror.ProductOf[P],
+    fieldNames: Array[String], decoders: Array[Decoder[Any]],
+    hasDefault: Array[Boolean], defaults: Array[Any],
+    isOption: Array[Boolean], useDefaults: Boolean
+  ): Decoder.Result[P] =
+    val n = fieldNames.length
+    val results = new Array[Any](n)
+    var i = 0
+    while i < n do
+      val fieldResult: Decoder.Result[Any] =
+        if hasDefault(i) then
+          if isOption(i) then
+            tryDecodeOptionFieldWithDefault(c, fieldNames(i), decoders(i), useDefaults, defaults(i))
+          else
+            tryDecodeFieldWithDefault(c, fieldNames(i), decoders(i), useDefaults, defaults(i))
+        else
+          decoders(i).tryDecode(c.downField(fieldNames(i)))
+      fieldResult match
+        case Right(v) => results(i) = v
+        case Left(e) => return Left(e)
+      i += 1
+    Right(mirror.fromProduct(new ArrayProduct(results)))
+
+  /** Decode a sum type variant using array-based dispatch.
+    * Sub-traits are tried on the full cursor; direct variants match by key equality.
+    */
+  def decodeSumConfigured[S](
+    c: HCursor, matchValue: String, decodeCursor: ACursor,
+    labels: Array[String], decoders: Array[Decoder[Any]], isSubTrait: Array[Boolean],
+    transformConstructorNames: String => String, discriminator: Option[String]
+  ): Decoder.Result[S] =
+    // Try sub-traits first (they need to attempt decode on full cursor)
+    // Then try direct variants (key equality match)
+    // Order: iterate forward, sub-traits try-and-fallback, direct variants exact-match
+    var i = 0
+    while i < labels.length do
+      if isSubTrait(i) then
+        decoders(i).tryDecode(c) match
+          case Right(v) => return Right(v.asInstanceOf[S])
+          case Left(_) => // continue to next
+      else
+        if matchValue == transformConstructorNames(labels(i)) then
+          return decoders(i).tryDecode(decodeCursor).asInstanceOf[Decoder.Result[S]]
+      i += 1
+    discriminator match
+      case Some(_) => Left(DecodingFailure("Unknown variant: " + matchValue, c.history))
+      case None    => Left(DecodingFailure("Unknown variant", c.history))
 
   /** Validate strict decoding: reject unexpected fields in the JSON object. */
   def checkStrictDecoding(c: HCursor, expectedKeys: Set[String]): Decoder.Result[Unit] =
