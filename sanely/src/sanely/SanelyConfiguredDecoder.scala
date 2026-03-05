@@ -91,6 +91,16 @@ object SanelyConfiguredDecoder:
                   case Left(err) => return Left(err)
                   case _ => ()
               SanelyRuntime.decodeProductFieldsConfigured(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults)
+          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
+            if !c.value.isObject then cats.data.Validated.invalidNel(DecodingFailure("Expected JSON object for product type", c.history))
+            else
+              val strictErrors: List[DecodingFailure] =
+                if $conf.strictDecoding then
+                  SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet) match
+                    case Left(err) => List(err)
+                    case _ => Nil
+                else Nil
+              SanelyRuntime.decodeProductFieldsConfiguredAccumulating(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults, strictErrors)
       }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
@@ -133,6 +143,11 @@ object SanelyConfiguredDecoder:
               case Left(err) => Left(err)
               case Right(pair) =>
                 SanelyRuntime.decodeSumConfigured(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator)
+          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
+            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding) match
+              case Left(err) => cats.data.Validated.invalidNel(err)
+              case Right(pair) =>
+                SanelyRuntime.decodeSumConfiguredAccumulating(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator)
       }
 
     private def resolveFields[Types: Type, Labels: Type](
