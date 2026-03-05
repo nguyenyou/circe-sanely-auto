@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.0] - 2026-03-05
+
+### Performance
+- **Eliminate 2x code duplication in configured sum type derivation** — configured encoder and decoder for sum types (sealed traits/enums) previously generated two complete dispatch chains (one for external tagging, one for discriminator mode). Now generates a single chain where each variant branch handles both modes inline. Cuts generated AST roughly in half for sum types.
+- **Cache `transformMemberNames` in configured product derivation** — transformed field names are now pre-computed once per encoder/decoder instance in an array, instead of calling `conf.transformMemberNames` per-field on every encode/decode call. Also reused for strict decoding validation.
+
 ## [0.5.0] - 2026-03-04
 
 ### Performance
