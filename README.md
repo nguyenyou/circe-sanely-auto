@@ -174,15 +174,15 @@ Results on M3 Max MacBook Pro (Mill 1.1.2, Scala 3.8.2):
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **3.69s** | |
-| **circe-generic** | **6.99s** | 1.9x slower |
+| **circe-sanely-auto** | **3.17s** | |
+| **circe-generic** | **6.75s** | 2.1x slower |
 
 ### Configured derivation
 
 | | Median compile time | |
 |---|---|---|
-| **circe-sanely-auto** | **3.10s** | |
-| **circe-core** | **3.20s** | ~same |
+| **circe-sanely-auto** | **2.90s** | |
+| **circe-core** | **2.94s** | ~same |
 
 ### Why the difference?
 
@@ -202,6 +202,11 @@ The speedup only applies to **auto derivation**. With `import io.circe.generic.a
 
 Sanely trades typer time for quoted/transform/backend time — our macros avoid some type checking overhead but generate more code via quote reflection, which the compiler's transform and backend phases then have to process. The net effect is roughly break-even.
 
+Two optimizations reduce this overhead:
+
+1. **Builtin short-circuit** — primitive types (String, Int, Long, Double, Float, Boolean, Short, Byte, BigDecimal, BigInt) are resolved directly to their `Encoder.encodeX`/`Decoder.decodeX` instances without calling `Expr.summonIgnoring`, saving ~66% of summonIgnoring calls.
+2. **Runtime dispatch** — instead of generating N nested `.add()` calls (products) or N if-then-else branches (sum types) in the macro AST, the macro builds flat `Array[Encoder]`/`Array[Decoder]` and delegates to runtime while-loops in `SanelyRuntime`, reducing generated AST size by ~30-50%.
+
 ### Macro profiling
 
 Built-in compile-time profiling is available via the `SANELY_PROFILE=true` environment variable. When enabled, each macro expansion prints timing data to stderr with zero cost when disabled.
@@ -216,30 +221,32 @@ SANELY_PROFILE=true ./mill --no-server clean benchmark-configured.sanely && \
 SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee /tmp/profile.txt
 ```
 
-**Auto derivation profile** (308 expansions, ~2.4s total macro time):
+**Auto derivation profile** (308 expansions, ~3.1s total macro time):
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `summonIgnoring` | 1217ms | 50.0% | 1366 | 0.89ms |
-| `derive` | 683ms | 28.1% | 586 | 1.17ms |
-| `summonMirror` | 81ms | 3.3% | 586 | 0.14ms |
-| `subTraitDetect` | 42ms | 1.7% | 336 | 0.13ms |
-| overhead | 410ms | 16.8% | — | — |
+| `summonIgnoring` | 1487ms | 47.2% | 720 | 2.07ms |
+| `derive` | 1115ms | 35.4% | 586 | 1.90ms |
+| `summonMirror` | 108ms | 3.4% | 586 | 0.18ms |
+| `subTraitDetect` | 61ms | 1.9% | 336 | 0.18ms |
+| `builtinHit` | — | — | 646 | — |
+| overhead | 377ms | 12.0% | — | — |
 | cache hits | — | — | 1714 (75%) | — |
 
-**Configured derivation profile** (460 expansions, ~1.5s total macro time):
+**Configured derivation profile** (460 expansions, ~1.4s total macro time):
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `topDerive` | 1283ms | 86.6%* | 460 | 2.79ms |
-| `summonIgnoring` | 522ms | 35.2% | 984 | 0.53ms |
-| `subTraitDetect` | 30ms | 2.0% | 138 | 0.21ms |
-| `resolveDefaults` | 11ms | 0.7% | 214 | 0.05ms |
+| `topDerive` | 1156ms | 85.1%* | 460 | 2.51ms |
+| `summonIgnoring` | 405ms | 29.8% | 336 | 1.21ms |
+| `subTraitDetect` | 30ms | 2.2% | 138 | 0.22ms |
+| `resolveDefaults` | 9ms | 0.7% | 214 | 0.04ms |
+| `builtinHit` | — | — | 648 | — |
 | cache hits | — | — | 654 | — |
 
 *`topDerive` is a container category that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, and `resolveDefaults`.
 
-**Key insight**: `summonIgnoring` (the compiler's implicit search via `Expr.summonIgnoring`) dominates auto derivation at 50%. For configured derivation, AST construction (building encode/decode expression chains) accounts for ~59% of `topDerive` time, with `summonIgnoring` at ~41%. The intra-expansion cache achieves a 75% hit rate, avoiding redundant derivations for repeated types within a single macro call.
+**Key insight**: `summonIgnoring` (the compiler's implicit search via `Expr.summonIgnoring`) dominates auto derivation at 47%. Builtin short-circuiting resolves ~646 primitive type lookups without calling `summonIgnoring` at all (47% fewer calls vs without the optimization). For configured derivation, builtin hits account for 648 resolutions, reducing `summonIgnoring` calls by 66% (from 984 to 336). The intra-expansion cache achieves a 75% hit rate, avoiding redundant derivations for repeated types within a single macro call.
 
 ## Building
 
@@ -260,9 +267,10 @@ This entire library — every macro, every test, every line of build config, and
 
 ## Roadmap
 
-- [ ] **Emit `lazy val` for derived codecs in generated code** — when a derived `Encoder[Foo]` is used by multiple fields in the same product, the full AST tree is currently duplicated at each splice site. Emit a single `lazy val encoder_Foo = ...` and reference it by name to deduplicate.
+- [x] **Runtime dispatch for generated code** — instead of emitting N nested `.add()` calls or N if-then-else branches in the macro AST, build flat `Array[Encoder]`/`Array[Decoder]` at compile time and delegate to runtime while-loops in `SanelyRuntime`. Reduces generated AST size by ~30-50%.
+- [x] **Builtin short-circuit for primitive types** — resolve String, Int, Long, Double, Float, Boolean, Short, Byte, BigDecimal, BigInt directly to their circe instances without calling `Expr.summonIgnoring`. Saves ~66% of summonIgnoring calls in configured derivation.
+- [x] **Profile macro expansion** — compile-time profiling via `SANELY_PROFILE=true` tracks `summonIgnoring`, `summonMirror`, `derive`, `subTraitDetect`, `resolveDefaults`, `builtinHit`, and cache hits per expansion.
 - [ ] **Accumulating decoder** (`decodeAccumulating`) — generate both fail-fast and accumulating decode paths, matching circe-generic's behavior for collecting all errors instead of stopping at the first.
-- [x] **Profile macro expansion** — compile-time profiling via `SANELY_PROFILE=true` tracks `summonIgnoring`, `summonMirror`, `derive`, `subTraitDetect`, `resolveDefaults`, and cache hits per expansion.
 - [ ] **Derive key encoders/decoders inline for built-in types** — generate `key.toString` directly for `Int`, `Long`, etc. instead of summoning `KeyEncoder[K]` via implicit search.
 
 ## Contributing
