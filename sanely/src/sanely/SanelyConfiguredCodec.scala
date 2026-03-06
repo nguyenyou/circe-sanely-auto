@@ -392,7 +392,7 @@ object SanelyConfiguredCodec:
       // Dealias once — reused by cheapTypeKey, tryResolveBuiltin, containsType
       val dealiased = tpe.dealias
 
-      val cacheKey = MacroUtils.cheapTypeKey(dealiased)
+      val cacheKey = timer.time("cheapTypeKey")(MacroUtils.cheapTypeKey(dealiased))
       exprCache.get(cacheKey) match
         case Some((cachedEnc, cachedDec)) =>
           timer.count("cacheHit")
@@ -400,7 +400,7 @@ object SanelyConfiguredCodec:
         case None => ()
 
       if !negativeBuiltinCache.contains(cacheKey) then
-        tryResolveBuiltinCodec[T](dealiased) match
+        timer.time("tryBuiltin")(tryResolveBuiltinCodec[T](dealiased)) match
           case Some(pair) =>
             timer.count("builtinHit")
             exprCache(cacheKey) = pair

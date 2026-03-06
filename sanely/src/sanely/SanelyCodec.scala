@@ -270,7 +270,7 @@ object SanelyCodec:
       val dealiased = tpe.dealias
 
       // Cache check — single key computation, pair lookup
-      val cacheKey = MacroUtils.cheapTypeKey(dealiased)
+      val cacheKey = timer.time("cheapTypeKey")(MacroUtils.cheapTypeKey(dealiased))
       exprCache.get(cacheKey) match
         case Some((cachedEnc, cachedDec)) =>
           timer.count("cacheHit")
@@ -279,7 +279,7 @@ object SanelyCodec:
 
       // Builtin check — resolves both encoder and decoder for primitives
       if !negativeBuiltinCache.contains(cacheKey) then
-        tryResolveBuiltinCodec[T](dealiased) match
+        timer.time("tryBuiltin")(tryResolveBuiltinCodec[T](dealiased)) match
           case Some(pair) =>
             timer.count("builtinHit")
             exprCache(cacheKey) = pair

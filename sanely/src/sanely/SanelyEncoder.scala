@@ -126,7 +126,7 @@ object SanelyEncoder:
       val dealiased = tpe.dealias
 
       // Cache check first — hits 75% of the time, skips containsType traversal
-      val cacheKey = MacroUtils.cheapTypeKey(dealiased)
+      val cacheKey = timer.time("cheapTypeKey")(MacroUtils.cheapTypeKey(dealiased))
       exprCache.get(cacheKey) match
         case Some(cached) =>
           timer.count("cacheHit")
@@ -134,7 +134,7 @@ object SanelyEncoder:
         case None => ()
 
       if !negativeBuiltinCache.contains(cacheKey) then
-        tryResolveBuiltinEncoder[T](dealiased) match
+        timer.time("tryBuiltin")(tryResolveBuiltinEncoder[T](dealiased)) match
           case Some(enc) =>
             timer.count("builtinHit")
             exprCache(cacheKey) = enc

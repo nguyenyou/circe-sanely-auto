@@ -286,26 +286,30 @@ SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 
 python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 ```
 
-#### Auto derivation (308 expansions, 3.1s total macro time)
+#### Auto derivation (308 expansions, 2.4s total macro time)
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `summonIgnoring` | 1460ms | 46.5% | 660 | 2.21ms |
-| `derive` | 1073ms | 34.1% | 586 | 1.83ms |
-| `summonMirror` | 102ms | 3.2% | 586 | 0.17ms |
-| `subTraitDetect` | 67ms | 2.1% | 336 | 0.20ms |
+| `summonIgnoring` | 1087ms | 45.8% | 660 | 1.65ms |
+| `derive` | 741ms | 31.3% | 586 | 1.27ms |
+| `summonMirror` | 87ms | 3.7% | 586 | 0.15ms |
+| `subTraitDetect` | 58ms | 2.4% | 336 | 0.17ms |
+| `tryBuiltin` | 34ms | 1.4% | 1366 | 0.03ms |
+| `cheapTypeKey` | 4ms | 0.2% | 3080 | 0.00ms |
 | `builtinHit` | — | — | 706 | — |
 | cache hits | — | — | 1714 (75%) | — |
-| overhead | 440ms | 14.0% | — | — |
+| overhead | 359ms | 15.1% | — | macro framework (tuple recursion, AST construction) |
 
 #### Configured derivation (230 expansions, 1.1s total macro time)
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `topDerive`* | 959ms | 86.8% | 230 | 4.17ms |
-| `summonIgnoring` | 339ms | 30.7% | 294 | 1.15ms |
+| `topDerive`* | 941ms | 86.3% | 230 | 4.09ms |
+| `summonIgnoring` | 343ms | 31.5% | 294 | 1.17ms |
+| `tryBuiltin` | 31ms | 2.9% | 493 | 0.06ms |
+| `resolveDefaults` | 10ms | 0.9% | 214 | 0.05ms |
 | `subTraitDetect` | 2ms | 0.2% | 69 | 0.03ms |
-| `resolveDefaults` | 9ms | 0.8% | 214 | 0.04ms |
+| `cheapTypeKey` | 1ms | 0.1% | 820 | 0.00ms |
 | `builtinHit` | — | — | 345 | — |
 | cache hits | — | — | 327 | — |
 
@@ -320,9 +324,11 @@ python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 | Builtin short-circuit hits | 706 | 345 |
 | Container composition hits | included in builtin | included in builtin |
 | Cache hit rate | 75% (1714 hits) | — (327 hits) |
-| summonIgnoring % of total | 46% | 30% |
+| summonIgnoring % of total | 46% | 31% |
+| `tryBuiltin` time | 34ms (1.4%) | 31ms (2.9%) |
+| `cheapTypeKey` time | 4ms (0.2%) | 1ms (0.1%) |
 
-`summonIgnoring` (the compiler's implicit search) dominates auto derivation at 46%. Builtin short-circuiting and container composition resolve ~706 type lookups without calling `summonIgnoring` at all. Sub-trait detection uses cached `summonedKeys` (O(1) set lookup) instead of re-calling `summonIgnoring`, reducing per-call time from 0.29ms to 0.03ms in configured derivation (-90%). For configured derivation, single-pass codec derivation halved the macro expansion count from 460 (separate CfgEncoder + CfgDecoder) to 230 (unified CfgCodec), while sharing one cache and one Mirror summon per type. The `summonIgnoring` call count stays at 294 (both encoder and decoder must still be summoned), but sub-trait detection halved from 138 to 69 calls. The intra-expansion cache achieves a 75% hit rate in auto derivation, avoiding redundant derivations for repeated types within a single macro call.
+`summonIgnoring` (the compiler's implicit search) dominates auto derivation at 46%. Builtin short-circuiting and container composition resolve ~706 type lookups without calling `summonIgnoring` at all. Sub-trait detection uses cached `summonedKeys` (O(1) set lookup) instead of re-calling `summonIgnoring`, reducing per-call time from 0.29ms to 0.03ms in configured derivation (-90%). For configured derivation, single-pass codec derivation halved the macro expansion count from 460 (separate CfgEncoder + CfgDecoder) to 230 (unified CfgCodec), while sharing one cache and one Mirror summon per type. The `summonIgnoring` call count stays at 294 (both encoder and decoder must still be summoned), but sub-trait detection halved from 138 to 69 calls. The intra-expansion cache achieves a 75% hit rate in auto derivation, avoiding redundant derivations for repeated types within a single macro call. Profiling of previously-untimed operations shows `tryBuiltin` (34ms auto, 31ms configured) and `cheapTypeKey` (4ms auto, 1ms configured) account for only 39ms of the 359ms overhead — the remaining ~320ms is intrinsic to Scala 3's quote reflection (tuple type recursion at ~2ms/field, AST construction, quote splicing).
 
 ## Building
 
@@ -362,11 +368,11 @@ This entire library — every macro, every test, every line of build config, and
 - ~~**(P1) Single-pass auto derivation**~~ — Investigated: replacing separate `autoEncoder`/`autoDecoder` with a single `autoCodec` returning `Codec.AsObject[A]` causes a **68% regression** (3.11s → 5.24s on ~300 types). Root cause: inline givens fire per implicit search, not per type. When code needs both `Encoder[A]` and `Decoder[A]`, the compiler does two independent searches, each triggering the codec macro. Each expansion now does 2x work (both directions) while still firing twice = ~804 effective units vs 616 before. The only viable path to sharing work across encoder/decoder searches is cross-expansion caching (lazy val emission).
 - [x] **(P1) Eliminate redundant sub-trait `summonIgnoring`** — sub-trait detection used to call `Expr.summonIgnoring` again for each variant to check for user-provided instances, despite `resolveOneEncoder`/`resolveOneDecoder` already having this information. Added `summonedKeys: mutable.Set[String]` that records cache keys when `summonIgnoring` returns `Some`. In `deriveSum`, sub-trait detection checks this set (O(1)) instead of re-calling `summonIgnoring`. Eliminated up to 336 redundant implicit searches in auto derivation and reduced configured sub-trait detection time by 90% (0.29ms → 0.03ms per call).
 - [ ] **Investigate cross-expansion caching** — each `inline given autoEncoder[A]` triggers an independent macro expansion with its own `exprCache`. If `Person` has field `Address`, both `autoEncoder[Person]` and `autoEncoder[Address]` independently derive `Address`. Emitting `lazy val` instances in a generated object could eliminate this redundancy. Needs investigation into impact on incremental compilation.
-- [ ] **(P2) Precompute normalized type metadata in resolver hot paths** — `resolveOneEncoder`/`resolveOneDecoder`/`resolveOneCodec` repeatedly recompute `dealias`, `cheapTypeKey`, and container inner-type keys along the miss path. Normalize `TypeRepr` once per resolver call and thread the normalized data through builtin checks, recursion checks, and container composition.
-- [ ] **(P2) Consolidate negative cache for builtin + container misses** — non-builtin and non-container shapes are pattern-matched repeatedly across expansions because only successful resolutions are memoized. Add a compact negative cache keyed by normalized type to skip repeated builtin/container miss work before falling through to `summonIgnoring`.
+- ~~**(P2) Precompute normalized type metadata in resolver hot paths**~~ — Profiling showed `cheapTypeKey` is 4ms (0.2%) and `dealias`/`containsType`/`selfCheck` are each 0ms across 3080 calls. These operations are already negligible; precomputing would save <5ms total. Not worth the added complexity.
+- ~~**(P2) Consolidate negative cache for builtin + container misses**~~ — Existing `negativeBuiltinCache` already handles within-expansion deduplication. Cross-expansion misses require cross-expansion caching (separate item). Within a single expansion, `tryBuiltin` accounts for only 34ms (1.4%) — further caching would save <10ms.
 - [x] **Negative builtin cache** — `tryResolveBuiltinEncoder` is called for every non-cached type. When it returns `None`, the type key is added to `negativeBuiltinCache`. Subsequent calls skip the entire builtin check (10 `=:=` comparisons + container pattern matching). Inner container arg resolution also uses the negative cache to skip `resolvePrimEncoder` for known non-primitives, falling back directly to `exprCache`. Applied across all 6 macro derivation files.
 - [x] **Deduplicate `dealias` calls** — `TypeRepr.of[T].dealias` was called 3+ times for the same type in `resolveOneEncoder`: cache key computation (`cheapTypeKey`), `tryResolveBuiltinEncoder` (which also redundantly called `TypeRepr.of[T]`), and `containsType`. Now computed once as `val dealiased = tpe.dealias` at the top of each `resolveOne*` method and threaded through all consumers. `tryResolveBuiltin*` methods accept the pre-dealiased `TypeRepr` as a parameter instead of reconstructing it. Applied across all 6 macro derivation files, eliminating ~2800 redundant dealias calls in auto + configured derivation.
-- [ ] **Profile untimed overhead** — 430ms (17%) is overhead not attributed to any timing category. Add timing around: cache key generation, `containsType` traversals, `resolveFields` tuple recursion, `Type.valueOfConstant`, Mirror pattern matching. Find whether it's one hot spot or distributed.
+- [x] **Profile untimed overhead** — Added timing around `cheapTypeKey` (cache key generation), `tryBuiltin` (builtin resolution), `containsType` (recursive type check), `selfCheck` (self-type equality), and `dealias`. Results on ~300 types: `cheapTypeKey` 3.8ms/3080 calls, `tryBuiltin` 34ms/1366 calls, `containsType` 0.8ms/660 calls, `selfCheck` 0ms, `dealias` 0ms — total 39ms of the 359ms (15%) overhead. **Finding: the remaining ~320ms is distributed across inherent macro framework operations** — tuple type recursion in `resolveFields` (Type.of matching, Type.valueOfConstant at ~2ms/field), root-level AST construction (Expr building, quote splicing), and cache map operations. No single actionable bottleneck exists; the overhead is intrinsic to Scala 3's quote reflection. Kept `cheapTypeKey` and `tryBuiltin` timers as permanent diagnostic categories.
 - [ ] **Reduce transform+backend compiler phases** — JVM profile shows sanely's transform (66 samples) + backend (61) > circe-core's (57 + 48), meaning sanely generates more bytecode despite runtime dispatch. Investigate generated class count/size and look for further runtime method consolidation.
 
 ## Contributing

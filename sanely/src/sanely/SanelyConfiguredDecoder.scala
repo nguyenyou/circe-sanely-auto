@@ -219,7 +219,7 @@ object SanelyConfiguredDecoder:
       val dealiased = tpe.dealias
 
       // Cache check first — hits 75% of the time, skips containsType traversal
-      val cacheKey = MacroUtils.cheapTypeKey(dealiased)
+      val cacheKey = timer.time("cheapTypeKey")(MacroUtils.cheapTypeKey(dealiased))
       exprCache.get(cacheKey) match
         case Some(cached) =>
           timer.count("cacheHit")
@@ -227,7 +227,7 @@ object SanelyConfiguredDecoder:
         case None => ()
 
       if !negativeBuiltinCache.contains(cacheKey) then
-        tryResolveBuiltinDecoder[T](dealiased) match
+        timer.time("tryBuiltin")(tryResolveBuiltinDecoder[T](dealiased)) match
           case Some(dec) =>
             timer.count("builtinHit")
             exprCache(cacheKey) = dec
