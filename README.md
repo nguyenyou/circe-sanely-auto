@@ -369,6 +369,24 @@ python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 
 `summonIgnoring` (the compiler's implicit search) dominates auto derivation at 49%. Builtin short-circuiting and container composition resolve ~706 type lookups without calling `summonIgnoring` at all. Sub-trait detection uses cached `summonedKeys` (O(1) set lookup) instead of re-calling `summonIgnoring`, reducing per-call time from 0.29ms to 0.04ms in configured derivation (-86%). For configured derivation, single-pass codec derivation halved the macro expansion count from 460 (separate CfgEncoder + CfgDecoder) to 230 (unified CfgCodec), while sharing one cache and one Mirror summon per type. The `summonIgnoring` call count stays at 294 (both encoder and decoder must still be summoned), but sub-trait detection halved from 138 to 69 calls. The intra-expansion cache achieves a 75% hit rate in auto derivation, avoiding redundant derivations for repeated types within a single macro call. Factory method consolidation reduced macro framework overhead from 359ms to 231ms (-36%) by generating simpler factory calls instead of full anonymous class definitions. The remaining 231ms is intrinsic to Scala 3's quote reflection (tuple type recursion at ~2ms/field, AST construction, quote splicing).
 
+## Automated benchmarks
+
+Every release automatically triggers a [benchmark workflow](.github/workflows/benchmark.yml) that runs five benchmarks in parallel on `ubuntu-latest`:
+
+| Job | What it measures |
+|---|---|
+| **compile-auto** | Compile time — auto derivation (~300 types), sanely vs circe-generic |
+| **compile-configured** | Compile time — configured derivation (~230 types), sanely vs circe-core |
+| **runtime** | Encoding/decoding throughput — circe-jawn vs circe+jsoniter vs jsoniter-scala |
+| **macro-profile-auto** | Macro expansion profiling — auto derivation (308 expansions) |
+| **macro-profile-configured** | Macro expansion profiling — configured derivation (230 expansions) |
+
+Results accumulate in [`BENCHMARK.md`](BENCHMARK.md) — each release adds a new section so you can track performance across versions. The workflow opens a PR with the updated results after each run.
+
+**Benchmarking a PR:** Maintainers can comment `/benchmark` on any pull request to run the full benchmark suite against that PR's code. Results are posted as a collapsible comment on the PR. Only repository collaborators can trigger this.
+
+You can also trigger it manually from the Actions tab with custom parameters (number of runs, warmup iterations, etc.).
+
 ## Building
 
 Requires [Mill](https://mill-build.org/) 1.1.2+.
