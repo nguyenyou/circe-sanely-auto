@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0] - 2026-03-06
+
+### Performance
+- **Eliminate redundant sub-trait `summonIgnoring` calls** — sub-trait detection in `deriveSum` used to call `Expr.summonIgnoring` again for each variant to check for user-provided instances, despite `resolveOneEncoder`/`resolveOneDecoder` already having this information. Added `summonedKeys: mutable.Set[String]` that records cache keys when `summonIgnoring` returns `Some`. Sub-trait detection now checks this set (O(1) lookup) instead of re-calling the compiler's implicit search. Configured sub-trait detection time reduced by 90% (0.29ms → 0.03ms per call).
+- **Negative builtin cache** — when `tryResolveBuiltinEncoder`/`Decoder` returns `None`, the type key is added to `negativeBuiltinCache`. Subsequent calls skip the entire builtin check (10 `=:=` comparisons + container pattern matching). Inner container arg resolution also uses the negative cache to skip `resolvePrimEncoder` for known non-primitives.
+- **Cheaper cache key** — replaced `tpe.dealias.show` (expensive pretty-printer) with `MacroUtils.cheapTypeKey` using `typeSymbol.fullName` (simple property lookup). Handles `AppliedType` recursively, `TermRef` via `termSymbol.fullName`, and `ConstantType` via `c.show`. Falls back to `.show` only for exotic types.
+- **Auto benchmark**: 3.57s median, 1.99x faster than circe-generic (7.09s)
+- **Configured benchmark**: 2.18s median, 1.35x faster than circe-core (2.94s)
+
+### Changed
+- All 6 macro derivation files updated: `SanelyEncoder`, `SanelyDecoder`, `SanelyCodec`, `SanelyConfiguredEncoder`, `SanelyConfiguredDecoder`, `SanelyConfiguredCodec`
+
 ## [0.11.0] - 2026-03-05
 
 ### Performance

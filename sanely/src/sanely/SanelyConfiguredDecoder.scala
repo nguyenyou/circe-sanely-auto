@@ -25,6 +25,7 @@ object SanelyConfiguredDecoder:
     val timer: MacroTimer = MacroTimer.create(Type.show[A], "CfgDecoder")
     private val exprCache = mutable.Map.empty[String, Expr[?]]
     private val negativeBuiltinCache = mutable.Set.empty[String]
+    private val summonedKeys = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Decoder[A]] =
       '{
@@ -114,13 +115,13 @@ object SanelyConfiguredDecoder:
       val sumTypeName = Expr(TypeRepr.of[S].typeSymbol.name)
 
       // Only flatten sub-traits when no user-provided decoder exists
-      val ignoreSymbols = cachedIgnoreSymbols
       val casesWithSubTrait = cases.map { case (label, tpe, dec) =>
         val isSub = timer.time("subTraitDetect") {
           tpe match
             case '[t] =>
-              Expr.summon[Mirror.SumOf[t]].isDefined &&
-              Expr.summonIgnoring[Decoder[t]](ignoreSymbols*).isEmpty
+              val cacheKey = MacroUtils.cheapTypeKey(TypeRepr.of[t])
+              !summonedKeys.contains(cacheKey) &&
+              Expr.summon[Mirror.SumOf[t]].isDefined
         }
         (label, tpe, dec, isSub)
       }
@@ -238,7 +239,9 @@ object SanelyConfiguredDecoder:
 
       val resolved: Expr[Decoder[T]] =
         timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match
-          case Some(dec) => dec
+          case Some(dec) =>
+            summonedKeys += cacheKey
+            dec
           case None =>
             timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
               case Some(mirrorExpr) =>
