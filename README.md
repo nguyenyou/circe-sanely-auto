@@ -12,8 +12,8 @@ circe-generic is slow. Every nested type triggers another round of implicit reso
 
 | | circe-generic | circe-sanely-auto | |
 |---|---|---|---|
-| **Auto derivation** | 6.43s | **2.86s** | **2.2x faster** |
-| **Configured derivation** | 2.70s | **1.45s** | **1.9x faster** |
+| **Auto derivation** | 6.09s | **2.02s** | **3.0x faster** |
+| **Configured derivation** | 2.60s | **1.38s** | **1.9x faster** |
 | **Compiler work** | 1,542 samples | **806 samples** | **48% less** |
 | **Memory allocations** | 8,547 samples | **4,168 samples** | **51% less** |
 | **Peak RSS** | 963 MB | **769 MB** | **20% less** |
@@ -68,9 +68,9 @@ Your `Encoder`/`Decoder` instances (whether from sanely-auto, semi-auto, or hand
 
 | | Reading (ops/sec) | | Writing (ops/sec) | |
 |---|---|---|---|---|
-| **circe + jawn** (baseline) | 155,069 | 1.0x | 146,699 | 1.0x |
-| **circe + jsoniter parser** | 234,887 | **1.5x** | 135,650 | 0.9x |
-| **jsoniter-scala native** | 790,491 | **5.1x** | 722,490 | **4.9x** |
+| **circe + jawn** (baseline) | 154,609 | 1.0x | 138,721 | 1.0x |
+| **circe + jsoniter parser** | 232,623 | **1.5x** | 134,095 | 1.0x |
+| **jsoniter-scala native** | 731,269 | **4.7x** | 723,703 | **5.2x** |
 
 The combo gives a **1.5x reading speedup** within the circe ecosystem — swap two imports and decoding gets 50% faster. For writing, stick with circe's default `Printer` — it's already optimized for circe's own `Json` AST and slightly outperforms the jsoniter bridge. For maximum runtime performance in both directions, use jsoniter-scala directly.
 
@@ -210,8 +210,8 @@ bash bench.sh --configured 5 # configured derivation (~230 types)
 
 | Suite | circe-sanely-auto | circe baseline | Speedup |
 |---|---|---|---|
-| **Auto derivation** (~300 types) | **2.75s** ± 0.50s | 6.32s ± 0.14s (circe-generic) | **2.30x** ± 0.42 |
-| **Configured derivation** (~230 types) | **1.45s** ± 0.04s | 2.66s ± 0.03s (circe-core) | **1.83x** ± 0.06 |
+| **Auto derivation** (~300 types) | **2.02s** ± 0.03s | 6.09s ± 0.06s (circe-generic) | **3.01x** ± 0.05 |
+| **Configured derivation** (~230 types) | **1.38s** ± 0.02s | 2.60s ± 0.05s (circe-core) | **1.89x** ± 0.04 |
 
 ### Benchmark method
 
@@ -226,9 +226,9 @@ This measures what users actually experience: warm-daemon, incremental-dependenc
 
 ### Why the difference?
 
-**Auto derivation** (2.30x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
+**Auto derivation** (3.0x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
 
-**Configured derivation** (1.83x faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations reduce both macro expansion time and generated AST size.
+**Configured derivation** (1.9x faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations reduce both macro expansion time and generated AST size.
 
 Six optimizations drive this:
 
