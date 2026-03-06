@@ -12,8 +12,8 @@ circe-generic is slow. Every nested type triggers another round of implicit reso
 
 | | circe-generic | circe-sanely-auto | |
 |---|---|---|---|
-| **Auto derivation** | 6.09s | **2.02s** | **3.0x faster**\* |
-| **Configured derivation** | 2.60s | **1.38s** | **1.9x faster**\* |
+| **Auto derivation** | 6.15s | **2.11s** | **2.9x faster**\* |
+| **Configured derivation** | 2.59s | **1.39s** | **1.9x faster**\* |
 | **Compiler work** | 1,542 samples | **806 samples** | **48% less** |
 | **Memory allocations** | 8,547 samples | **4,168 samples** | **51% less** |
 | **Peak RSS** | 963 MB | **769 MB** | **20% less** |
@@ -23,11 +23,13 @@ circe-generic is slow. Every nested type triggers another round of implicit reso
 
 **Environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2 (runs zinc on JDK 21.0.9), Scala 3.8.2.
 
-**Methodology**: Compile-time numbers are measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 5`). Each run cleans only the benchmark module's output (`rm -rf out/benchmark/…`) then recompiles ~300 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Five timed runs follow, with hyperfine randomizing execution order to prevent ordering bias. Reported values are mean ± σ. Dependencies (`sanely.jvm`) are pre-compiled and cached — only the benchmark types are recompiled each run.
+**Methodology**: Compile-time numbers are measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output (`rm -rf out/benchmark/…`) then recompiles ~300 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order to prevent ordering bias. Reported values are mean ± σ. Dependencies (`sanely.jvm`) are pre-compiled and cached — only the benchmark types are recompiled each run.
+
+**Cross-session stability**: We ran benchmarks 3 times (5+10+10 = 25 total runs per suite) across separate sessions. Auto derivation speedup ranged from 2.88x to 3.01x across sessions (σ < 0.08 within each session). Configured derivation ranged from 1.86x to 1.93x (σ < 0.09). The hero table reports the most conservative 10-run session. The first 5-run session produced a 3.01x outlier (sanely hit its best at 2.02s) — we chose not to report it.
 
 **Fairness**: Both libraries compile the same source files from the same `benchmark/shared/src/` directory, using the same Scala version, same JVM, same Mill daemon, in the same hyperfine invocation. The only difference is the derivation import (`sanely.auto.given` vs `io.circe.generic.auto.given` for auto; `sanely.SanelyConfiguredCodec.derived` vs `io.circe.derivation.ConfiguredCodec.derived` for configured). The benchmark measures derivation overhead only — shared dependencies are pre-compiled and not re-timed.
 
-**Caveats**: These are synthetic benchmarks on ~300 isolated types. Real-world speedups depend on codebase size, type complexity, nesting depth, and how many types use derivation. The benchmark is single-module — projects with many parallel modules may see different bottleneck distributions. Numbers vary across machines and JDK versions. We encourage you to run `bash bench.sh 5` on your own hardware. See the [detailed benchmark section](#compile-time-benchmarks) for the full methodology and profiling data.
+**Caveats**: These are synthetic benchmarks on ~300 isolated types. Real-world speedups depend on codebase size, type complexity, nesting depth, and how many types use derivation. The benchmark is single-module — projects with many parallel modules may see different bottleneck distributions. Numbers vary across machines and JDK versions. We encourage you to run `bash bench.sh 10` on your own hardware. See the [detailed benchmark section](#compile-time-benchmarks) for the full methodology and profiling data.
 </details>
 
 This library replaces circe-generic with a macro that derives everything in one expansion — no implicit search chains, no Shapeless. It passes circe's own test suite (318 property-based tests) plus 129 additional unit tests.
@@ -80,9 +82,9 @@ Your `Encoder`/`Decoder` instances (whether from sanely-auto, semi-auto, or hand
 
 | | Reading (ops/sec) | | Writing (ops/sec) | |
 |---|---|---|---|---|
-| **circe + jawn** (baseline) | 154,609 | 1.0x | 138,721 | 1.0x |
-| **circe + jsoniter parser** | 232,623 | **1.5x** | 134,095 | 1.0x |
-| **jsoniter-scala native** | 731,269 | **4.7x** | 723,703 | **5.2x** |
+| **circe + jawn** (baseline) | 151,191 | 1.0x | 138,259 | 1.0x |
+| **circe + jsoniter parser** | 230,501 | **1.5x** | 134,789 | 1.0x |
+| **jsoniter-scala native** | 905,596 | **6.0x** | 729,633 | **5.3x** |
 
 The combo gives a **1.5x reading speedup** within the circe ecosystem — swap two imports and decoding gets 50% faster. For writing, stick with circe's default `Printer` — it's already optimized for circe's own `Json` AST and slightly outperforms the jsoniter bridge. For maximum runtime performance in both directions, use jsoniter-scala directly.
 
@@ -222,8 +224,8 @@ bash bench.sh --configured 5 # configured derivation (~230 types)
 
 | Suite | circe-sanely-auto | circe baseline | Speedup |
 |---|---|---|---|
-| **Auto derivation** (~300 types) | **2.02s** ± 0.03s | 6.09s ± 0.06s (circe-generic) | **3.01x** ± 0.05 |
-| **Configured derivation** (~230 types) | **1.38s** ± 0.02s | 2.60s ± 0.05s (circe-core) | **1.89x** ± 0.04 |
+| **Auto derivation** (~300 types) | **2.11s** ± 0.04s | 6.15s ± 0.04s (circe-generic) | **2.91x** ± 0.06 |
+| **Configured derivation** (~230 types) | **1.39s** ± 0.03s | 2.59s ± 0.04s (circe-core) | **1.86x** ± 0.05 |
 
 ### Benchmark method
 
@@ -238,7 +240,7 @@ This measures what users actually experience: warm-daemon, incremental-dependenc
 
 ### Why the difference?
 
-**Auto derivation** (3.0x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
+**Auto derivation** (2.9x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
 
 **Configured derivation** (1.9x faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations reduce both macro expansion time and generated AST size.
 
