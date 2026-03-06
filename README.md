@@ -34,6 +34,39 @@ This library replaces circe-generic with a macro that derives everything in one 
 
 That's it. Same JSON format, same API, same behavior. Everything else stays the same.
 
+### Faster runtime with jsoniter-scala-circe
+
+For even better runtime performance, pair with [jsoniter-scala-circe](https://github.com/plokhotnyuk/jsoniter-scala) — it replaces circe's JSON parser with jsoniter-scala's faster one while keeping all your circe codecs unchanged:
+
+```scala
+// Add jsoniter-scala-circe alongside sanely-auto
+mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core:2.38.9"
+mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-circe:2.38.9"
+```
+
+```diff
+  // Before: circe's jawn parser
+- import io.circe.jawn._
+- val result = decodeByteArray[MyType](jsonBytes)
+
+  // After: jsoniter-scala's parser, same circe Decoder
++ import com.github.plokhotnyuk.jsoniter_scala.circe.JsoniterScalaCodec.given
++ import com.github.plokhotnyuk.jsoniter_scala.core._
++ val result = readFromArray[io.circe.Json](jsonBytes).as[MyType]
+```
+
+Your `Encoder`/`Decoder` instances (whether from sanely-auto, semi-auto, or hand-written) are untouched — only the parse/print layer changes.
+
+**Runtime benchmark** (1.2 KB JSON payload, M3 Max, JDK 21):
+
+| | Reading (ops/sec) | | Writing (ops/sec) | |
+|---|---|---|---|---|
+| **circe + jawn** (baseline) | 156,820 | 1.0x | 150,891 | 1.0x |
+| **circe + jsoniter parser** | 235,963 | **1.5x** | 135,512 | 0.9x |
+| **jsoniter-scala native** | 796,505 | **5.1x** | 739,119 | **4.9x** |
+
+The combo gives a **1.5x reading speedup** within the circe ecosystem. Writing doesn't benefit because the bottleneck is circe's `Encoder` building the `Json` AST, not the serialization step. For maximum runtime performance, use jsoniter-scala directly.
+
 ## How it works
 
 Based on Mateusz Kubuszok's [sanely-automatic derivation](https://kubuszok.com/2025/sanely-automatic-derivation/) technique. Scala 3.7+ provides `Expr.summonIgnoring`, which lets a macro summon implicit instances while excluding specific symbols:
@@ -341,6 +374,7 @@ Requires [Mill](https://mill-build.org/) 1.1.2+.
 ./mill compat.jvm.test       # circe compatibility tests (JVM)
 ./mill compat.js.test        # circe compatibility tests (Scala.js)
 ./mill demo.run              # run demo
+bash bench-runtime.sh        # runtime benchmark (circe vs circe+jsoniter vs jsoniter-scala)
 ```
 
 ## How it's made
