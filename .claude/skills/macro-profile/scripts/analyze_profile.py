@@ -143,101 +143,20 @@ def print_report(expansions, agg, top_n=15, sort_by='total', kind_filter=None):
         )
         print(f"  {i:>2}. {e['kind']}[{e['short_type']}]: total={e.get('total_ms', 0):.1f}ms  {cats_str}")
 
-    # Optimization insights
-    print(f"\n--- Optimization Insights ---")
-    insights = generate_insights(expansions, agg)
-    for insight in insights:
-        print(f"  * {insight}")
+    # Hot types summary
+    hot = [e for e in filtered if e.get('total_ms', 0) > 50]
+    if hot:
+        print(f"\n--- Hot Types (>50ms) ---")
+        for e in sorted(hot, key=lambda e: e.get('total_ms', 0), reverse=True)[:5]:
+            print(f"  {e['kind']}[{e['short_type']}]: {e['total_ms']:.0f}ms")
 
     print(f"{'=' * 70}")
-
-
-def generate_insights(expansions, agg):
-    """Generate actionable optimization insights from the profile data."""
-    insights = []
-    total = agg['total_ms']
-    cats = agg['categories']
-
-    # summonIgnoring dominance
-    si = cats.get('summonIgnoring', {})
-    if si and total > 0:
-        si_pct = si['ms'] / total * 100
-        if si_pct > 40:
-            insights.append(
-                f"summonIgnoring is {si_pct:.0f}% of total time ({si['ms']:.0f}ms, {si['calls']} calls). "
-                f"This is the compiler's implicit search. Reducing calls via cross-expansion "
-                f"caching (lazy val emission) would have the biggest impact."
-            )
-            avg = si['ms'] / si['calls'] if si['calls'] > 0 else 0
-            if avg > 5:
-                insights.append(
-                    f"Average summonIgnoring call takes {avg:.1f}ms - some types have expensive "
-                    f"implicit search. Check the slowest expansions for high per-call cost."
-                )
-
-    # derive time
-    derive = cats.get('derive', {})
-    if derive and total > 0:
-        d_pct = derive['ms'] / total * 100
-        if d_pct > 25:
-            insights.append(
-                f"Derivation (AST construction) is {d_pct:.0f}% of total ({derive['ms']:.0f}ms). "
-                f"Extracting more logic to SanelyRuntime could reduce generated AST size."
-            )
-
-    # Cache effectiveness
-    ch = cats.get('cacheHit', {})
-    if ch and derive:
-        ratio = ch['calls'] / (ch['calls'] + derive['calls']) if (ch['calls'] + derive['calls']) > 0 else 0
-        if ratio > 0.5:
-            insights.append(
-                f"Cache hit ratio: {ratio:.0%} ({ch['calls']} hits vs {derive['calls']} derivations). "
-                f"Intra-expansion caching is working well."
-            )
-        else:
-            insights.append(
-                f"Cache hit ratio: {ratio:.0%} ({ch['calls']} hits vs {derive['calls']} derivations). "
-                f"Consider caching more aggressively."
-            )
-
-    # subTraitDetect
-    st = cats.get('subTraitDetect', {})
-    if st and total > 0:
-        st_pct = st['ms'] / total * 100
-        if st_pct > 5:
-            insights.append(
-                f"Sub-trait detection is {st_pct:.0f}% of total ({st['ms']:.0f}ms). "
-                f"Consider caching sub-trait status per type."
-            )
-
-    # Hot types (types appearing in many expansions' summonIgnoring)
-    hot = [e for e in expansions if e.get('total_ms', 0) > 50]
-    if hot:
-        names = [f"{e['kind']}[{e['short_type']}] ({e['total_ms']:.0f}ms)" for e in hot[:5]]
-        insights.append(f"Hot types (>50ms): {', '.join(names)}")
-
-    # Encoder vs Decoder asymmetry
-    enc_ms = agg['kind_ms'].get('Encoder', 0) + agg['kind_ms'].get('CfgEncoder', 0)
-    dec_ms = agg['kind_ms'].get('Decoder', 0) + agg['kind_ms'].get('CfgDecoder', 0)
-    if enc_ms > 0 and dec_ms > 0:
-        ratio = dec_ms / enc_ms
-        if ratio > 1.3:
-            insights.append(
-                f"Decoder derivation is {ratio:.1f}x slower than Encoder ({dec_ms:.0f}ms vs {enc_ms:.0f}ms). "
-                f"Decoder's field-by-field chain building is more expensive."
-            )
-
-    if not insights:
-        insights.append("No significant bottlenecks detected. Macro expansion is well-optimized.")
-
-    return insights
 
 
 def output_json(expansions, agg):
     """Output results as JSON for programmatic consumption."""
     result = {
         'summary': agg,
-        'insights': generate_insights(expansions, agg),
         'top_slowest': [
             {
                 'kind': e['kind'],
