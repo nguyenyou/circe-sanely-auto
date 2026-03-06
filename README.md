@@ -12,11 +12,23 @@ circe-generic is slow. Every nested type triggers another round of implicit reso
 
 | | circe-generic | circe-sanely-auto | |
 |---|---|---|---|
-| **Auto derivation** | 6.09s | **2.02s** | **3.0x faster** |
-| **Configured derivation** | 2.60s | **1.38s** | **1.9x faster** |
+| **Auto derivation** | 6.09s | **2.02s** | **3.0x faster**\* |
+| **Configured derivation** | 2.60s | **1.38s** | **1.9x faster**\* |
 | **Compiler work** | 1,542 samples | **806 samples** | **48% less** |
 | **Memory allocations** | 8,547 samples | **4,168 samples** | **51% less** |
 | **Peak RSS** | 963 MB | **769 MB** | **20% less** |
+
+<details>
+<summary>*Benchmark methodology & environment</summary>
+
+**Environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2 (runs zinc on JDK 21.0.9), Scala 3.8.2.
+
+**Methodology**: Compile-time numbers are measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 5`). Each run cleans only the benchmark module's output (`rm -rf out/benchmark/…`) then recompiles ~300 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Five timed runs follow, with hyperfine randomizing execution order to prevent ordering bias. Reported values are mean ± σ. Dependencies (`sanely.jvm`) are pre-compiled and cached — only the benchmark types are recompiled each run.
+
+**Fairness**: Both libraries compile the same source files from the same `benchmark/shared/src/` directory, using the same Scala version, same JVM, same Mill daemon, in the same hyperfine invocation. The only difference is the derivation import (`sanely.auto.given` vs `io.circe.generic.auto.given` for auto; `sanely.SanelyConfiguredCodec.derived` vs `io.circe.derivation.ConfiguredCodec.derived` for configured). The benchmark measures derivation overhead only — shared dependencies are pre-compiled and not re-timed.
+
+**Caveats**: These are synthetic benchmarks on ~300 isolated types. Real-world speedups depend on codebase size, type complexity, nesting depth, and how many types use derivation. The benchmark is single-module — projects with many parallel modules may see different bottleneck distributions. Numbers vary across machines and JDK versions. We encourage you to run `bash bench.sh 5` on your own hardware. See the [detailed benchmark section](#compile-time-benchmarks) for the full methodology and profiling data.
+</details>
 
 This library replaces circe-generic with a macro that derives everything in one expansion — no implicit search chains, no Shapeless. It passes circe's own test suite (318 property-based tests) plus 129 additional unit tests.
 
