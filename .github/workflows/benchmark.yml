@@ -43,6 +43,7 @@ jobs:
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     permissions:
       pull-requests: read
+      issues: write
     outputs:
       ref: ${{ steps.config.outputs.ref }}
       version: ${{ steps.config.outputs.version }}
