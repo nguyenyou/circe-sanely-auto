@@ -148,9 +148,9 @@ Before any release, run these in order to catch both compile-time and runtime re
 ./mill compat.jvm.test
 ./mill compat.js.test
 
-# 2. Compile-time benchmarks (derivation speed)
-bash bench.sh 5                    # auto derivation (~300 types)
-bash bench.sh --configured 5      # configured derivation (~230 types)
+# 2. Compile-time benchmarks (derivation speed, requires: brew install hyperfine)
+bash bench.sh 5                    # auto derivation via hyperfine (~300 types)
+bash bench.sh --configured 5      # configured derivation via hyperfine (~230 types)
 
 # 3. Runtime benchmark (encoding/decoding throughput)
 bash bench-runtime.sh 5 5
