@@ -44,18 +44,25 @@ mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core:2.38.9"
 mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-circe:2.38.9"
 ```
 
-```diff
-  // Before: circe's jawn parser
-- import io.circe.jawn._
-- val result = decodeByteArray[MyType](jsonBytes)
+Use jsoniter-scala's parser for reading (1.5x faster) and circe's default printer for writing (already optimal):
 
-  // After: jsoniter-scala's parser, same circe Decoder
-+ import com.github.plokhotnyuk.jsoniter_scala.circe.JsoniterScalaCodec.given
-+ import com.github.plokhotnyuk.jsoniter_scala.core._
-+ val result = readFromArray[io.circe.Json](jsonBytes).as[MyType]
+```scala
+import io.circe.*
+import io.circe.syntax.*
+import sanely.auto.given  // fast compile-time derivation
+import com.github.plokhotnyuk.jsoniter_scala.circe.JsoniterScalaCodec.given
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+
+case class User(name: String, age: Int)
+
+// Reading: use jsoniter-scala's parser (1.5x faster than jawn)
+val user = readFromArray[Json](jsonBytes).as[User].toOption.get
+
+// Writing: use circe's printer (faster than jsoniter bridge for writing)
+val bytes = Printer.noSpaces.print(user.asJson).getBytes("UTF-8")
 ```
 
-Your `Encoder`/`Decoder` instances (whether from sanely-auto, semi-auto, or hand-written) are untouched — only the parse/print layer changes.
+Your `Encoder`/`Decoder` instances (whether from sanely-auto, semi-auto, or hand-written) are untouched — only the reading parser changes.
 
 **Runtime benchmark** (1.2 KB JSON payload, M3 Max, JDK 25):
 
