@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.13.0] - 2026-03-06
+
+### Performance
+- **Factory method consolidation** — extracted 11 factory methods into `SanelyRuntime` that define `Encoder`/`Decoder`/`Codec` anonymous class templates once, replacing per-expansion anonymous class generation across all 6 macro files. Type-specific data (field names, encoder/decoder arrays) passed as parameters. Lazy initialization via `() => Array[Encoder[Any]]` lambdas compile to `invokedynamic` (not anonymous classes). By-name `mirror` parameters avoid eager initialization cycles with local types. Dramatically reduces transform+backend compiler phases — from heavier than circe to lighter.
+- **Deduplicate `dealias` calls** — `TypeRepr.of[T].dealias` was called 3+ times for the same type in each resolver. Now computed once and threaded through all consumers. Eliminates ~2800 redundant dealias calls.
+- **Profile untimed overhead** — instrumented `cheapTypeKey`, `tryBuiltin`, `containsType`, `selfCheck`, `dealias`. Found remaining ~230ms overhead is intrinsic to Scala 3's quote reflection (tuple recursion, AST construction). No actionable bottleneck.
+- **Auto benchmark**: 2.23s median, **3.13x faster** than circe-generic (6.98s) — was 3.57s/1.99x in v0.12.0
+- **Configured benchmark**: 1.47s median, **1.97x faster** than circe-core (2.89s) — was 2.18s/1.35x in v0.12.0
+- **Compiler work**: auto -48% (806 vs 1542 samples), configured -23% (621 vs 805 samples)
+- **Memory**: auto -51% allocations, -20% peak RSS (769 MB vs 963 MB)
+
+### Changed
+- All 6 macro files (`SanelyEncoder`, `SanelyDecoder`, `SanelyCodec`, `SanelyConfiguredEncoder`, `SanelyConfiguredDecoder`, `SanelyConfiguredCodec`) now generate factory calls instead of anonymous class definitions
+- `SanelyRuntime` expanded with 11 factory methods: `productEncoder`, `productDecoder`, `productCodec`, `sumEncoder`, `sumDecoder`, `sumCodec`, `configuredProductDecoder`, `configuredProductCodec`, `configuredSumEncoder`, `configuredSumDecoder`, `configuredSumCodec`
+- README restructured: key numbers and migration steps moved to top ("Why" section)
+
+### CI
+- Release tests now run in parallel via matrix strategy
+
 ## [0.12.0] - 2026-03-06
 
 ### Performance
