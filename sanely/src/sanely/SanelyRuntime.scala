@@ -1,7 +1,7 @@
 package sanely
 
 import cats.data.{NonEmptyList, Validated}
-import io.circe.{ACursor, Decoder, DecodingFailure, Encoder, HCursor, Json, JsonObject}
+import io.circe.{ACursor, Codec, Decoder, DecodingFailure, Encoder, HCursor, Json, JsonObject}
 import io.circe.CursorOp.DownField
 
 /** Runtime utility methods called by macro-generated code.
@@ -326,3 +326,221 @@ object SanelyRuntime:
     val cursor = c.downField(fieldName)
     if useDefaults && cursor.failed then Validated.valid(default)
     else dec.tryDecodeAccumulating(cursor)
+
+  // === Factory methods ===
+  // Each factory defines an anonymous class once; all macro call sites share it.
+  // This reduces class count from O(N types) to O(factory methods), cutting
+  // transform+backend compiler work.
+
+  // --- Non-configured ---
+
+  def productEncoder[P](
+    names: Array[String], initEncoders: () => Array[Encoder[Any]]
+  ): Encoder.AsObject[P] =
+    new Encoder.AsObject[P]:
+      private lazy val _encoders = initEncoders()
+      def encodeObject(a: P): JsonObject =
+        encodeProductFields(a.asInstanceOf[Product], names, _encoders)
+
+  def productDecoder[P](
+    mirror: => scala.deriving.Mirror.ProductOf[P], names: Array[String],
+    initDecoders: () => Array[Decoder[Any]]
+  ): Decoder[P] =
+    new Decoder[P]:
+      private lazy val _decoders = initDecoders()
+      def apply(c: HCursor): Decoder.Result[P] =
+        if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
+        else decodeProductFields(c, mirror, names, _decoders)
+      override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
+        decodeProductFieldsAccumulating(c, mirror, names, _decoders)
+
+  def productCodec[P](
+    mirror: => scala.deriving.Mirror.ProductOf[P], names: Array[String],
+    initEncoders: () => Array[Encoder[Any]], initDecoders: () => Array[Decoder[Any]]
+  ): Codec.AsObject[P] =
+    new Codec.AsObject[P]:
+      private lazy val _encoders = initEncoders()
+      private lazy val _decoders = initDecoders()
+      def encodeObject(a: P): JsonObject =
+        encodeProductFields(a.asInstanceOf[Product], names, _encoders)
+      def apply(c: HCursor): Decoder.Result[P] =
+        if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
+        else decodeProductFields(c, mirror, names, _decoders)
+      override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
+        decodeProductFieldsAccumulating(c, mirror, names, _decoders)
+
+  def sumEncoder[S](
+    mirror: => scala.deriving.Mirror.SumOf[S], labels: Array[String],
+    initEncoders: () => Array[Encoder[Any]], isSubTrait: Array[Boolean]
+  ): Encoder.AsObject[S] =
+    new Encoder.AsObject[S]:
+      private lazy val _encoders = initEncoders()
+      def encodeObject(a: S): JsonObject =
+        val ord = mirror.ordinal(a)
+        encodeSum(a, ord, labels, _encoders, isSubTrait)
+
+  def sumDecoder[S](
+    labels: Array[String], initDecoders: () => Array[Decoder[Any]],
+    isSubTrait: Array[Boolean], knownLabels: Set[String]
+  ): Decoder[S] =
+    new Decoder[S]:
+      private lazy val _decoders = initDecoders()
+      def apply(c: HCursor): Decoder.Result[S] =
+        c.keys match
+          case Some(keys) =>
+            val key = keys.find(knownLabels.contains).getOrElse("")
+            decodeSum(c, key, labels, _decoders, isSubTrait)
+          case None =>
+            Left(DecodingFailure("Expected JSON object for sum type", c.history))
+      override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
+        c.keys match
+          case Some(keys) =>
+            val key = keys.find(knownLabels.contains).getOrElse("")
+            decodeSumAccumulating(c, key, labels, _decoders, isSubTrait)
+          case None =>
+            Validated.invalidNel(DecodingFailure("Expected JSON object for sum type", c.history))
+
+  def sumCodec[S](
+    mirror: => scala.deriving.Mirror.SumOf[S], labels: Array[String],
+    initEncoders: () => Array[Encoder[Any]], initDecoders: () => Array[Decoder[Any]],
+    isSubTrait: Array[Boolean], knownLabels: Set[String]
+  ): Codec.AsObject[S] =
+    new Codec.AsObject[S]:
+      private lazy val _encoders = initEncoders()
+      private lazy val _decoders = initDecoders()
+      def encodeObject(a: S): JsonObject =
+        val ord = mirror.ordinal(a)
+        encodeSum(a, ord, labels, _encoders, isSubTrait)
+      def apply(c: HCursor): Decoder.Result[S] =
+        c.keys match
+          case Some(keys) =>
+            val key = keys.find(knownLabels.contains).getOrElse("")
+            decodeSum(c, key, labels, _decoders, isSubTrait)
+          case None =>
+            Left(DecodingFailure("Expected JSON object for sum type", c.history))
+      override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
+        c.keys match
+          case Some(keys) =>
+            val key = keys.find(knownLabels.contains).getOrElse("")
+            decodeSumAccumulating(c, key, labels, _decoders, isSubTrait)
+          case None =>
+            Validated.invalidNel(DecodingFailure("Expected JSON object for sum type", c.history))
+
+  // --- Configured ---
+
+  def configuredProductDecoder[P](
+    mirror: => scala.deriving.Mirror.ProductOf[P], fieldNames: Array[String],
+    initDecoders: () => Array[Decoder[Any]],
+    hasDefault: Array[Boolean], defaults: Array[Any], isOption: Array[Boolean],
+    useDefaults: Boolean, strictDecoding: Boolean, typeName: String
+  ): Decoder[P] =
+    val fieldNamesSet = fieldNames.toSet
+    new Decoder[P]:
+      private lazy val _decoders = initDecoders()
+      def apply(c: HCursor): Decoder.Result[P] =
+        if !c.value.isObject then Left(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
+        else
+          if strictDecoding then
+            checkStrictDecoding(c, fieldNamesSet, typeName, fieldNames) match
+              case Left(err) => return Left(err)
+              case _ => ()
+          decodeProductFieldsConfigured(c, mirror, fieldNames, _decoders, hasDefault, defaults, isOption, useDefaults)
+      override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
+        if !c.value.isObject then Validated.invalidNel(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
+        else
+          val strictErrors: List[DecodingFailure] =
+            if strictDecoding then
+              checkStrictDecoding(c, fieldNamesSet, typeName, fieldNames) match
+                case Left(err) => List(err)
+                case _ => Nil
+            else Nil
+          decodeProductFieldsConfiguredAccumulating(c, mirror, fieldNames, _decoders, hasDefault, defaults, isOption, useDefaults, strictErrors)
+
+  def configuredProductCodec[P](
+    mirror: => scala.deriving.Mirror.ProductOf[P], fieldNames: Array[String],
+    initEncoders: () => Array[Encoder[Any]], initDecoders: () => Array[Decoder[Any]],
+    hasDefault: Array[Boolean], defaults: Array[Any], isOption: Array[Boolean],
+    useDefaults: Boolean, strictDecoding: Boolean, typeName: String
+  ): Codec.AsObject[P] =
+    val fieldNamesSet = fieldNames.toSet
+    new Codec.AsObject[P]:
+      private lazy val _encoders = initEncoders()
+      private lazy val _decoders = initDecoders()
+      def encodeObject(a: P): JsonObject =
+        encodeProductFields(a.asInstanceOf[Product], fieldNames, _encoders)
+      def apply(c: HCursor): Decoder.Result[P] =
+        if !c.value.isObject then Left(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
+        else
+          if strictDecoding then
+            checkStrictDecoding(c, fieldNamesSet, typeName, fieldNames) match
+              case Left(err) => return Left(err)
+              case _ => ()
+          decodeProductFieldsConfigured(c, mirror, fieldNames, _decoders, hasDefault, defaults, isOption, useDefaults)
+      override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
+        if !c.value.isObject then Validated.invalidNel(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
+        else
+          val strictErrors: List[DecodingFailure] =
+            if strictDecoding then
+              checkStrictDecoding(c, fieldNamesSet, typeName, fieldNames) match
+                case Left(err) => List(err)
+                case _ => Nil
+            else Nil
+          decodeProductFieldsConfiguredAccumulating(c, mirror, fieldNames, _decoders, hasDefault, defaults, isOption, useDefaults, strictErrors)
+
+  def configuredSumEncoder[S](
+    mirror: => scala.deriving.Mirror.SumOf[S], labels: Array[String],
+    initEncoders: () => Array[Encoder[Any]], isSubTrait: Array[Boolean],
+    transformConstructorNames: String => String, discriminator: Option[String]
+  ): Encoder.AsObject[S] =
+    new Encoder.AsObject[S]:
+      private lazy val _encoders = initEncoders()
+      def encodeObject(a: S): JsonObject =
+        val ord = mirror.ordinal(a)
+        encodeSumConfigured(a, ord, labels, _encoders, isSubTrait, transformConstructorNames, discriminator)
+
+  def configuredSumDecoder[S](
+    labels: Array[String], initDecoders: () => Array[Decoder[Any]],
+    isSubTrait: Array[Boolean], directLabels: List[String],
+    transformConstructorNames: String => String, discriminator: Option[String],
+    strictDecoding: Boolean, typeName: String
+  ): Decoder[S] =
+    val allTransformedLabels = directLabels.map(transformConstructorNames).toArray
+    val transformedLabelsSet = allTransformedLabels.toSet
+    new Decoder[S]:
+      private lazy val _decoders = initDecoders()
+      def apply(c: HCursor): Decoder.Result[S] =
+        extractSumTypeInfo(c, discriminator, transformedLabelsSet, strictDecoding, typeName, allTransformedLabels) match
+          case Left(err) => Left(err)
+          case Right(pair) =>
+            decodeSumConfigured(c, pair._1, pair._2, labels, _decoders, isSubTrait, transformConstructorNames, discriminator, typeName)
+      override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
+        extractSumTypeInfo(c, discriminator, transformedLabelsSet, strictDecoding, typeName, allTransformedLabels) match
+          case Left(err) => Validated.invalidNel(err)
+          case Right(pair) =>
+            decodeSumConfiguredAccumulating(c, pair._1, pair._2, labels, _decoders, isSubTrait, transformConstructorNames, discriminator, typeName)
+
+  def configuredSumCodec[S](
+    mirror: => scala.deriving.Mirror.SumOf[S], labels: Array[String],
+    initEncoders: () => Array[Encoder[Any]], initDecoders: () => Array[Decoder[Any]],
+    isSubTrait: Array[Boolean], directLabels: List[String],
+    transformConstructorNames: String => String, discriminator: Option[String],
+    strictDecoding: Boolean, typeName: String
+  ): Codec.AsObject[S] =
+    val allTransformedLabels = directLabels.map(transformConstructorNames).toArray
+    val transformedLabelsSet = allTransformedLabels.toSet
+    new Codec.AsObject[S]:
+      private lazy val _encoders = initEncoders()
+      private lazy val _decoders = initDecoders()
+      def encodeObject(a: S): JsonObject =
+        val ord = mirror.ordinal(a)
+        encodeSumConfigured(a, ord, labels, _encoders, isSubTrait, transformConstructorNames, discriminator)
+      def apply(c: HCursor): Decoder.Result[S] =
+        extractSumTypeInfo(c, discriminator, transformedLabelsSet, strictDecoding, typeName, allTransformedLabels) match
+          case Left(err) => Left(err)
+          case Right(pair) =>
+            decodeSumConfigured(c, pair._1, pair._2, labels, _decoders, isSubTrait, transformConstructorNames, discriminator, typeName)
+      override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
+        extractSumTypeInfo(c, discriminator, transformedLabelsSet, strictDecoding, typeName, allTransformedLabels) match
+          case Left(err) => Validated.invalidNel(err)
+          case Right(pair) =>
+            decodeSumConfiguredAccumulating(c, pair._1, pair._2, labels, _decoders, isSubTrait, transformConstructorNames, discriminator, typeName)

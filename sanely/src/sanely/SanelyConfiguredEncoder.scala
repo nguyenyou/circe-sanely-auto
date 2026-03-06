@@ -52,13 +52,7 @@ object SanelyConfiguredEncoder:
       }
       val encodersArrayExpr = '{ Array(${Varargs(encoderExprs)}*) }
 
-      '{
-        val _names = $labelsExpr.map($conf.transformMemberNames).toArray
-        new Encoder.AsObject[P]:
-          private lazy val _encoders = $encodersArrayExpr
-          def encodeObject(a: P): JsonObject =
-            SanelyRuntime.encodeProductFields(a.asInstanceOf[Product], _names, _encoders)
-      }
+      '{ SanelyRuntime.productEncoder[P]($labelsExpr.map($conf.transformMemberNames).toArray, () => $encodersArrayExpr) }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
       mirror: Expr[Mirror.SumOf[S]],
@@ -86,17 +80,7 @@ object SanelyConfiguredEncoder:
       }
       val encodersArrayExpr = '{ Array(${Varargs(encoderExprs)}*) }
 
-      '{
-        new Encoder.AsObject[S]:
-          private lazy val _encoders = $encodersArrayExpr
-          private val _labels = $labelsExpr
-          private val _isSubTrait = $isSubTraitExpr
-          def encodeObject(a: S): JsonObject =
-            val ord = $mirror.ordinal(a)
-            SanelyRuntime.encodeSumConfigured(
-              a, ord, _labels, _encoders, _isSubTrait,
-              $conf.transformConstructorNames, $conf.discriminator)
-      }
+      '{ SanelyRuntime.configuredSumEncoder[S]($mirror, $labelsExpr, () => $encodersArrayExpr, $isSubTraitExpr, $conf.transformConstructorNames, $conf.discriminator) }
 
     private def resolveFields[Types: Type, Labels: Type](
       selfRef: Expr[Encoder.AsObject[A]]

@@ -52,13 +52,7 @@ object SanelyEncoder:
       }
       val encodersArrayExpr = '{ Array(${Varargs(encoderExprs)}*) }
 
-      '{
-        new Encoder.AsObject[P]:
-          private lazy val _encoders = $encodersArrayExpr
-          private val _names = $namesExpr
-          def encodeObject(a: P): JsonObject =
-            SanelyRuntime.encodeProductFields(a.asInstanceOf[Product], _names, _encoders)
-      }
+      '{ SanelyRuntime.productEncoder[P]($namesExpr, () => $encodersArrayExpr) }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
       mirror: Expr[Mirror.SumOf[S]],
@@ -88,15 +82,7 @@ object SanelyEncoder:
       }
       val encodersArrayExpr = '{ Array(${Varargs(encoderExprs)}*) }
 
-      '{
-        new Encoder.AsObject[S]:
-          private lazy val _encoders = $encodersArrayExpr
-          private val _labels = $labelsExpr
-          private val _isSubTrait = $isSubTraitExpr
-          def encodeObject(a: S): JsonObject =
-            val ord = $mirror.ordinal(a)
-            SanelyRuntime.encodeSum(a, ord, _labels, _encoders, _isSubTrait)
-      }
+      '{ SanelyRuntime.sumEncoder[S]($mirror, $labelsExpr, () => $encodersArrayExpr, $isSubTraitExpr) }
 
     private def resolveFields[Types: Type, Labels: Type](
       selfRef: Expr[Encoder.AsObject[A]]

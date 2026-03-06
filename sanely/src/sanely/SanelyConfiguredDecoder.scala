@@ -80,31 +80,11 @@ object SanelyConfiguredDecoder:
       val isOptionArrayExpr = '{ Array(${Varargs(isOptionExprs)}*) }
 
       '{
-        val _fieldNames = $fieldLabelsExpr.map($conf.transformMemberNames).toArray
-        val _typeName = $productTypeName
-        new Decoder[P]:
-          private lazy val _decoders = $decodersArrayExpr
-          private val _hasDefault = $hasDefaultArrayExpr
-          private val _defaults = $defaultsArrayExpr
-          private val _isOption = $isOptionArrayExpr
-          def apply(c: HCursor): Decoder.Result[P] =
-            if !c.value.isObject then Left(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
-            else
-              if $conf.strictDecoding then
-                SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet, _typeName, _fieldNames) match
-                  case Left(err) => return Left(err)
-                  case _ => ()
-              SanelyRuntime.decodeProductFieldsConfigured(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults)
-          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
-            if !c.value.isObject then cats.data.Validated.invalidNel(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
-            else
-              val strictErrors: List[DecodingFailure] =
-                if $conf.strictDecoding then
-                  SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet, _typeName, _fieldNames) match
-                    case Left(err) => List(err)
-                    case _ => Nil
-                else Nil
-              SanelyRuntime.decodeProductFieldsConfiguredAccumulating(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults, strictErrors)
+        SanelyRuntime.configuredProductDecoder[P](
+          $mirror, $fieldLabelsExpr.map($conf.transformMemberNames).toArray,
+          () => $decodersArrayExpr,
+          $hasDefaultArrayExpr, $defaultsArrayExpr, $isOptionArrayExpr,
+          $conf.useDefaults, $conf.strictDecoding, $productTypeName)
       }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
@@ -138,23 +118,10 @@ object SanelyConfiguredDecoder:
       val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
 
       '{
-        val _typeName = $sumTypeName
-        new Decoder[S]:
-          private val _allTransformedLabels: Array[String] = $directLabelsExpr.map(l => $conf.transformConstructorNames(l)).toArray
-          private val _transformedLabels: Set[String] = _allTransformedLabels.toSet
-          private val _labels = $allLabelsExpr
-          private lazy val _decoders = $decodersArrayExpr
-          private val _isSubTrait = $isSubTraitExpr
-          def apply(c: HCursor): Decoder.Result[S] =
-            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding, _typeName, _allTransformedLabels) match
-              case Left(err) => Left(err)
-              case Right(pair) =>
-                SanelyRuntime.decodeSumConfigured(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator, _typeName)
-          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
-            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding, _typeName, _allTransformedLabels) match
-              case Left(err) => cats.data.Validated.invalidNel(err)
-              case Right(pair) =>
-                SanelyRuntime.decodeSumConfiguredAccumulating(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator, _typeName)
+        SanelyRuntime.configuredSumDecoder[S](
+          $allLabelsExpr, () => $decodersArrayExpr, $isSubTraitExpr,
+          $directLabelsExpr, $conf.transformConstructorNames, $conf.discriminator,
+          $conf.strictDecoding, $sumTypeName)
       }
 
     private def resolveFields[Types: Type, Labels: Type](
