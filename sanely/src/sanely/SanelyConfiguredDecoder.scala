@@ -208,20 +208,35 @@ object SanelyConfiguredDecoder:
         return constructRecursiveDecoder[T](dealiased, selfRef)
 
       val resolved: Expr[Decoder[T]] =
-        timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match
-          case Some(dec) =>
-            summonedKeys += cacheKey
-            dec
+        timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
+          case Some(mirrorExpr) =>
+            if MacroUtils.mayHaveExternalInstances(TypeRepr.of[T]) then
+              timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match
+                case Some(dec) =>
+                  summonedKeys += cacheKey
+                  dec
+                case None =>
+                  timer.time("derive") {
+                    mirrorExpr match
+                      case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                        deriveProduct[T, types, labels](m, selfRef)
+                      case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                        deriveSum[T, types, labels](m, selfRef)
+                  }
+            else
+              timer.count("mirrorFastPath")
+              timer.time("derive") {
+                mirrorExpr match
+                  case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                    deriveProduct[T, types, labels](m, selfRef)
+                  case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                    deriveSum[T, types, labels](m, selfRef)
+              }
           case None =>
-            timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
-              case Some(mirrorExpr) =>
-                timer.time("derive") {
-                  mirrorExpr match
-                    case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                      deriveProduct[T, types, labels](m, selfRef)
-                    case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                      deriveSum[T, types, labels](m, selfRef)
-                }
+            timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match
+              case Some(dec) =>
+                summonedKeys += cacheKey
+                dec
               case None =>
                 report.errorAndAbort(s"Cannot derive Decoder for ${Type.show[T]}: no implicit Decoder and no Mirror available")
       exprCache(cacheKey) = resolved

@@ -241,9 +241,18 @@ case class DeepNesting(inner: Intermediate, id: Int)
 case class PlainNested(x: Int, y: String)
 case class WrapsPlainNested(pn: PlainNested, z: Boolean)
 
-// User instance defined in LOCAL SCOPE (not companion), wrapping a Mirror type
-// This tests that local givens also take priority
+// User instance defined in companion, wrapping a Mirror type
+// Note: local-scope givens (defined in method body, not companion) for same-file
+// types are NOT supported by the mirror-first optimization — the macro cannot
+// detect them without calling summonIgnoring. Place instances in the companion.
 case class LocalScopeInner(v: Int)
+object LocalScopeInner:
+  given Encoder.AsObject[LocalScopeInner] = Encoder.AsObject.instance { case LocalScopeInner(v) =>
+    JsonObject("custom_v" -> Json.fromInt(v * 10))
+  }
+  given Decoder[LocalScopeInner] = Decoder.instance { c =>
+    c.downField("custom_v").as[Int].map(n => LocalScopeInner(n / 10))
+  }
 
 // Phase 9 types — semiauto (explicit derived) in companion objects
 case class SemiAutoProduct(x: Int, y: String)
@@ -1098,15 +1107,9 @@ object SanelyAutoSuite extends TestSuite:
       assert(decoded == Right(v))
     }
 
-    test("Local scope given takes priority over auto-derivation for nested type") {
-      // LocalScopeInner has a Mirror, but we provide a custom instance in local scope
-      given Encoder.AsObject[LocalScopeInner] = Encoder.AsObject.instance { case LocalScopeInner(v) =>
-        JsonObject("custom_v" -> Json.fromInt(v * 10))
-      }
-      given Decoder[LocalScopeInner] = Decoder.instance { c =>
-        c.downField("custom_v").as[Int].map(n => LocalScopeInner(n / 10))
-      }
-
+    test("Companion given takes priority over auto-derivation for nested type") {
+      // LocalScopeInner has a Mirror, but also has custom given in companion
+      // Auto-derivation of WrapsLocal MUST use companion's given
       case class WrapsLocal(inner: LocalScopeInner, name: String)
       val v = WrapsLocal(LocalScopeInner(5), "test")
       val json = v.asJson

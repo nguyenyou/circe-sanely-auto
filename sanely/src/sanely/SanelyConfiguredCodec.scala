@@ -325,37 +325,59 @@ object SanelyConfiguredCodec:
         val dec = constructRecursiveDecoder[T](tpe, selfDecRef)
         return (enc, dec)
 
-      // Codec-first fast path: single summonIgnoring instead of two
-      val summonedCodec = timer.time("summonIgnoring")(Expr.summonIgnoring[Codec.AsObject[T]](cachedCodecIgnoreSymbols*))
-      summonedCodec match
-        case Some(codec) =>
-          timer.count("codecHit")
-          summonedKeys += cacheKey
-          val pair = (codec.asInstanceOf[Expr[Encoder[T]]], codec.asInstanceOf[Expr[Decoder[T]]])
-          exprCache(cacheKey) = pair
-          return pair
-        case None => ()
-
-      val summonedEnc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
-      val summonedDec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
-      if summonedEnc.isDefined || summonedDec.isDefined then summonedKeys += cacheKey
-
-      val resolved: (Expr[Encoder[T]], Expr[Decoder[T]]) = (summonedEnc, summonedDec) match
-        case (Some(enc), Some(dec)) => (enc, dec)
-        case _ =>
-          timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
-            case Some(mirrorExpr) =>
+      val resolved: (Expr[Encoder[T]], Expr[Decoder[T]]) =
+        timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
+          case Some(mirrorExpr) =>
+            if MacroUtils.mayHaveExternalInstances(TypeRepr.of[T]) then
+              // Codec-first fast path: single summonIgnoring instead of two
+              val summonedCodec = timer.time("summonIgnoring")(Expr.summonIgnoring[Codec.AsObject[T]](cachedCodecIgnoreSymbols*))
+              summonedCodec match
+                case Some(codec) =>
+                  timer.count("codecHit")
+                  summonedKeys += cacheKey
+                  val pair = (codec.asInstanceOf[Expr[Encoder[T]]], codec.asInstanceOf[Expr[Decoder[T]]])
+                  exprCache(cacheKey) = pair
+                  return pair
+                case None => ()
+              val summonedEnc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
+              val summonedDec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
+              if summonedEnc.isDefined || summonedDec.isDefined then summonedKeys += cacheKey
+              (summonedEnc, summonedDec) match
+                case (Some(enc), Some(dec)) => (enc, dec)
+                case _ =>
+                  timer.time("derive") {
+                    mirrorExpr match
+                      case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                        val (derivedEnc, derivedDec) = deriveProductPair[T, types, labels](m, selfEncRef, selfDecRef)
+                        (summonedEnc.getOrElse(derivedEnc), summonedDec.getOrElse(derivedDec))
+                      case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                        val (derivedEnc, derivedDec) = deriveSumPair[T, types, labels](m, selfEncRef, selfDecRef)
+                        (summonedEnc.getOrElse(derivedEnc), summonedDec.getOrElse(derivedDec))
+                  }
+            else
+              timer.count("mirrorFastPath")
               timer.time("derive") {
                 mirrorExpr match
                   case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    val (derivedEnc, derivedDec) = deriveProductPair[T, types, labels](m, selfEncRef, selfDecRef)
-                    (summonedEnc.getOrElse(derivedEnc), summonedDec.getOrElse(derivedDec))
+                    deriveProductPair[T, types, labels](m, selfEncRef, selfDecRef)
                   case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    val (derivedEnc, derivedDec) = deriveSumPair[T, types, labels](m, selfEncRef, selfDecRef)
-                    (summonedEnc.getOrElse(derivedEnc), summonedDec.getOrElse(derivedDec))
+                    deriveSumPair[T, types, labels](m, selfEncRef, selfDecRef)
               }
-            case None =>
-              report.errorAndAbort(s"Cannot derive codec for ${Type.show[T]}: no implicit Encoder/Decoder and no Mirror available")
+          case None =>
+            val summonedCodec = timer.time("summonIgnoring")(Expr.summonIgnoring[Codec.AsObject[T]](cachedCodecIgnoreSymbols*))
+            summonedCodec match
+              case Some(codec) =>
+                summonedKeys += cacheKey
+                (codec.asInstanceOf[Expr[Encoder[T]]], codec.asInstanceOf[Expr[Decoder[T]]])
+              case None =>
+                val summonedEnc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
+                val summonedDec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
+                (summonedEnc, summonedDec) match
+                  case (Some(enc), Some(dec)) =>
+                    summonedKeys += cacheKey
+                    (enc, dec)
+                  case _ =>
+                    report.errorAndAbort(s"Cannot derive codec for ${Type.show[T]}: no implicit Encoder/Decoder and no Mirror available")
       exprCache(cacheKey) = resolved
       resolved
 

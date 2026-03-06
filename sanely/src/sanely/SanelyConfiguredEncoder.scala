@@ -131,20 +131,35 @@ object SanelyConfiguredEncoder:
         return constructRecursiveEncoder[T](dealiased, selfRef)
 
       val resolved: Expr[Encoder[T]] =
-        timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*)) match
-          case Some(enc) =>
-            summonedKeys += cacheKey
-            enc
+        timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
+          case Some(mirrorExpr) =>
+            if MacroUtils.mayHaveExternalInstances(TypeRepr.of[T]) then
+              timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*)) match
+                case Some(enc) =>
+                  summonedKeys += cacheKey
+                  enc
+                case None =>
+                  timer.time("derive") {
+                    mirrorExpr match
+                      case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                        deriveProduct[T, types, labels](m, selfRef)
+                      case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                        deriveSum[T, types, labels](m, selfRef)
+                  }
+            else
+              timer.count("mirrorFastPath")
+              timer.time("derive") {
+                mirrorExpr match
+                  case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                    deriveProduct[T, types, labels](m, selfRef)
+                  case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                    deriveSum[T, types, labels](m, selfRef)
+              }
           case None =>
-            timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
-              case Some(mirrorExpr) =>
-                timer.time("derive") {
-                  mirrorExpr match
-                    case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                      deriveProduct[T, types, labels](m, selfRef)
-                    case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                      deriveSum[T, types, labels](m, selfRef)
-                }
+            timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*)) match
+              case Some(enc) =>
+                summonedKeys += cacheKey
+                enc
               case None =>
                 report.errorAndAbort(s"Cannot derive Encoder for ${Type.show[T]}: no implicit Encoder and no Mirror available")
       exprCache(cacheKey) = resolved
