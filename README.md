@@ -38,7 +38,7 @@ This library replaces circe-generic with a macro that derives everything in one 
 
 ```diff
 - mvn"io.circe::circe-generic:0.14.x"
-+ mvn"io.github.nguyenyou::circe-sanely-auto:0.13.0"
++ mvn"io.github.nguyenyou::circe-sanely-auto:0.14.0"
 ```
 
 ```diff
@@ -203,7 +203,7 @@ Supports hierarchical sealed traits with diamond inheritance.
 
 | Before | After |
 |---|---|
-| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.13.0"` |
+| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.14.0"` |
 | `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` |
 | `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto.*` (unchanged) |
 
@@ -244,7 +244,7 @@ This measures what users actually experience: warm-daemon, incremental-dependenc
 
 **Configured derivation** (1.9x faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations reduce both macro expansion time and generated AST size.
 
-Six optimizations drive this:
+Seven optimizations drive this:
 
 1. **Single-pass codec derivation** — `deriveConfiguredCodec` uses a dedicated macro that resolves both encoder and decoder for each field type in one traversal, sharing one cache, one `Mirror` summon, and one builtin check per type. Halves the number of macro expansions (230 vs 460).
 2. **Builtin short-circuit** — primitive types (String, Int, Long, Double, Float, Boolean, Short, Byte, BigDecimal, BigInt) are resolved directly to their circe instances without calling `Expr.summonIgnoring`, saving ~66% of summonIgnoring calls.
@@ -252,6 +252,7 @@ Six optimizations drive this:
 4. **Runtime dispatch** — instead of generating N nested `.add()` calls (products) or N if-then-else branches (sum types) in the macro AST, the macro builds flat `Array[Encoder]`/`Array[Decoder]` and delegates to runtime while-loops in `SanelyRuntime`, reducing generated AST size by ~30-50%.
 5. **Sub-trait detection cache** — when `resolveOneEncoder`/`resolveOneDecoder` resolves a type via `Expr.summonIgnoring`, the cache key is recorded in a `summonedKeys` set. In `deriveSum`, sub-trait detection checks this set (O(1) lookup) instead of calling `summonIgnoring` again, eliminating redundant implicit searches. For configured codec derivation, this reduced per-call sub-trait detection time from 0.29ms to 0.03ms (-90%).
 6. **Factory method consolidation** — instead of each macro expansion generating its own anonymous `Encoder`/`Decoder`/`Codec` class definition (300+ classes for 300 types), all 6 macro files delegate to 11 factory methods in `SanelyRuntime` that define each anonymous class template once. Type-specific data (field names, encoder/decoder arrays) is passed as parameters. Lazy initialization uses `() => Array[Encoder[Any]]` lambdas which compile to `invokedynamic` (not anonymous classes). This dramatically reduces the transform+backend compiler phases — from heavier than circe to lighter.
+7. **Codec-first `summonIgnoring`** — in configured codec derivation, `resolveOneCodec` tries `Expr.summonIgnoring[Codec.AsObject[T]]` before falling back to separate `Encoder[T]` + `Decoder[T]` calls. When the nested type has a user-provided `Codec.AsObject[T]` in scope (the norm in configured derivation), one implicit search replaces two. Reduces configured summonIgnoring calls by 30% (294 → 205).
 
 ### JVM profiling (async-profiler)
 
@@ -364,17 +365,18 @@ python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 | cache hits | — | — | 1714 (75%) | — |
 | overhead | 231ms | 8.3% | — | macro framework (tuple recursion, AST construction) |
 
-#### Configured derivation (230 expansions, 1.3s total macro time)
+#### Configured derivation (230 expansions, 815ms total macro time)
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `topDerive`* | 1157ms | 89.1% | 230 | 5.03ms |
-| `summonIgnoring` | 549ms | 42.3% | 294 | 1.87ms |
-| `tryBuiltin` | 37ms | 2.9% | 493 | 0.08ms |
-| `resolveDefaults` | 9ms | 0.7% | 214 | 0.04ms |
-| `subTraitDetect` | 3ms | 0.2% | 69 | 0.04ms |
-| `cheapTypeKey` | 1ms | 0.1% | 820 | 0.00ms |
+| `topDerive`* | 708ms | 86.9% | 230 | 3.08ms |
+| `summonIgnoring` | 303ms | 37.1% | 205 | 1.48ms |
+| `tryBuiltin` | 30ms | 3.7% | 493 | 0.06ms |
+| `resolveDefaults` | 9ms | 1.2% | 214 | 0.04ms |
+| `subTraitDetect` | 2ms | 0.2% | 69 | 0.03ms |
+| `cheapTypeKey` | 1ms | 0.2% | 820 | 0.00ms |
 | `builtinHit` | — | — | 345 | — |
+| `codecHit` | — | — | 118 | — |
 | cache hits | — | — | 327 | — |
 
 *`topDerive` is a container category that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, and `resolveDefaults`. Percentages sum > 100% due to nesting.
@@ -384,15 +386,16 @@ python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 | Metric | Auto | Configured |
 |---|---|---|
 | Total macro expansions | 308 | 230 |
-| `summonIgnoring` calls | 660 | 294 |
+| `summonIgnoring` calls | 660 | 205 |
 | Builtin short-circuit hits | 706 | 345 |
 | Container composition hits | included in builtin | included in builtin |
 | Cache hit rate | 75% (1714 hits) | — (327 hits) |
-| summonIgnoring % of total | 49% | 42% |
-| `tryBuiltin` time | 47ms (1.7%) | 37ms (2.9%) |
-| `cheapTypeKey` time | 4ms (0.1%) | 1ms (0.1%) |
+| Codec-first hits | — | 118 |
+| summonIgnoring % of total | 49% | 37% |
+| `tryBuiltin` time | 47ms (1.7%) | 30ms (3.7%) |
+| `cheapTypeKey` time | 4ms (0.1%) | 1ms (0.2%) |
 
-`summonIgnoring` (the compiler's implicit search) dominates auto derivation at 49%. Builtin short-circuiting and container composition resolve ~706 type lookups without calling `summonIgnoring` at all. Sub-trait detection uses cached `summonedKeys` (O(1) set lookup) instead of re-calling `summonIgnoring`, reducing per-call time from 0.29ms to 0.04ms in configured derivation (-86%). For configured derivation, single-pass codec derivation halved the macro expansion count from 460 (separate CfgEncoder + CfgDecoder) to 230 (unified CfgCodec), while sharing one cache and one Mirror summon per type. The `summonIgnoring` call count stays at 294 (both encoder and decoder must still be summoned), but sub-trait detection halved from 138 to 69 calls. The intra-expansion cache achieves a 75% hit rate in auto derivation, avoiding redundant derivations for repeated types within a single macro call. Factory method consolidation reduced macro framework overhead from 359ms to 231ms (-36%) by generating simpler factory calls instead of full anonymous class definitions. The remaining 231ms is intrinsic to Scala 3's quote reflection (tuple type recursion at ~2ms/field, AST construction, quote splicing).
+`summonIgnoring` (the compiler's implicit search) dominates auto derivation at 49%. Builtin short-circuiting and container composition resolve ~706 type lookups without calling `summonIgnoring` at all. Sub-trait detection uses cached `summonedKeys` (O(1) set lookup) instead of re-calling `summonIgnoring`, reducing per-call time from 0.29ms to 0.04ms in configured derivation (-86%). For configured derivation, single-pass codec derivation halved the macro expansion count from 460 (separate CfgEncoder + CfgDecoder) to 230 (unified CfgCodec), while sharing one cache and one Mirror summon per type. Codec-first `summonIgnoring` further reduced configured calls from 294 to 205 (-30%) by trying `Codec.AsObject[T]` before separate `Encoder[T]` + `Decoder[T]` — 118 of 147 type pairs were resolved with a single call. The intra-expansion cache achieves a 75% hit rate in auto derivation, avoiding redundant derivations for repeated types within a single macro call. Factory method consolidation reduced macro framework overhead from 359ms to 231ms (-36%) by generating simpler factory calls instead of full anonymous class definitions. The remaining overhead is intrinsic to Scala 3's quote reflection (tuple type recursion at ~2ms/field, AST construction, quote splicing).
 
 ## Automated benchmarks
 
@@ -459,7 +462,7 @@ This entire library — every macro, every test, every line of build config, and
 - [x] **Deduplicate `dealias` calls** — `TypeRepr.of[T].dealias` was called 3+ times for the same type in `resolveOneEncoder`: cache key computation (`cheapTypeKey`), `tryResolveBuiltinEncoder` (which also redundantly called `TypeRepr.of[T]`), and `containsType`. Now computed once as `val dealiased = tpe.dealias` at the top of each `resolveOne*` method and threaded through all consumers. `tryResolveBuiltin*` methods accept the pre-dealiased `TypeRepr` as a parameter instead of reconstructing it. Applied across all 6 macro derivation files, eliminating ~2800 redundant dealias calls in auto + configured derivation.
 - [x] **Profile untimed overhead** — Added timing around `cheapTypeKey` (cache key generation), `tryBuiltin` (builtin resolution), `containsType` (recursive type check), `selfCheck` (self-type equality), and `dealias`. Results on ~300 types: `cheapTypeKey` 3.8ms/3080 calls, `tryBuiltin` 34ms/1366 calls, `containsType` 0.8ms/660 calls, `selfCheck` 0ms, `dealias` 0ms — total 39ms of the 359ms (15%) overhead. **Finding: the remaining ~320ms is distributed across inherent macro framework operations** — tuple type recursion in `resolveFields` (Type.of matching, Type.valueOfConstant at ~2ms/field), root-level AST construction (Expr building, quote splicing), and cache map operations. No single actionable bottleneck exists; the overhead is intrinsic to Scala 3's quote reflection. Kept `cheapTypeKey` and `tryBuiltin` timers as permanent diagnostic categories.
 - [x] **Reduce transform+backend compiler phases** — extracted 11 factory methods into `SanelyRuntime` that define anonymous `Encoder`/`Decoder`/`Codec` class templates once. All 6 macro files now generate factory calls instead of anonymous class definitions. Lambdas (`() => Array[Encoder[Any]]`) compile to `invokedynamic` (not anonymous classes). By-name `mirror` parameters avoid eager initialization cycles with local types. Results: auto transform+backend 108→108 (was heavier, now equal); auto total compiler -48% (1542→806 samples); configured total compiler -23% (805→621 samples). Overall: auto 2.97s→2.23s (-25%), configured 1.44s→1.47s (stable).
-- [ ] **(P2) Codec-first `summonIgnoring` fast path in codec macros** — In `SanelyCodec` and `SanelyConfiguredCodec`, `resolveOneCodec` does two independent `summonIgnoring` calls (`Encoder[T]` + `Decoder[T]`). When the nested type has a user-provided `Codec.AsObject[T]` in scope (common in configured derivation where companions define `given Codec.AsObject[...] = deriveConfiguredCodec`), a single `summonIgnoring[Codec.AsObject[T]]` could replace both searches. Profile shows `summonIgnoring` at 35–44% of total macro time; this would help most in the configured benchmark where codec instances are the norm.
+- [x] **(P2) Codec-first `summonIgnoring` fast path in codec macros** — In `SanelyConfiguredCodec`, `resolveOneCodec` now tries a single `summonIgnoring[Codec.AsObject[T]]` before falling back to separate `Encoder[T]` + `Decoder[T]` calls. When the nested type has a user-provided `Codec.AsObject[T]` in scope (common in configured derivation where companions define `given Codec.AsObject[...] = deriveConfiguredCodec`), this replaces two implicit searches with one. Applied only to configured codec derivation — auto derivation has no explicit codec instances so the summon would always fail. Results: 118 codec hits out of 147 pairs, summonIgnoring calls reduced from 294 to 205 (-30%), summonIgnoring time reduced by 13%, total macro time reduced by 8%.
 
 ## Contributing
 

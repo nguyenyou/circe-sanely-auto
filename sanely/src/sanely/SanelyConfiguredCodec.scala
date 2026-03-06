@@ -325,6 +325,17 @@ object SanelyConfiguredCodec:
         val dec = constructRecursiveDecoder[T](tpe, selfDecRef)
         return (enc, dec)
 
+      // Codec-first fast path: single summonIgnoring instead of two
+      val summonedCodec = timer.time("summonIgnoring")(Expr.summonIgnoring[Codec.AsObject[T]](cachedCodecIgnoreSymbols*))
+      summonedCodec match
+        case Some(codec) =>
+          timer.count("codecHit")
+          summonedKeys += cacheKey
+          val pair = (codec.asInstanceOf[Expr[Encoder[T]]], codec.asInstanceOf[Expr[Decoder[T]]])
+          exprCache(cacheKey) = pair
+          return pair
+        case None => ()
+
       val summonedEnc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
       val summonedDec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
       if summonedEnc.isDefined || summonedDec.isDefined then summonedKeys += cacheKey
@@ -571,6 +582,20 @@ object SanelyConfiguredCodec:
           val encoderCompanion = Symbol.requiredModule("io.circe.Encoder")
           encoderCompanion.methodMember(method).foreach(buf += _)
         catch case _: Exception => ()
+      buf.result()
+
+    private lazy val cachedCodecIgnoreSymbols: List[Symbol] =
+      val buf = List.newBuilder[Symbol]
+      // Ignore Codec.AsObject.derived to prevent circe-core's own derivation
+      try
+        val codecAsObject = Symbol.requiredModule("io.circe.Codec.AsObject")
+        codecAsObject.methodMember("derived").foreach(buf += _)
+      catch case _: Exception => ()
+      // Ignore ConfiguredCodec.derived (also produces Codec.AsObject)
+      try
+        val configuredCodec = Symbol.requiredModule("io.circe.derivation.ConfiguredCodec")
+        configuredCodec.methodMember("derived").foreach(buf += _)
+      catch case _: Exception => ()
       buf.result()
 
     // --- Type utilities ---
