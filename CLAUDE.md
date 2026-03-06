@@ -157,6 +157,20 @@ Automated via GitHub Actions (`.github/workflows/release.yml`). Triggered on `v*
 
 Update `CHANGELOG.md` with new features, bug fixes, and breaking changes. Use `git log --oneline vPREV..HEAD` to gather commits.
 
+## Roadmap Item Workflow
+
+When completing a roadmap item from `README.md`, **always** run the full validation suite before marking it done:
+
+1. **All tests**: `./mill sanely.jvm.test`, `./mill sanely.js.test`, `./mill compat.jvm.test`, `./mill compat.js.test`
+2. **Benchmarks**: `bash bench.sh 5` (auto) and `bash bench.sh --configured 5` (configured)
+3. **Macro profile**: `SANELY_PROFILE=true` on both `benchmark.sanely.compile` and `benchmark-configured.sanely.compile`, then run `analyze_profile.py`
+4. **JVM profile**: async-profiler on `benchmark.sanely.compile` and `benchmark-configured.sanely.compile`, then run `analyze_jvm_profile.py`
+5. **Memory profile**: `/usr/bin/time -l` for peak RSS, async-profiler `event=alloc` for allocation pressure
+
+**If improved**: mark `[x]` in README roadmap, update benchmark/profile numbers in README tables.
+
+**If regression**: revert the change, mark with `~~strikethrough~~` in README roadmap, and explain the regression (what regressed, by how much, root cause).
+
 ## Known Issues
 
 - Configured macro profiling: `topDerive` is a **container category** that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, `resolveDefaults`. Category percentages sum > 100% due to nesting.

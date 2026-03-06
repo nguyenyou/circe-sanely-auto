@@ -266,8 +266,11 @@ object SanelyCodec:
       if tpe =:= selfType then
         return (selfEncRef.asInstanceOf[Expr[Encoder[T]]], selfDecRef.asInstanceOf[Expr[Decoder[T]]])
 
+      // Dealias once — reused by cheapTypeKey, tryResolveBuiltin, containsType
+      val dealiased = tpe.dealias
+
       // Cache check — single key computation, pair lookup
-      val cacheKey = MacroUtils.cheapTypeKey(tpe)
+      val cacheKey = MacroUtils.cheapTypeKey(dealiased)
       exprCache.get(cacheKey) match
         case Some((cachedEnc, cachedDec)) =>
           timer.count("cacheHit")
@@ -276,7 +279,7 @@ object SanelyCodec:
 
       // Builtin check — resolves both encoder and decoder for primitives
       if !negativeBuiltinCache.contains(cacheKey) then
-        tryResolveBuiltinCodec[T] match
+        tryResolveBuiltinCodec[T](dealiased) match
           case Some(pair) =>
             timer.count("builtinHit")
             exprCache(cacheKey) = pair
@@ -285,7 +288,7 @@ object SanelyCodec:
             negativeBuiltinCache += cacheKey
 
       // Recursive type check
-      if containsType(tpe, selfType) then
+      if containsType(dealiased, selfType) then
         val enc = constructRecursiveEncoder[T](tpe, selfEncRef)
         val dec = constructRecursiveDecoder[T](tpe, selfDecRef)
         return (enc, dec)
@@ -317,15 +320,14 @@ object SanelyCodec:
 
     // --- Builtin resolution (shared, returns pairs) ---
 
-    private def tryResolveBuiltinCodec[T: Type]: Option[(Expr[Encoder[T]], Expr[Decoder[T]])] =
-      val tpe = TypeRepr.of[T].dealias
+    private def tryResolveBuiltinCodec[T: Type](dealiased: TypeRepr): Option[(Expr[Encoder[T]], Expr[Decoder[T]])] =
       // Try primitive pair first
-      (resolvePrimEncoder(tpe), resolvePrimDecoder(tpe)) match
+      (resolvePrimEncoder(dealiased), resolvePrimDecoder(dealiased)) match
         case (Some(enc), Some(dec)) =>
           Some((enc.asInstanceOf[Expr[Encoder[T]]], dec.asInstanceOf[Expr[Decoder[T]]]))
         case _ =>
           // Try container of known inner type
-          tpe match
+          dealiased match
             case AppliedType(tycon, List(arg)) =>
               val argKey = MacroUtils.cheapTypeKey(arg)
               val innerPair =

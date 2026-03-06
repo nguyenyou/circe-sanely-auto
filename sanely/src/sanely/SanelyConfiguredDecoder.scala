@@ -215,8 +215,11 @@ object SanelyConfiguredDecoder:
       if tpe =:= selfType then
         return selfRef.asInstanceOf[Expr[Decoder[T]]]
 
+      // Dealias once — reused by cheapTypeKey, tryResolveBuiltin, containsType
+      val dealiased = tpe.dealias
+
       // Cache check first — hits 75% of the time, skips containsType traversal
-      val cacheKey = MacroUtils.cheapTypeKey(tpe)
+      val cacheKey = MacroUtils.cheapTypeKey(dealiased)
       exprCache.get(cacheKey) match
         case Some(cached) =>
           timer.count("cacheHit")
@@ -224,7 +227,7 @@ object SanelyConfiguredDecoder:
         case None => ()
 
       if !negativeBuiltinCache.contains(cacheKey) then
-        tryResolveBuiltinDecoder[T] match
+        tryResolveBuiltinDecoder[T](dealiased) match
           case Some(dec) =>
             timer.count("builtinHit")
             exprCache(cacheKey) = dec
@@ -234,8 +237,8 @@ object SanelyConfiguredDecoder:
 
       // Check if T contains the recursive type in its type params
       // Must check BEFORE Expr.summonIgnoring to avoid exponential implicit search
-      if containsType(tpe, selfType) then
-        return constructRecursiveDecoder[T](tpe, selfRef)
+      if containsType(dealiased, selfType) then
+        return constructRecursiveDecoder[T](dealiased, selfRef)
 
       val resolved: Expr[Decoder[T]] =
         timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedIgnoreSymbols*)) match
@@ -266,10 +269,9 @@ object SanelyConfiguredDecoder:
         case OrType(left, right) => containsType(left, target) || containsType(right, target)
         case _ => false
 
-    private def tryResolveBuiltinDecoder[T: Type]: Option[Expr[Decoder[T]]] =
-      val tpe = TypeRepr.of[T].dealias
-      resolvePrimDecoder(tpe).map(_.asInstanceOf[Expr[Decoder[T]]]).orElse {
-        tpe match
+    private def tryResolveBuiltinDecoder[T: Type](dealiased: TypeRepr): Option[Expr[Decoder[T]]] =
+      resolvePrimDecoder(dealiased).map(_.asInstanceOf[Expr[Decoder[T]]]).orElse {
+        dealiased match
           case AppliedType(tycon, List(arg)) =>
             val argKey = MacroUtils.cheapTypeKey(arg)
             val innerOpt =

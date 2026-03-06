@@ -389,7 +389,10 @@ object SanelyConfiguredCodec:
       if tpe =:= selfType then
         return (selfEncRef.asInstanceOf[Expr[Encoder[T]]], selfDecRef.asInstanceOf[Expr[Decoder[T]]])
 
-      val cacheKey = MacroUtils.cheapTypeKey(tpe)
+      // Dealias once — reused by cheapTypeKey, tryResolveBuiltin, containsType
+      val dealiased = tpe.dealias
+
+      val cacheKey = MacroUtils.cheapTypeKey(dealiased)
       exprCache.get(cacheKey) match
         case Some((cachedEnc, cachedDec)) =>
           timer.count("cacheHit")
@@ -397,7 +400,7 @@ object SanelyConfiguredCodec:
         case None => ()
 
       if !negativeBuiltinCache.contains(cacheKey) then
-        tryResolveBuiltinCodec[T] match
+        tryResolveBuiltinCodec[T](dealiased) match
           case Some(pair) =>
             timer.count("builtinHit")
             exprCache(cacheKey) = pair
@@ -405,7 +408,7 @@ object SanelyConfiguredCodec:
           case None =>
             negativeBuiltinCache += cacheKey
 
-      if containsType(tpe, selfType) then
+      if containsType(dealiased, selfType) then
         val enc = constructRecursiveEncoder[T](tpe, selfEncRef)
         val dec = constructRecursiveDecoder[T](tpe, selfDecRef)
         return (enc, dec)
@@ -435,13 +438,12 @@ object SanelyConfiguredCodec:
 
     // --- Builtin resolution (shared, returns pairs) ---
 
-    private def tryResolveBuiltinCodec[T: Type]: Option[(Expr[Encoder[T]], Expr[Decoder[T]])] =
-      val tpe = TypeRepr.of[T].dealias
-      (resolvePrimEncoder(tpe), resolvePrimDecoder(tpe)) match
+    private def tryResolveBuiltinCodec[T: Type](dealiased: TypeRepr): Option[(Expr[Encoder[T]], Expr[Decoder[T]])] =
+      (resolvePrimEncoder(dealiased), resolvePrimDecoder(dealiased)) match
         case (Some(enc), Some(dec)) =>
           Some((enc.asInstanceOf[Expr[Encoder[T]]], dec.asInstanceOf[Expr[Decoder[T]]]))
         case _ =>
-          tpe match
+          dealiased match
             case AppliedType(tycon, List(arg)) =>
               val argKey = MacroUtils.cheapTypeKey(arg)
               val innerPair =
