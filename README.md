@@ -2,39 +2,53 @@
 
 [![CI](https://github.com/nguyenyou/circe-sanely-auto/actions/workflows/ci.yml/badge.svg)](https://github.com/nguyenyou/circe-sanely-auto/actions/workflows/ci.yml)
 
-Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Faster compile times. No Shapeless. No circe-generic.
+Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Swap one dependency, change one import, compile faster.
 
-**Scala 3.8.2+ | JVM + Scala.js | ✅ 447 tests**
+**Scala 3.8.2+ | JVM + Scala.js | 447 tests passing**
 
-## Motivation
+## Why
 
-[circe-generic](https://github.com/circe/circe) is the standard way to auto-derive JSON codecs in Scala. It works, but it's slow. On large codebases with hundreds of case classes and sealed traits, `circe-generic` adds significant compile time because it relies on implicit search chains — each nested type triggers a new round of implicit resolution, and those rounds compound.
+circe-generic is slow. Every nested type triggers another round of implicit resolution, and those rounds compound. On a codebase with 300 types:
 
-This library exists to fix that. It replaces `circe-generic` entirely with a macro-based implementation that derives all `Encoder`/`Decoder` instances in a single macro expansion, avoiding implicit search chains altogether.
+| | circe-generic | circe-sanely-auto | |
+|---|---|---|---|
+| **Auto derivation** | 6.98s | **2.23s** | **3.1x faster** |
+| **Configured derivation** | 2.89s | **1.47s** | **2.0x faster** |
+| **Compiler work** | 1,542 samples | **806 samples** | **48% less** |
+| **Memory allocations** | 8,547 samples | **4,168 samples** | **51% less** |
+| **Peak RSS** | 963 MB | **769 MB** | **20% less** |
 
-## Inspiration
+This library replaces circe-generic with a macro that derives everything in one expansion — no implicit search chains, no Shapeless. It passes circe's own test suite (318 property-based tests) plus 129 additional unit tests.
 
-The approach is based on Mateusz Kubuszok's [sanely-automatic derivation](https://kubuszok.com/2025/sanely-automatic-derivation/) technique. The key insight: Scala 3.7+ provides `Expr.summonIgnoring`, which lets a macro summon implicit instances while excluding specific symbols. This means we can:
+### How to try it
+
+```diff
+- mvn"io.circe::circe-generic:0.14.x"
++ mvn"io.github.nguyenyou::circe-sanely-auto:0.13.0"
+```
+
+```diff
+- import io.circe.generic.auto._
++ import io.circe.generic.auto.given
+```
+
+That's it. Same JSON format, same API, same behavior. Everything else stays the same.
+
+## How it works
+
+Based on Mateusz Kubuszok's [sanely-automatic derivation](https://kubuszok.com/2025/sanely-automatic-derivation/) technique. Scala 3.7+ provides `Expr.summonIgnoring`, which lets a macro summon implicit instances while excluding specific symbols:
 
 1. Define an `inline given autoEncoder[A]` that delegates to a macro
-2. Inside the macro, use `Expr.summonIgnoring` to search for an existing `Encoder[A]` — excluding our own auto-given from the search so we don't infinitely recurse
-3. If a user-provided instance exists, use it. Otherwise, derive it internally using `Mirror` — and recursively apply the same logic to all nested types within the same macro expansion
+2. Inside the macro, use `Expr.summonIgnoring` to search for an existing `Encoder[A]` — excluding our own auto-given from the search
+3. If a user-provided instance exists, use it. Otherwise, derive it internally using `Mirror` — recursively, within the same macro expansion
 
-The result: one macro call derives everything. No implicit search chains. No Shapeless. Just Scala 3 `Mirror` and `scala.quoted`.
+One macro call derives everything. No implicit search chains. No Shapeless.
 
 ## Compatibility
 
-The goal is full API compatibility with circe's derivation. You should be able to swap the dependency, update one import, and have everything work the same — same JSON format, same behavior, same error messages where possible.
+The goal is full API compatibility with circe's derivation — same JSON format, same behavior, same error messages where possible.
 
-### How we verify compatibility
-
-We maintain two layers of tests:
-
-**✅ 124 unit tests** (utest, cross-compiled JVM + Scala.js) covering auto-derivation (products, sum types, case objects, generics, recursive types, large types, edge cases, error cases, semiauto API) and configured derivation (all 5 configuration options, enum codecs, hierarchical sealed traits, multi-level hierarchies, recursive types with discriminators).
-
-**✅ 318 compatibility tests** (munit + discipline) ported directly from circe's own test suite — `DerivesSuite`, `SemiautoDerivationSuite`, and `ConfiguredDerivesSuite`. These use circe's `CodecTests` which runs property-based checks: roundtrip consistency, accumulating decoder consistency, and `Codec.from` consistency. Same test types, same Arbitrary instances, same assertions. If circe's tests pass with circe-generic, they pass with circe-sanely-auto.
-
-**✅ 447 tests total**, all green.
+**447 tests total**: 129 unit tests (utest, cross-compiled JVM + Scala.js) covering auto, semiauto, and configured derivation. Plus 318 compatibility tests (munit + discipline) ported directly from circe's own `DerivesSuite`, `SemiautoDerivationSuite`, and `ConfiguredDerivesSuite` — same types, same Arbitrary instances, same property-based checks.
 
 ## Features
 
@@ -133,31 +147,15 @@ Supports hierarchical sealed traits with diamond inheritance.
 
 ## Migration from circe-generic
 
-### Step 1: Swap the dependency
-
-```diff
-- mvn"io.circe::circe-generic:0.14.x"
-+ mvn"io.github.nguyenyou::circe-sanely-auto:0.12.0"
-```
-
-### Step 2: Update imports
-
 | Before | After |
 |---|---|
+| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.13.0"` |
 | `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` |
 | `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto.*` (unchanged) |
 
-The `io.circe.generic.auto` and `io.circe.generic.semiauto` packages are provided by this library with the same API — they delegate to the sanely macro engine internally.
+The `io.circe.generic.auto` and `io.circe.generic.semiauto` packages are provided by this library with the same API. Semiauto calls (`deriveEncoder`, `deriveDecoder`, `deriveCodec`) and configured derivation (`deriveConfiguredEncoder`, `deriveConfiguredDecoder`, `deriveConfiguredCodec`, `deriveEnumCodec`) work identically. JSON format is the same. User-provided instances are still respected.
 
-### Step 3: No other changes needed
-
-Semiauto calls (`deriveEncoder`, `deriveDecoder`, `deriveCodec`) work identically. Configured derivation (`deriveConfiguredEncoder`, `deriveConfiguredDecoder`, `deriveConfiguredCodec`, `deriveEnumCodec`) works identically. JSON format is the same. User-provided instances are still respected.
-
-### What changes
-
-- **Faster compile times** — single macro expansion vs implicit search chains
-- **Scala 3 only** — no Scala 2 support, requires 3.8.2+
-- **No Shapeless** — uses Scala 3 `Mirror` + `Expr.summonIgnoring`
+**Requirements**: Scala 3.8.2+, no Scala 2 support.
 
 ## Compile-time benchmarks
 
