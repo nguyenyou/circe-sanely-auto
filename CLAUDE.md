@@ -26,6 +26,12 @@ Mill 1.1.2. Run from repo root:
 
 **Do NOT run** `./mill __.compile` or bare `./mill` — use targeted module commands to avoid cache invalidation.
 
+### Zinc Incremental Compilation Tests
+
+```bash
+bash test-zinc.sh               # zinc incremental recompilation tests (5 scenarios, 21 checks)
+```
+
 ### Benchmarks
 
 ```bash
@@ -77,6 +83,7 @@ open /tmp/flamegraph.html
 | `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
 | `benchmark-configured/` | Configured derivation benchmark. Three sub-modules: `sanely`, `generic`, `generic-compat` sharing `benchmark-configured/shared/src/` |
 | `benchmark-runtime/` | Runtime performance benchmark. Compares circe-jawn vs circe+jsoniter-parser vs pure jsoniter-scala (reading + writing throughput) |
+| `zinc-test/` | Zinc incremental compilation tests. Verifies macros re-expand correctly when types change. 5 scenarios, 21 checks |
 
 ## Source Files
 
