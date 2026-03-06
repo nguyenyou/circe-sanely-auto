@@ -52,16 +52,7 @@ object SanelyDecoder:
       }
       val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
 
-      '{
-        new Decoder[P]:
-          private lazy val _decoders = $decodersArrayExpr
-          private val _names = $namesExpr
-          def apply(c: HCursor): Decoder.Result[P] =
-            if !c.value.isObject then Left(DecodingFailure("Expected JSON object for product type", c.history))
-            else SanelyRuntime.decodeProductFields(c, $mirror, _names, _decoders)
-          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
-            SanelyRuntime.decodeProductFieldsAccumulating(c, $mirror, _names, _decoders)
-      }
+      '{ SanelyRuntime.productDecoder[P]($mirror, $namesExpr, () => $decodersArrayExpr) }
 
     private def deriveSum[S: Type, Types: Type, Labels: Type](
       mirror: Expr[Mirror.SumOf[S]],
@@ -95,27 +86,7 @@ object SanelyDecoder:
       }
       val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
 
-      '{
-        new Decoder[S]:
-          private val _knownLabels: Set[String] = $directLabelsExpr.toSet
-          private val _labels = $allLabelsExpr
-          private lazy val _decoders = $decodersArrayExpr
-          private val _isSubTrait = $isSubTraitExpr
-          def apply(c: HCursor): Decoder.Result[S] =
-            c.keys match
-              case Some(keys) =>
-                val key = keys.find(_knownLabels.contains).getOrElse("")
-                SanelyRuntime.decodeSum(c, key, _labels, _decoders, _isSubTrait)
-              case None =>
-                Left(DecodingFailure("Expected JSON object for sum type", c.history))
-          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
-            c.keys match
-              case Some(keys) =>
-                val key = keys.find(_knownLabels.contains).getOrElse("")
-                SanelyRuntime.decodeSumAccumulating(c, key, _labels, _decoders, _isSubTrait)
-              case None =>
-                cats.data.Validated.invalidNel(DecodingFailure("Expected JSON object for sum type", c.history))
-      }
+      '{ SanelyRuntime.sumDecoder[S]($allLabelsExpr, () => $decodersArrayExpr, $isSubTraitExpr, $directLabelsExpr.toSet) }
 
     private def resolveFields[Types: Type, Labels: Type](
       selfRef: Expr[Decoder[A]]

@@ -91,34 +91,11 @@ object SanelyConfiguredCodec:
       val isOptionArrayExpr = '{ Array(${Varargs(isOptionExprs)}*) }
 
       '{
-        val _fieldNames = $fieldLabelsExpr.map($conf.transformMemberNames).toArray
-        val _typeName = $productTypeName
-        new Codec.AsObject[P]:
-          private lazy val _encoders = $encodersArrayExpr
-          private lazy val _decoders = $decodersArrayExpr
-          private val _hasDefault = $hasDefaultArrayExpr
-          private val _defaults = $defaultsArrayExpr
-          private val _isOption = $isOptionArrayExpr
-          def encodeObject(a: P): JsonObject =
-            SanelyRuntime.encodeProductFields(a.asInstanceOf[Product], _fieldNames, _encoders)
-          def apply(c: HCursor): Decoder.Result[P] =
-            if !c.value.isObject then Left(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
-            else
-              if $conf.strictDecoding then
-                SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet, _typeName, _fieldNames) match
-                  case Left(err) => return Left(err)
-                  case _ => ()
-              SanelyRuntime.decodeProductFieldsConfigured(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults)
-          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
-            if !c.value.isObject then cats.data.Validated.invalidNel(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
-            else
-              val strictErrors: List[DecodingFailure] =
-                if $conf.strictDecoding then
-                  SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet, _typeName, _fieldNames) match
-                    case Left(err) => List(err)
-                    case _ => Nil
-                else Nil
-              SanelyRuntime.decodeProductFieldsConfiguredAccumulating(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults, strictErrors)
+        SanelyRuntime.configuredProductCodec[P](
+          $mirror, $fieldLabelsExpr.map($conf.transformMemberNames).toArray,
+          () => $encodersArrayExpr, () => $decodersArrayExpr,
+          $hasDefaultArrayExpr, $defaultsArrayExpr, $isOptionArrayExpr,
+          $conf.useDefaults, $conf.strictDecoding, $productTypeName)
       }
 
     private def deriveSumCodec[S: Type, Types: Type, Labels: Type](
@@ -157,29 +134,11 @@ object SanelyConfiguredCodec:
       val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
 
       '{
-        val _typeName = $sumTypeName
-        new Codec.AsObject[S]:
-          private lazy val _encoders = $encodersArrayExpr
-          private lazy val _decoders = $decodersArrayExpr
-          private val _allTransformedLabels: Array[String] = $directLabelsExpr.map(l => $conf.transformConstructorNames(l)).toArray
-          private val _transformedLabels: Set[String] = _allTransformedLabels.toSet
-          private val _labels = $allLabelsExpr
-          private val _isSubTrait = $isSubTraitExpr
-          def encodeObject(a: S): JsonObject =
-            val ord = $mirror.ordinal(a)
-            SanelyRuntime.encodeSumConfigured(
-              a, ord, _labels, _encoders, _isSubTrait,
-              $conf.transformConstructorNames, $conf.discriminator)
-          def apply(c: HCursor): Decoder.Result[S] =
-            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding, _typeName, _allTransformedLabels) match
-              case Left(err) => Left(err)
-              case Right(pair) =>
-                SanelyRuntime.decodeSumConfigured(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator, _typeName)
-          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
-            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding, _typeName, _allTransformedLabels) match
-              case Left(err) => cats.data.Validated.invalidNel(err)
-              case Right(pair) =>
-                SanelyRuntime.decodeSumConfiguredAccumulating(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator, _typeName)
+        SanelyRuntime.configuredSumCodec[S](
+          $mirror, $allLabelsExpr, () => $encodersArrayExpr, () => $decodersArrayExpr,
+          $isSubTraitExpr, $directLabelsExpr,
+          $conf.transformConstructorNames, $conf.discriminator,
+          $conf.strictDecoding, $sumTypeName)
       }
 
     // --- Nested type derivation (returns separate encoder + decoder pair) ---
@@ -229,39 +188,13 @@ object SanelyConfiguredCodec:
       }
       val isOptionArrayExpr = '{ Array(${Varargs(isOptionExprs)}*) }
 
-      val enc = '{
-        val _names = $fieldLabelsExpr.map($conf.transformMemberNames).toArray
-        new Encoder.AsObject[P]:
-          private lazy val _encoders = $encodersArrayExpr
-          def encodeObject(a: P): JsonObject =
-            SanelyRuntime.encodeProductFields(a.asInstanceOf[Product], _names, _encoders)
-      }
+      val enc = '{ SanelyRuntime.productEncoder[P]($fieldLabelsExpr.map($conf.transformMemberNames).toArray, () => $encodersArrayExpr) }
       val dec = '{
-        val _fieldNames = $fieldLabelsExpr.map($conf.transformMemberNames).toArray
-        val _typeName = $productTypeName
-        new Decoder[P]:
-          private lazy val _decoders = $decodersArrayExpr
-          private val _hasDefault = $hasDefaultArrayExpr
-          private val _defaults = $defaultsArrayExpr
-          private val _isOption = $isOptionArrayExpr
-          def apply(c: HCursor): Decoder.Result[P] =
-            if !c.value.isObject then Left(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
-            else
-              if $conf.strictDecoding then
-                SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet, _typeName, _fieldNames) match
-                  case Left(err) => return Left(err)
-                  case _ => ()
-              SanelyRuntime.decodeProductFieldsConfigured(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults)
-          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[P] =
-            if !c.value.isObject then cats.data.Validated.invalidNel(DecodingFailure(DecodingFailure.Reason.WrongTypeExpectation("object", c.value), c.history))
-            else
-              val strictErrors: List[DecodingFailure] =
-                if $conf.strictDecoding then
-                  SanelyRuntime.checkStrictDecoding(c, _fieldNames.toSet, _typeName, _fieldNames) match
-                    case Left(err) => List(err)
-                    case _ => Nil
-                else Nil
-              SanelyRuntime.decodeProductFieldsConfiguredAccumulating(c, $mirror, _fieldNames, _decoders, _hasDefault, _defaults, _isOption, $conf.useDefaults, strictErrors)
+        SanelyRuntime.configuredProductDecoder[P](
+          $mirror, $fieldLabelsExpr.map($conf.transformMemberNames).toArray,
+          () => $decodersArrayExpr,
+          $hasDefaultArrayExpr, $defaultsArrayExpr, $isOptionArrayExpr,
+          $conf.useDefaults, $conf.strictDecoding, $productTypeName)
       }
       (enc, dec)
 
@@ -299,34 +232,13 @@ object SanelyConfiguredCodec:
       val encodersArrayExpr = '{ Array(${Varargs(encoderExprs)}*) }
       val decodersArrayExpr = '{ Array(${Varargs(decoderExprs)}*) }
 
-      val enc = '{
-        new Encoder.AsObject[S]:
-          private lazy val _encoders = $encodersArrayExpr
-          private val _labels = $allLabelsExpr
-          private val _isSubTrait = $isSubTraitExpr
-          def encodeObject(a: S): JsonObject =
-            val ord = $mirror.ordinal(a)
-            SanelyRuntime.encodeSumConfigured(
-              a, ord, _labels, _encoders, _isSubTrait,
-              $conf.transformConstructorNames, $conf.discriminator)
-      }
+      val sumTypeName = Expr(TypeRepr.of[S].typeSymbol.name)
+      val enc = '{ SanelyRuntime.configuredSumEncoder[S]($mirror, $allLabelsExpr, () => $encodersArrayExpr, $isSubTraitExpr, $conf.transformConstructorNames, $conf.discriminator) }
       val dec = '{
-        new Decoder[S]:
-          private val _allTransformedLabels: Array[String] = $directLabelsExpr.map(l => $conf.transformConstructorNames(l)).toArray
-          private val _transformedLabels: Set[String] = _allTransformedLabels.toSet
-          private val _labels = $allLabelsExpr
-          private lazy val _decoders = $decodersArrayExpr
-          private val _isSubTrait = $isSubTraitExpr
-          def apply(c: HCursor): Decoder.Result[S] =
-            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding, ${Expr(TypeRepr.of[S].typeSymbol.name)}, _allTransformedLabels) match
-              case Left(err) => Left(err)
-              case Right(pair) =>
-                SanelyRuntime.decodeSumConfigured(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator, ${Expr(TypeRepr.of[S].typeSymbol.name)})
-          override def decodeAccumulating(c: HCursor): Decoder.AccumulatingResult[S] =
-            SanelyRuntime.extractSumTypeInfo(c, $conf.discriminator, _transformedLabels, $conf.strictDecoding, ${Expr(TypeRepr.of[S].typeSymbol.name)}, _allTransformedLabels) match
-              case Left(err) => cats.data.Validated.invalidNel(err)
-              case Right(pair) =>
-                SanelyRuntime.decodeSumConfiguredAccumulating(c, pair._1, pair._2, _labels, _decoders, _isSubTrait, $conf.transformConstructorNames, $conf.discriminator, ${Expr(TypeRepr.of[S].typeSymbol.name)})
+        SanelyRuntime.configuredSumDecoder[S](
+          $allLabelsExpr, () => $decodersArrayExpr, $isSubTraitExpr,
+          $directLabelsExpr, $conf.transformConstructorNames, $conf.discriminator,
+          $conf.strictDecoding, $sumTypeName)
       }
       (enc, dec)
 
