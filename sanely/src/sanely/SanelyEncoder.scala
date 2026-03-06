@@ -24,6 +24,7 @@ object SanelyEncoder:
     val timer: MacroTimer = MacroTimer.create(Type.show[A], "Encoder")
     private val exprCache = mutable.Map.empty[String, Expr[?]]
     private val negativeBuiltinCache = mutable.Set.empty[String]
+    private val summonedKeys = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Encoder.AsObject[A]] =
       // Wrap in lazy val for recursive self-reference support
@@ -72,8 +73,9 @@ object SanelyEncoder:
         val isSub = timer.time("subTraitDetect") {
           tpe match
             case '[t] =>
-              Expr.summon[Mirror.SumOf[t]].isDefined &&
-              Expr.summonIgnoring[Encoder[t]](cachedIgnoreSymbols*).isEmpty
+              val cacheKey = MacroUtils.cheapTypeKey(TypeRepr.of[t])
+              !summonedKeys.contains(cacheKey) &&
+              Expr.summon[Mirror.SumOf[t]].isDefined
         }
         (label, tpe, enc, isSub)
       }
@@ -144,7 +146,9 @@ object SanelyEncoder:
 
       val resolved: Expr[Encoder[T]] =
         timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*)) match
-          case Some(enc) => enc
+          case Some(enc) =>
+            summonedKeys += cacheKey
+            enc
           case None =>
             timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
               case Some(mirrorExpr) =>

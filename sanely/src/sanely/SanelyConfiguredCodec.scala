@@ -26,6 +26,7 @@ object SanelyConfiguredCodec:
     // Cache stores (Encoder, Decoder) pairs — shared across both sides
     private val exprCache = mutable.Map.empty[String, (Expr[?], Expr[?])]
     private val negativeBuiltinCache = mutable.Set.empty[String]
+    private val summonedKeys = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Codec.AsObject[A]] =
       '{
@@ -132,9 +133,9 @@ object SanelyConfiguredCodec:
         val isSub = timer.time("subTraitDetect") {
           tpe match
             case '[t] =>
-              Expr.summon[Mirror.SumOf[t]].isDefined &&
-              Expr.summonIgnoring[Encoder[t]](cachedEncIgnoreSymbols*).isEmpty &&
-              Expr.summonIgnoring[Decoder[t]](cachedDecIgnoreSymbols*).isEmpty
+              val cacheKey = MacroUtils.cheapTypeKey(TypeRepr.of[t])
+              !summonedKeys.contains(cacheKey) &&
+              Expr.summon[Mirror.SumOf[t]].isDefined
         }
         (label, tpe, enc, dec, isSub)
       }
@@ -275,9 +276,9 @@ object SanelyConfiguredCodec:
         val isSub = timer.time("subTraitDetect") {
           tpe match
             case '[t] =>
-              Expr.summon[Mirror.SumOf[t]].isDefined &&
-              Expr.summonIgnoring[Encoder[t]](cachedEncIgnoreSymbols*).isEmpty &&
-              Expr.summonIgnoring[Decoder[t]](cachedDecIgnoreSymbols*).isEmpty
+              val cacheKey = MacroUtils.cheapTypeKey(TypeRepr.of[t])
+              !summonedKeys.contains(cacheKey) &&
+              Expr.summon[Mirror.SumOf[t]].isDefined
         }
         (label, tpe, enc, dec, isSub)
       }
@@ -411,6 +412,7 @@ object SanelyConfiguredCodec:
 
       val summonedEnc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
       val summonedDec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
+      if summonedEnc.isDefined || summonedDec.isDefined then summonedKeys += cacheKey
 
       val resolved: (Expr[Encoder[T]], Expr[Decoder[T]]) = (summonedEnc, summonedDec) match
         case (Some(enc), Some(dec)) => (enc, dec)
