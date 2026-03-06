@@ -4,6 +4,183 @@ Automated benchmarks run on `ubuntu-latest` after each release.
 
 <!-- BENCHMARK ENTRIES -->
 
+## v0.14.0
+
+**Date:** 2026-03-06 13:05:44 UTC | **SHA:** `3f1b13e`
+
+### Compile Time — Auto Derivation
+
+```
+Compile-time benchmark: circe-sanely-auto vs circe-generic (N=5)
+Benchmark suite: benchmark
+Method: Mill daemon, hyperfine with --warmup 1, --runs 5
+================================================================
+Warming up Mill daemon and source dependencies...
+Running hyperfine benchmark...
+
+Benchmark 1: benchmark.sanely
+  Time (mean ± σ):      7.388 s ±  1.636 s    [User: 0.060 s, System: 0.101 s]
+  Range (min … max):    6.111 s … 10.083 s    5 runs
+ 
+Benchmark 2: benchmark.generic
+  Time (mean ± σ):     15.900 s ±  0.397 s    [User: 0.092 s, System: 0.200 s]
+  Range (min … max):   15.563 s … 16.588 s    5 runs
+ 
+  Warning: The first benchmarking run for this command was significantly slower than the rest (16.588 s). This could be caused by (filesystem) caches that were not filled until after the first run. You are already using both the '--warmup' option as well as the '--prepare' option. Consider re-running the benchmark on a quiet system. Maybe it was a random outlier. Alternatively, consider increasing the warmup count.
+ 
+Summary
+  benchmark.sanely ran
+    2.15 ± 0.48 times faster than benchmark.generic
+```
+
+### Compile Time — Configured Derivation
+
+```
+Compile-time benchmark: circe-sanely-auto vs circe-core configured derivation (N=5)
+Benchmark suite: benchmark-configured
+Method: Mill daemon, hyperfine with --warmup 1, --runs 5
+================================================================
+Warming up Mill daemon and source dependencies...
+Running hyperfine benchmark...
+
+Benchmark 1: benchmark-configured.sanely
+  Time (mean ± σ):      5.796 s ±  1.289 s    [User: 0.051 s, System: 0.089 s]
+  Range (min … max):    4.387 s …  7.861 s    5 runs
+ 
+Benchmark 2: benchmark-configured.generic
+  Time (mean ± σ):      7.210 s ±  0.414 s    [User: 0.056 s, System: 0.102 s]
+  Range (min … max):    6.863 s …  7.903 s    5 runs
+ 
+Summary
+  benchmark-configured.sanely ran
+    1.24 ± 0.29 times faster than benchmark-configured.generic
+```
+
+### Runtime Performance
+
+```
+Building runtime benchmark...
+
+./mill benchmark-runtime.run 5 5
+135] benchmark-runtime.run
+Runtime benchmark: circe-jawn vs circe+jsoniter vs jsoniter-scala
+  warmup=5 iterations=5 (each 1 second)
+  payload: 1224 bytes (circe), 1224 bytes (jsoniter)
+
+Reading (bytes -> case class):
+----------------------------------------------------------------------
+  circe-jawn                     100680 ops/sec  (min=99588, max=100830)
+  circe+jsoniter                 129367 ops/sec  (min=129311, max=129604)
+  jsoniter-scala                 445346 ops/sec  (min=442983, max=447021)
+
+  circe+jsoniter             1.28x vs circe-jawn
+  jsoniter-scala             4.42x vs circe-jawn
+
+Writing (case class -> bytes):
+----------------------------------------------------------------------
+  circe-printer                   77574 ops/sec  (min=77283, max=78228)
+  circe+jsoniter                  86204 ops/sec  (min=84931, max=86450)
+  jsoniter-scala                 448508 ops/sec  (min=446815, max=448971)
+
+  circe+jsoniter             1.11x vs circe-printer
+  jsoniter-scala             5.78x vs circe-printer
+135/135, SUCCESS] ./mill benchmark-runtime.run 5 5 61s
+```
+
+### Macro Profile — Auto
+
+```
+======================================================================
+SANELY MACRO PROFILE (308 expansions, 5102ms total)
+======================================================================
+
+--- By Kind ---
+  Decoder          154 expansions    2457.7ms  avg 15.96ms
+  Encoder          154 expansions    2643.9ms  avg 17.17ms
+
+--- Category Breakdown ---
+  summonIgnoring         2193.6ms ( 43.0%)     660 calls  avg 3.32ms
+  derive                 1919.4ms ( 37.6%)     586 calls  avg 3.28ms
+  summonMirror            236.5ms (  4.6%)     586 calls  avg 0.40ms
+  subTraitDetect          135.9ms (  2.7%)     336 calls  avg 0.40ms
+  tryBuiltin               89.3ms (  1.8%)    1366 calls  avg 0.07ms
+  cheapTypeKey             10.5ms (  0.2%)    3080 calls  avg 0.00ms
+  builtinHit                0.0ms (  0.0%)     706 calls  avg 0.00ms
+  cacheHit                           1714 hits
+  overhead                516.4ms ( 10.1%)  (type checks, AST, etc)
+
+--- Top 15 Slowest (total time) ---
+   1. Encoder[Ticket]: total=171.1ms  summonIgnoring=91.2ms(27x) derive=64.7ms(22x) summonMirror=8.1ms(22x) subTraitDetect=5.2ms(18x) tryBuiltin=1.5ms(31x) cheapTypeKey=0.2ms(66x) builtinHit=0.0ms(4x) cacheHit=0.0ms(35x)
+   2. Decoder[Article]: total=155.4ms  summonIgnoring=111.9ms(14x) derive=47.9ms(12x) summonMirror=4.6ms(12x) subTraitDetect=2.1ms(6x) tryBuiltin=1.2ms(18x) cheapTypeKey=0.2ms(48x) builtinHit=0.0ms(4x) cacheHit=0.0ms(30x)
+   3. Encoder[OrderSummary]: total=136.6ms  derive=106.6ms(18x) summonIgnoring=50.0ms(18x) summonMirror=24.2ms(18x) subTraitDetect=7.1ms(14x) tryBuiltin=1.0ms(21x) cheapTypeKey=0.2ms(66x) builtinHit=0.0ms(3x) cacheHit=0.0ms(45x)
+   4. Decoder[AlertInstance]: total=132.2ms  derive=211.6ms(19x) summonIgnoring=36.8ms(20x) summonMirror=27.1ms(19x) subTraitDetect=4.0ms(13x) tryBuiltin=1.3ms(26x) cheapTypeKey=0.1ms(53x) builtinHit=0.0ms(6x) cacheHit=0.0ms(27x)
+   5. Encoder[Article]: total=122.2ms  summonIgnoring=84.1ms(14x) derive=39.6ms(12x) summonMirror=4.9ms(12x) subTraitDetect=3.0ms(6x) tryBuiltin=1.0ms(18x) cheapTypeKey=0.2ms(48x) builtinHit=0.0ms(4x) cacheHit=0.0ms(30x)
+   6. Decoder[Sprint]: total=113.6ms  summonIgnoring=107.6ms(1x) tryBuiltin=0.2ms(3x) cheapTypeKey=0.0ms(6x) builtinHit=0.0ms(2x) cacheHit=0.0ms(3x)
+   7. Encoder[Sprint]: total=113.4ms  summonIgnoring=108.3ms(1x) tryBuiltin=0.2ms(3x) cheapTypeKey=0.0ms(6x) builtinHit=0.0ms(2x) cacheHit=0.0ms(3x)
+   8. Decoder[Ticket]: total=109.5ms  summonIgnoring=68.9ms(27x) derive=60.8ms(22x) summonMirror=5.4ms(22x) subTraitDetect=4.3ms(18x) tryBuiltin=1.1ms(31x) cheapTypeKey=0.2ms(66x) builtinHit=0.0ms(4x) cacheHit=0.0ms(35x)
+   9. Encoder[AlertInstance]: total=100.6ms  derive=143.8ms(19x) summonIgnoring=38.4ms(20x) summonMirror=9.9ms(19x) subTraitDetect=6.4ms(13x) tryBuiltin=1.5ms(26x) cheapTypeKey=0.1ms(53x) builtinHit=0.0ms(6x) cacheHit=0.0ms(27x)
+  10. Decoder[OrderSummary]: total=94.0ms  derive=104.5ms(18x) summonIgnoring=26.1ms(18x) summonMirror=7.0ms(18x) subTraitDetect=5.0ms(14x) tryBuiltin=0.9ms(21x) cheapTypeKey=0.2ms(66x) builtinHit=0.0ms(3x) cacheHit=0.0ms(45x)
+  11. Decoder[ProductInfo]: total=88.3ms  summonIgnoring=68.5ms(6x) derive=9.8ms(4x) summonMirror=1.2ms(4x) tryBuiltin=0.9ms(9x) cheapTypeKey=0.1ms(20x) builtinHit=0.0ms(3x) cacheHit=0.0ms(11x)
+  12. Encoder[HttpMethod]: total=87.7ms  summonIgnoring=54.6ms(5x) derive=11.2ms(5x) subTraitDetect=4.0ms(5x) summonMirror=3.2ms(5x) tryBuiltin=0.5ms(6x) cheapTypeKey=0.1ms(10x) builtinHit=0.0ms(1x) cacheHit=0.0ms(4x)
+  13. Encoder[Ticket]: total=83.1ms  derive=47.9ms(22x) summonIgnoring=44.2ms(27x) summonMirror=5.7ms(22x) subTraitDetect=3.4ms(18x) tryBuiltin=0.8ms(31x) cheapTypeKey=0.2ms(66x) builtinHit=0.0ms(4x) cacheHit=0.0ms(35x)
+  14. Decoder[Ticket]: total=82.5ms  derive=51.0ms(22x) summonIgnoring=42.3ms(27x) summonMirror=5.3ms(22x) subTraitDetect=4.0ms(18x) tryBuiltin=0.7ms(31x) cheapTypeKey=0.2ms(66x) builtinHit=0.0ms(4x) cacheHit=0.0ms(35x)
+  15. Encoder[DeploymentSpec]: total=82.3ms  derive=76.0ms(8x) summonIgnoring=53.6ms(11x) summonMirror=4.2ms(8x) subTraitDetect=2.1ms(4x) tryBuiltin=1.0ms(14x) cheapTypeKey=0.1ms(33x) builtinHit=0.0ms(3x) cacheHit=0.0ms(19x)
+
+--- Hot Types (>50ms) ---
+  Encoder[Ticket]: 171ms
+  Decoder[Article]: 155ms
+  Encoder[OrderSummary]: 137ms
+  Decoder[AlertInstance]: 132ms
+  Encoder[Article]: 122ms
+======================================================================
+```
+
+### Macro Profile — Configured
+
+```
+======================================================================
+SANELY MACRO PROFILE (230 expansions, 2438ms total)
+======================================================================
+
+--- By Kind ---
+  CfgCodec         230 expansions    2438.2ms  avg 10.60ms
+
+--- Category Breakdown ---
+  topDerive              2168.0ms ( 88.9%)     230 calls  avg 9.43ms
+  summonIgnoring          748.8ms ( 30.7%)     205 calls  avg 3.65ms
+  tryBuiltin               81.5ms (  3.3%)     493 calls  avg 0.17ms
+  resolveDefaults          25.4ms (  1.0%)     214 calls  avg 0.12ms
+  subTraitDetect            7.0ms (  0.3%)      69 calls  avg 0.10ms
+  cheapTypeKey              4.3ms (  0.2%)     820 calls  avg 0.01ms
+  builtinHit                0.0ms (  0.0%)     345 calls  avg 0.00ms
+  cacheHit                            327 hits
+  codecHit                  0.0ms (  0.0%)     118 calls  avg 0.00ms
+  overhead               -596.8ms (-24.5%)  (type checks, AST, etc)
+
+--- Top 15 Slowest (total time) ---
+   1. CfgCodec[Role]: total=110.0ms  topDerive=108.1ms(1x) summonIgnoring=91.6ms(3x) cheapTypeKey=1.4ms(4x) tryBuiltin=1.3ms(2x) resolveDefaults=0.2ms(1x) builtinHit=0.0ms(1x) cacheHit=0.0ms(2x)
+   2. CfgCodec[UserId]: total=65.8ms  topDerive=42.4ms(1x) resolveDefaults=1.8ms(1x) tryBuiltin=0.6ms(1x) cheapTypeKey=0.5ms(1x) builtinHit=0.0ms(1x)
+   3. CfgCodec[Article]: total=54.1ms  topDerive=53.1ms(1x) summonIgnoring=37.8ms(11x) tryBuiltin=0.8ms(8x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.1ms(11x) codecHit=0.0ms(5x) builtinHit=0.0ms(1x) cacheHit=0.0ms(3x)
+   4. CfgCodec[Product]: total=45.1ms  topDerive=44.1ms(1x) summonIgnoring=33.5ms(12x) tryBuiltin=0.8ms(10x) cheapTypeKey=0.1ms(10x) resolveDefaults=0.1ms(1x) builtinHit=0.0ms(2x) codecHit=0.0ms(6x)
+   5. CfgCodec[ChatMessage]: total=43.9ms  topDerive=43.0ms(1x) summonIgnoring=34.3ms(12x) tryBuiltin=1.0ms(7x) cheapTypeKey=0.1ms(8x) resolveDefaults=0.1ms(1x) codecHit=0.0ms(3x) builtinHit=0.0ms(1x) cacheHit=0.0ms(1x)
+   6. CfgCodec[MediaType]: total=40.3ms  topDerive=39.0ms(1x) summonIgnoring=30.9ms(4x) tryBuiltin=1.2ms(4x) subTraitDetect=0.4ms(4x) cheapTypeKey=0.0ms(4x) codecHit=0.0ms(4x)
+   7. CfgCodec[Invoice]: total=38.0ms  topDerive=37.1ms(1x) summonIgnoring=27.0ms(11x) tryBuiltin=0.5ms(6x) resolveDefaults=0.1ms(1x) cheapTypeKey=0.0ms(11x) builtinHit=0.0ms(1x) cacheHit=0.0ms(5x) codecHit=0.0ms(2x)
+   8. CfgCodec[WorkflowStep]: total=37.5ms  topDerive=36.7ms(1x) summonIgnoring=28.7ms(8x) tryBuiltin=1.1ms(6x) cheapTypeKey=0.1ms(7x) resolveDefaults=0.1ms(1x) codecHit=0.0ms(2x) builtinHit=0.0ms(2x) cacheHit=0.0ms(1x)
+   9. CfgCodec[SecurityConfig]: total=35.0ms  topDerive=33.6ms(1x) summonIgnoring=24.5ms(3x) tryBuiltin=0.8ms(3x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.1ms(4x) builtinHit=0.0ms(2x) cacheHit=0.0ms(1x)
+  10. CfgCodec[MetricSeries]: total=33.9ms  topDerive=32.3ms(1x) summonIgnoring=23.6ms(4x) tryBuiltin=1.3ms(4x) cheapTypeKey=0.1ms(4x) resolveDefaults=0.1ms(1x) codecHit=0.0ms(1x) builtinHit=0.0ms(2x)
+  11. CfgCodec[CustomerRecord]: total=33.9ms  topDerive=32.9ms(1x) summonIgnoring=23.6ms(8x) tryBuiltin=0.5ms(7x) resolveDefaults=0.1ms(1x) cheapTypeKey=0.0ms(8x) codecHit=0.0ms(5x) builtinHit=0.0ms(1x) cacheHit=0.0ms(1x)
+  12. CfgCodec[AuthEvent]: total=33.7ms  topDerive=31.2ms(1x) summonIgnoring=10.7ms(5x) tryBuiltin=0.7ms(5x) subTraitDetect=0.7ms(5x) cheapTypeKey=0.0ms(5x) codecHit=0.0ms(5x)
+  13. CfgCodec[Permission]: total=32.3ms  topDerive=11.9ms(1x) tryBuiltin=0.3ms(1x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.0ms(3x) builtinHit=0.0ms(1x) cacheHit=0.0ms(2x)
+  14. CfgCodec[AccessPolicy]: total=31.9ms  topDerive=30.7ms(1x) summonIgnoring=19.0ms(3x) tryBuiltin=0.8ms(3x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.1ms(5x) builtinHit=0.0ms(2x) cacheHit=0.0ms(2x)
+  15. CfgCodec[ReportQuery]: total=31.7ms  topDerive=30.3ms(1x) summonIgnoring=21.5ms(3x) tryBuiltin=1.2ms(3x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.1ms(4x) builtinHit=0.0ms(2x) cacheHit=0.0ms(1x)
+
+--- Hot Types (>50ms) ---
+  CfgCodec[Role]: 110ms
+  CfgCodec[UserId]: 66ms
+  CfgCodec[Article]: 54ms
+======================================================================
+```
+
 ## v0.13.0
 
 **Date:** 2026-03-06 06:01:14 UTC | **SHA:** `4e281df`
