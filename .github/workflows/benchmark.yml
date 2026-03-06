@@ -99,6 +99,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - name: Install hyperfine
+        run: |
+          wget -qO /tmp/hyperfine.deb https://github.com/sharkdp/hyperfine/releases/download/v1.18.0/hyperfine_1.18.0_amd64.deb
+          sudo dpkg -i /tmp/hyperfine.deb
       - name: Run benchmark
         run: bash bench.sh "$COMPILE_RUNS" 2>&1 | tee compile-auto.txt
       - uses: actions/upload-artifact@v4
@@ -118,6 +122,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - name: Install hyperfine
+        run: |
+          wget -qO /tmp/hyperfine.deb https://github.com/sharkdp/hyperfine/releases/download/v1.18.0/hyperfine_1.18.0_amd64.deb
+          sudo dpkg -i /tmp/hyperfine.deb
       - name: Run benchmark
         run: bash bench.sh --configured "$COMPILE_RUNS" 2>&1 | tee compile-configured.txt
       - uses: actions/upload-artifact@v4
