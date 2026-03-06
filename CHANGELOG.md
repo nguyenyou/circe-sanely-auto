@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.14.0] - 2026-03-06
+
+### Performance
+- **Codec-first `summonIgnoring` fast path** — In `SanelyConfiguredCodec`, `resolveOneCodec` now tries a single `Expr.summonIgnoring[Codec.AsObject[T]]` before falling back to separate `Encoder[T]` + `Decoder[T]` calls. When the nested type has a user-provided `Codec.AsObject[T]` in scope (common in configured derivation where companions define `given Codec.AsObject[...] = deriveConfiguredCodec`), one implicit search replaces two. 118 of 147 type pairs resolved with a single call. Applied only to configured codec derivation — auto derivation has no explicit codec instances so the summon would always fail.
+- **Configured benchmark**: `summonIgnoring` calls reduced from 294 to 205 (-30%), summonIgnoring time reduced by 13%, total macro time reduced by 8%
+
 ## [0.13.0] - 2026-03-06
 
 ### Performance
