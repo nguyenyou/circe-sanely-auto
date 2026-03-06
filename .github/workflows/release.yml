@@ -8,6 +8,19 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: sanely (JVM)
+            cmd: sanely.jvm.test
+          - name: sanely (Scala.js)
+            cmd: sanely.js.test
+          - name: compat (JVM)
+            cmd: compat.jvm.test
+          - name: compat (Scala.js)
+            cmd: compat.js.test
+    name: Test ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-java@v5
@@ -15,17 +28,8 @@ jobs:
           distribution: temurin
           java-version: 25
 
-      - name: Test JVM
-        run: ./mill sanely.jvm.test
-
-      - name: Test Scala.js
-        run: ./mill sanely.js.test
-
-      - name: Test Compat (JVM)
-        run: ./mill compat.jvm.test
-
-      - name: Test Compat (Scala.js)
-        run: ./mill compat.js.test
+      - name: Test
+        run: ./mill ${{ matrix.cmd }}
 
   publish:
     needs: test
