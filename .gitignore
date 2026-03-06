@@ -4,3 +4,4 @@ out/
 .idea/
 .local/
 __pycache__/
+CLAUDE.local.md
