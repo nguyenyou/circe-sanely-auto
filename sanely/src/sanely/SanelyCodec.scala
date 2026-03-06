@@ -256,7 +256,23 @@ object SanelyCodec:
                 else (resolvePrimEncoder(arg.dealias), resolvePrimDecoder(arg.dealias)) match
                   case (Some(e), Some(d)) => Some((e, d))
                   case _ => exprCache.get(argKey)
-              innerPair.flatMap { case (innerEnc, innerDec) =>
+              // If inner type not in cache/prims, try summonIgnoring to find user-provided instances.
+              // This prevents the container-level summonIgnoring from triggering a nested search
+              // that doesn't respect our ignore list (summonIgnoring limitation).
+              val innerResolved = innerPair.orElse {
+                arg.asType match
+                  case '[a] =>
+                    val encOpt = Expr.summonIgnoring[Encoder[a]](cachedEncIgnoreSymbols*)
+                    val decOpt = Expr.summonIgnoring[Decoder[a]](cachedDecIgnoreSymbols*)
+                    (encOpt, decOpt) match
+                      case (Some(enc), Some(dec)) =>
+                        val pair = (enc, dec)
+                        exprCache(argKey) = pair
+                        summonedKeys += argKey
+                        Some(pair)
+                      case _ => None
+              }
+              innerResolved.flatMap { case (innerEnc, innerDec) =>
                 arg.asType match
                   case '[a] =>
                     val encInner = innerEnc.asInstanceOf[Expr[Encoder[a]]]
@@ -274,10 +290,23 @@ object SanelyCodec:
                 else (resolvePrimEncoder(valArg.dealias), resolvePrimDecoder(valArg.dealias)) match
                   case (Some(e), Some(d)) => Some((e, d))
                   case _ => exprCache.get(valKey)
+              val valResolved = valPair.orElse {
+                valArg.asType match
+                  case '[v] =>
+                    val encOpt = Expr.summonIgnoring[Encoder[v]](cachedEncIgnoreSymbols*)
+                    val decOpt = Expr.summonIgnoring[Decoder[v]](cachedDecIgnoreSymbols*)
+                    (encOpt, decOpt) match
+                      case (Some(enc), Some(dec)) =>
+                        val pair = (enc, dec)
+                        exprCache(valKey) = pair
+                        summonedKeys += valKey
+                        Some(pair)
+                      case _ => None
+              }
               for
                 keyEnc <- resolveBuiltinKeyEncoder(keyArg.dealias)
                 keyDec <- resolveBuiltinKeyDecoder(keyArg.dealias)
-                (valEnc, valDec) <- valPair
+                (valEnc, valDec) <- valResolved
                 result <- (keyArg.asType, valArg.asType) match
                   case ('[k], '[v]) =>
                     val ke = keyEnc.asInstanceOf[Expr[io.circe.KeyEncoder[k]]]

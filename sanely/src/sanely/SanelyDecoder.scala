@@ -174,7 +174,19 @@ object SanelyDecoder:
             val innerOpt =
               if negativeBuiltinCache.contains(argKey) then exprCache.get(argKey)
               else resolvePrimDecoder(arg.dealias).orElse(exprCache.get(argKey))
-            innerOpt.flatMap { innerDec =>
+            // If inner type not in cache/prims, try summonIgnoring to find user-provided instances.
+            // This prevents the container-level summonIgnoring from triggering a nested search
+            // that doesn't respect our ignore list (summonIgnoring limitation).
+            val innerResolved = innerOpt.orElse {
+              arg.asType match
+                case '[a] =>
+                  Expr.summonIgnoring[Decoder[a]](cachedIgnoreSymbols*).map { dec =>
+                    exprCache(argKey) = dec
+                    summonedKeys += argKey
+                    dec
+                  }
+            }
+            innerResolved.flatMap { innerDec =>
               arg.asType match
                 case '[a] =>
                   val inner = innerDec.asInstanceOf[Expr[Decoder[a]]]
@@ -183,10 +195,20 @@ object SanelyDecoder:
           case AppliedType(tycon, List(keyArg, valArg))
             if tycon.typeSymbol.fullName.endsWith(".Map") =>
             val valKey = MacroUtils.cheapTypeKey(valArg)
+            val valOpt = (if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
+                         else resolvePrimDecoder(valArg.dealias).orElse(exprCache.get(valKey)))
+            val valResolved = valOpt.orElse {
+              valArg.asType match
+                case '[v] =>
+                  Expr.summonIgnoring[Decoder[v]](cachedIgnoreSymbols*).map { dec =>
+                    exprCache(valKey) = dec
+                    summonedKeys += valKey
+                    dec
+                  }
+            }
             for
               keyDec <- resolveBuiltinKeyDecoder(keyArg.dealias)
-              valDec <- (if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
-                         else resolvePrimDecoder(valArg.dealias).orElse(exprCache.get(valKey)))
+              valDec <- valResolved
               result <- (keyArg.asType, valArg.asType) match
                 case ('[k], '[v]) =>
                   val kd = keyDec.asInstanceOf[Expr[io.circe.KeyDecoder[k]]]
