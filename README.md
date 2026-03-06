@@ -4,7 +4,7 @@
 
 Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Swap one dependency, change one import, compile faster.
 
-**Scala 3.8.2+ | JVM + Scala.js | 447 tests passing**
+**Scala 3.8.2+ | JVM + Scala.js | ✅ 447 tests passing**
 
 ## Why
 
