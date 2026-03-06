@@ -167,7 +167,16 @@ object SanelyConfiguredEncoder:
             val innerOpt =
               if negativeBuiltinCache.contains(argKey) then exprCache.get(argKey)
               else resolvePrimEncoder(arg.dealias).orElse(exprCache.get(argKey))
-            innerOpt.flatMap { innerEnc =>
+            val innerResolved = innerOpt.orElse {
+              arg.asType match
+                case '[a] =>
+                  Expr.summonIgnoring[Encoder[a]](cachedIgnoreSymbols*).map { enc =>
+                    exprCache(argKey) = enc
+                    summonedKeys += argKey
+                    enc
+                  }
+            }
+            innerResolved.flatMap { innerEnc =>
               arg.asType match
                 case '[a] =>
                   val inner = innerEnc.asInstanceOf[Expr[Encoder[a]]]
@@ -176,10 +185,20 @@ object SanelyConfiguredEncoder:
           case AppliedType(tycon, List(keyArg, valArg))
             if tycon.typeSymbol.fullName.endsWith(".Map") =>
             val valKey = MacroUtils.cheapTypeKey(valArg)
+            val valOpt = (if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
+                         else resolvePrimEncoder(valArg.dealias).orElse(exprCache.get(valKey)))
+            val valResolved = valOpt.orElse {
+              valArg.asType match
+                case '[v] =>
+                  Expr.summonIgnoring[Encoder[v]](cachedIgnoreSymbols*).map { enc =>
+                    exprCache(valKey) = enc
+                    summonedKeys += valKey
+                    enc
+                  }
+            }
             for
               keyEnc <- resolveBuiltinKeyEncoder(keyArg.dealias)
-              valEnc <- (if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
-                         else resolvePrimEncoder(valArg.dealias).orElse(exprCache.get(valKey)))
+              valEnc <- valResolved
               result <- (keyArg.asType, valArg.asType) match
                 case ('[k], '[v]) =>
                   val ke = keyEnc.asInstanceOf[Expr[io.circe.KeyEncoder[k]]]

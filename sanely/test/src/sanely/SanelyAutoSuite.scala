@@ -206,6 +206,45 @@ case class WithTuple2(name: String, pair: (Int, String))
 case class WithTuple3(data: (Boolean, Int, String))
 case class WithTuple1(wrapped: Tuple1[Double])
 
+// Phase 11 types — Mirror-first resolution safety tests
+// These test that user-provided instances for NESTED types are respected,
+// even when the nested type also has a Mirror (i.e., could be auto-derived).
+
+// Nested type WITH Mirror AND user-provided instance (companion)
+case class CustomNested(a: Int, b: String)
+object CustomNested:
+  // Custom encoder reverses field order and renames: {"beta": ..., "alpha": ...}
+  given Encoder.AsObject[CustomNested] = Encoder.AsObject.instance { case CustomNested(a, b) =>
+    JsonObject("beta" -> Json.fromString(b), "alpha" -> Json.fromInt(a))
+  }
+  given Decoder[CustomNested] = Decoder.instance { c =>
+    for
+      a <- c.downField("alpha").as[Int]
+      b <- c.downField("beta").as[String]
+    yield CustomNested(a, b)
+  }
+
+// Outer type that uses CustomNested as a field — auto must find companion's given, not re-derive
+case class WrapsCustomNested(cn: CustomNested, flag: Boolean)
+
+// Outer type with List of custom-encoded nested
+case class ListOfCustomNested(items: List[CustomNested], count: Int)
+
+// Outer type with Option of custom-encoded nested
+case class OptionOfCustomNested(maybe: Option[CustomNested])
+
+// Multi-level nesting: custom instance at leaf, auto at intermediate and root
+case class Intermediate(cn: CustomNested, tag: String)
+case class DeepNesting(inner: Intermediate, id: Int)
+
+// Same-file type with NO user instance — auto should derive it (control case)
+case class PlainNested(x: Int, y: String)
+case class WrapsPlainNested(pn: PlainNested, z: Boolean)
+
+// User instance defined in LOCAL SCOPE (not companion), wrapping a Mirror type
+// This tests that local givens also take priority
+case class LocalScopeInner(v: Int)
+
 // Phase 9 types — semiauto (explicit derived) in companion objects
 case class SemiAutoProduct(x: Int, y: String)
 object SemiAutoProduct:
@@ -980,6 +1019,103 @@ object SanelyAutoSuite extends TestSuite:
       val json = v.asJson
       assert(json == Json.obj("x" -> Json.fromInt(1), "y" -> Json.fromString("hi")))
       val decoded = decode[SemiCodecAlias](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    // --- Phase 11: Mirror-first resolution safety ---
+    // These tests guard the invariant that user-provided instances for nested types
+    // are always respected, even when the type has a Mirror and COULD be auto-derived.
+
+    test("Custom nested instance respected in direct field") {
+      // CustomNested has Mirror but also has custom given in companion
+      // Auto-derivation of WrapsCustomNested MUST use companion's given
+      val v = WrapsCustomNested(CustomNested(1, "hi"), true)
+      val json = v.asJson
+      val expected = Json.obj(
+        "cn" -> Json.obj("beta" -> Json.fromString("hi"), "alpha" -> Json.fromInt(1)),
+        "flag" -> Json.fromBoolean(true)
+      )
+      assert(json == expected)
+      val decoded = decode[WrapsCustomNested](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Custom nested instance respected in List container") {
+      val v = ListOfCustomNested(List(CustomNested(1, "a"), CustomNested(2, "b")), 2)
+      val json = v.asJson
+      // Each element must use custom encoding (alpha/beta), not auto (a/b)
+      val elem1 = Json.obj("beta" -> Json.fromString("a"), "alpha" -> Json.fromInt(1))
+      val elem2 = Json.obj("beta" -> Json.fromString("b"), "alpha" -> Json.fromInt(2))
+      val expected = Json.obj("items" -> Json.arr(elem1, elem2), "count" -> Json.fromInt(2))
+      assert(json == expected)
+      val decoded = decode[ListOfCustomNested](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Custom nested instance respected in Option container") {
+      val v1 = OptionOfCustomNested(Some(CustomNested(42, "test")))
+      val json1 = v1.asJson
+      val expected1 = Json.obj("maybe" -> Json.obj("beta" -> Json.fromString("test"), "alpha" -> Json.fromInt(42)))
+      assert(json1 == expected1)
+      val decoded1 = decode[OptionOfCustomNested](json1.noSpaces)
+      assert(decoded1 == Right(v1))
+
+      val v2 = OptionOfCustomNested(None)
+      val json2 = v2.asJson
+      val expected2 = Json.obj("maybe" -> Json.Null)
+      assert(json2 == expected2)
+      val decoded2 = decode[OptionOfCustomNested](json2.noSpaces)
+      assert(decoded2 == Right(v2))
+    }
+
+    test("Custom nested instance respected through multiple nesting levels") {
+      // DeepNesting -> Intermediate -> CustomNested
+      // CustomNested's user instance must be used even 2 levels deep
+      val v = DeepNesting(Intermediate(CustomNested(7, "deep"), "tagged"), 99)
+      val json = v.asJson
+      val expected = Json.obj(
+        "inner" -> Json.obj(
+          "cn" -> Json.obj("beta" -> Json.fromString("deep"), "alpha" -> Json.fromInt(7)),
+          "tag" -> Json.fromString("tagged")
+        ),
+        "id" -> Json.fromInt(99)
+      )
+      assert(json == expected)
+      val decoded = decode[DeepNesting](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Plain nested type without user instance auto-derives normally") {
+      // Control case: PlainNested has NO user instance, auto-derives as {x, y}
+      val v = WrapsPlainNested(PlainNested(1, "hi"), true)
+      val json = v.asJson
+      val expected = Json.obj(
+        "pn" -> Json.obj("x" -> Json.fromInt(1), "y" -> Json.fromString("hi")),
+        "z" -> Json.fromBoolean(true)
+      )
+      assert(json == expected)
+      val decoded = decode[WrapsPlainNested](json.noSpaces)
+      assert(decoded == Right(v))
+    }
+
+    test("Local scope given takes priority over auto-derivation for nested type") {
+      // LocalScopeInner has a Mirror, but we provide a custom instance in local scope
+      given Encoder.AsObject[LocalScopeInner] = Encoder.AsObject.instance { case LocalScopeInner(v) =>
+        JsonObject("custom_v" -> Json.fromInt(v * 10))
+      }
+      given Decoder[LocalScopeInner] = Decoder.instance { c =>
+        c.downField("custom_v").as[Int].map(n => LocalScopeInner(n / 10))
+      }
+
+      case class WrapsLocal(inner: LocalScopeInner, name: String)
+      val v = WrapsLocal(LocalScopeInner(5), "test")
+      val json = v.asJson
+      val expected = Json.obj(
+        "inner" -> Json.obj("custom_v" -> Json.fromInt(50)),
+        "name" -> Json.fromString("test")
+      )
+      assert(json == expected)
+      val decoded = decode[WrapsLocal](json.noSpaces)
       assert(decoded == Right(v))
     }
   }
