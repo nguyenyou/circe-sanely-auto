@@ -1,0 +1,263 @@
+name: Benchmark
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label (e.g., v0.13.0). Leave empty to use latest git tag."
+        default: ""
+      compile_runs:
+        description: "Number of compile-time benchmark runs"
+        default: "5"
+      runtime_warmup:
+        description: "Runtime benchmark warmup iterations"
+        default: "5"
+      runtime_iterations:
+        description: "Runtime benchmark measurement iterations"
+        default: "5"
+
+concurrency:
+  group: benchmark
+  cancel-in-progress: true
+
+env:
+  COMPILE_RUNS: ${{ inputs.compile_runs || '5' }}
+  RUNTIME_WARMUP: ${{ inputs.runtime_warmup || '5' }}
+  RUNTIME_ITERATIONS: ${{ inputs.runtime_iterations || '5' }}
+  BENCHMARK_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  compile-auto:
+    name: compile-auto
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BENCHMARK_REF }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Run benchmark
+        run: bash bench.sh "$COMPILE_RUNS" 2>&1 | tee compile-auto.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compile-auto
+          path: compile-auto.txt
+
+  compile-configured:
+    name: compile-configured
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BENCHMARK_REF }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Run benchmark
+        run: bash bench.sh --configured "$COMPILE_RUNS" 2>&1 | tee compile-configured.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compile-configured
+          path: compile-configured.txt
+
+  runtime:
+    name: runtime
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BENCHMARK_REF }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Run benchmark
+        run: bash bench-runtime.sh "$RUNTIME_WARMUP" "$RUNTIME_ITERATIONS" 2>&1 | tee runtime.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime
+          path: runtime.txt
+
+  macro-profile-auto:
+    name: macro-profile-auto
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BENCHMARK_REF }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Run profiled compilation
+        run: |
+          rm -rf out/benchmark/sanely
+          SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/raw-profile.txt
+      - name: Analyze profile
+        run: python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/raw-profile.txt 2>&1 | tee macro-profile-auto.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macro-profile-auto
+          path: macro-profile-auto.txt
+
+  macro-profile-configured:
+    name: macro-profile-configured
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BENCHMARK_REF }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Run profiled compilation
+        run: |
+          rm -rf out/benchmark-configured/sanely
+          SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee /tmp/raw-profile.txt
+      - name: Analyze profile
+        run: python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/raw-profile.txt 2>&1 | tee macro-profile-configured.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macro-profile-configured
+          path: macro-profile-configured.txt
+
+  update-benchmark-md:
+    name: Update BENCHMARK.md
+    needs: [compile-auto, compile-configured, runtime, macro-profile-auto, macro-profile-configured]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            TAG="${{ inputs.version }}"
+          elif [ -n "${{ github.event.workflow_run.head_branch }}" ]; then
+            TAG="${{ github.event.workflow_run.head_branch }}"
+          else
+            TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build new section
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          SHA="${{ env.BENCHMARK_REF }}"
+          DATE="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+          {
+            echo ""
+            echo "## $VERSION"
+            echo ""
+            echo "**Date:** $DATE | **SHA:** \`${SHA:0:7}\`"
+            echo ""
+            echo "### Compile Time — Auto Derivation"
+            echo ""
+            echo '```'
+            cat results/compile-auto/*.txt
+            echo '```'
+            echo ""
+            echo "### Compile Time — Configured Derivation"
+            echo ""
+            echo '```'
+            cat results/compile-configured/*.txt
+            echo '```'
+            echo ""
+            echo "### Runtime Performance"
+            echo ""
+            echo '```'
+            cat results/runtime/*.txt
+            echo '```'
+            echo ""
+            echo "### Macro Profile — Auto"
+            echo ""
+            echo '```'
+            cat results/macro-profile-auto/*.txt
+            echo '```'
+            echo ""
+            echo "### Macro Profile — Configured"
+            echo ""
+            echo '```'
+            cat results/macro-profile-configured/*.txt
+            echo '```'
+          } > new-section.md
+
+      - name: Update BENCHMARK.md
+        run: |
+          MARKER="<!-- BENCHMARK ENTRIES -->"
+
+          if [ -f BENCHMARK.md ] && grep -q "$MARKER" BENCHMARK.md; then
+            sed -i "/$MARKER/r new-section.md" BENCHMARK.md
+          else
+            {
+              echo "# Benchmark History"
+              echo ""
+              echo "Automated benchmarks run on \`ubuntu-latest\` after each release."
+              echo ""
+              echo "$MARKER"
+              cat new-section.md
+            } > BENCHMARK.md
+          fi
+
+          echo "--- BENCHMARK.md ---"
+          cat BENCHMARK.md
+
+      - name: Create or update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          BRANCH="benchmark/$VERSION"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add BENCHMARK.md
+          git commit -m "docs: add benchmark results for $VERSION"
+          git push -f -u origin "$BRANCH"
+
+          # Create PR only if one doesn't already exist for this branch
+          EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already exists — updated via force push"
+          else
+            cat > /tmp/pr-body.md <<'BODY'
+          Automated benchmark results. Merge to accumulate in `BENCHMARK.md`.
+
+          **Contents:**
+          - Compile time — auto derivation (~300 types)
+          - Compile time — configured derivation (~230 types)
+          - Runtime performance (circe-jawn vs circe+jsoniter vs jsoniter-scala)
+          - Macro profile — auto derivation
+          - Macro profile — configured derivation
+          BODY
+
+            gh pr create \
+              --title "Benchmark results for $VERSION" \
+              --body-file /tmp/pr-body.md \
+              --base main
+          fi
