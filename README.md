@@ -210,14 +210,25 @@ bash bench.sh --configured 5 # configured derivation (~230 types)
 
 | Suite | circe-sanely-auto | circe baseline | Speedup |
 |---|---|---|---|
-| **Auto derivation** (~300 types) | **2.86s** | 6.43s (circe-generic) | **2.25x** |
-| **Configured derivation** (~230 types) | **1.45s** | 2.70s (circe-core) | **1.86x** |
+| **Auto derivation** (~300 types) | **2.75s** ± 0.50s | 6.32s ± 0.14s (circe-generic) | **2.30x** ± 0.42 |
+| **Configured derivation** (~230 types) | **1.45s** ± 0.04s | 2.66s ± 0.03s (circe-core) | **1.83x** ± 0.06 |
+
+### Benchmark method
+
+Measurements use [hyperfine](https://github.com/sharkdp/hyperfine) for statistical rigor. The harness (`bench.sh`) works as follows:
+
+1. **Dependency warm-up** — `sanely.jvm` (and the configured compat shim for `--configured`) are compiled via the Mill daemon before any timed run, so dependency compilation is never included in the measurement.
+2. **`--warmup 1`** — one untimed warmup round ensures the Mill daemon JVM is JIT-warm and OS file caches are hot.
+3. **`--prepare 'rm -rf out/…'`** — before each timed run, the benchmark module's output is deleted so every measurement is a clean recompilation of only the benchmark sources.
+4. **`--runs N`** — N timed runs per command. Hyperfine randomizes execution order across runs to prevent systematic ordering bias, and reports mean ± σ with min/max range.
+
+This measures what users actually experience: warm-daemon, incremental-dependency compilation of the benchmark types only.
 
 ### Why the difference?
 
-**Auto derivation** (2.25x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
+**Auto derivation** (2.30x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
 
-**Configured derivation** (1.86x faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations reduce both macro expansion time and generated AST size.
+**Configured derivation** (1.83x faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations reduce both macro expansion time and generated AST size.
 
 Six optimizations drive this:
 
@@ -382,6 +393,8 @@ Every release automatically triggers a [benchmark workflow](.github/workflows/be
 | **macro-profile-configured** | Macro expansion profiling — configured derivation (230 expansions) |
 
 Results accumulate in [`BENCHMARK.md`](BENCHMARK.md) — each release adds a new section so you can track performance across versions. The workflow opens a PR with the updated results after each run.
+
+Compile-time benchmark entries include hyperfine's statistical output (mean ± σ, min, max) so you can see exactly how the numbers were produced.
 
 **Benchmarking a PR:** Maintainers can comment `/benchmark` on any pull request to run the full benchmark suite against that PR's code. Results are posted as a collapsible comment on the PR. Only repository collaborators can trigger this.
 

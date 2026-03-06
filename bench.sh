@@ -12,24 +12,56 @@ for arg in "$@"; do
 done
 N=${N:-5}
 
-echo "Compile-time benchmark: circe-sanely-auto vs circe-generic (N=$N)"
+if ! [[ "$N" =~ ^[0-9]+$ ]] || [ "$N" -lt 1 ]; then
+  echo "Expected a positive integer run count, got: $N" >&2
+  exit 1
+fi
+
+if ! command -v hyperfine &>/dev/null; then
+  echo "hyperfine is required: brew install hyperfine" >&2
+  exit 1
+fi
+
+case "$BENCH_TYPE" in
+  benchmark)
+    BASELINE_LABEL="circe-generic"
+    PREP_TARGETS=(
+      "sanely.jvm.compile"
+    )
+    ;;
+  benchmark-configured)
+    BASELINE_LABEL="circe-core configured derivation"
+    PREP_TARGETS=(
+      "sanely.jvm.compile"
+      "benchmark-configured.generic-compat.compile"
+    )
+    ;;
+  *)
+    echo "Unknown benchmark suite: $BENCH_TYPE" >&2
+    exit 1
+    ;;
+esac
+
+echo "Compile-time benchmark: circe-sanely-auto vs $BASELINE_LABEL (N=$N)"
 echo "Benchmark suite: $BENCH_TYPE"
+echo "Method: Mill daemon, hyperfine with --warmup 1, --runs $N"
 echo "================================================================"
 
-for module in sanely generic; do
-  times=()
-  for i in $(seq 1 "$N"); do
-    rm -rf "out/$BENCH_TYPE/$module"
-    start=$(python3 -c 'import time; print(time.time())')
-    ./mill "$BENCH_TYPE.$module.compile" 2>/dev/null 1>/dev/null
-    end=$(python3 -c 'import time; print(time.time())')
-    elapsed=$(python3 -c "print(f'{$end - $start:.2f}')")
-    times+=("$elapsed")
-    echo "  $BENCH_TYPE.$module run $i: ${elapsed}s"
-  done
-
-  # compute median
-  median=$(printf '%s\n' "${times[@]}" | sort -n | awk -v n="$N" 'NR==int((n+1)/2){print}')
-  echo "$BENCH_TYPE.$module median: ${median}s (of ${times[*]})"
-  echo ""
+# Warm up Mill daemon + compile source dependencies (untimed)
+echo "Warming up Mill daemon and source dependencies..."
+for target in "${PREP_TARGETS[@]}"; do
+  ./mill "$target" >/dev/null 2>/dev/null
 done
+
+echo "Running hyperfine benchmark..."
+echo ""
+
+hyperfine \
+  --warmup 1 \
+  --runs "$N" \
+  --prepare "rm -rf out/$BENCH_TYPE/sanely" \
+  --command-name "$BENCH_TYPE.sanely" \
+  "./mill $BENCH_TYPE.sanely.compile" \
+  --prepare "rm -rf out/$BENCH_TYPE/generic" \
+  --command-name "$BENCH_TYPE.generic" \
+  "./mill $BENCH_TYPE.generic.compile"

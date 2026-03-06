@@ -34,9 +34,11 @@ bash test-zinc.sh               # zinc incremental recompilation tests (5 scenar
 
 ### Benchmarks
 
+Compile-time benchmarks use [hyperfine](https://github.com/sharkdp/hyperfine) (`brew install hyperfine`).
+
 ```bash
-bash bench.sh 5                 # auto derivation timed comparison (~300 types)
-bash bench.sh --configured 5    # configured derivation timed comparison (~230 types)
+bash bench.sh 5                 # auto derivation via hyperfine (~300 types)
+bash bench.sh --configured 5    # configured derivation via hyperfine (~230 types)
 ./mill benchmark.sanely.compile # compile benchmark: our library (auto)
 ./mill benchmark.generic.compile # compile benchmark: circe-generic (auto)
 ./mill benchmark-configured.sanely.compile   # compile benchmark: our library (configured)
