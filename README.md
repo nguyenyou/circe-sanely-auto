@@ -65,7 +65,7 @@ Your `Encoder`/`Decoder` instances (whether from sanely-auto, semi-auto, or hand
 | **circe + jsoniter parser** | 235,963 | **1.5x** | 135,512 | 0.9x |
 | **jsoniter-scala native** | 796,505 | **5.1x** | 739,119 | **4.9x** |
 
-The combo gives a **1.5x reading speedup** within the circe ecosystem. Writing doesn't benefit because the bottleneck is circe's `Encoder` building the `Json` AST, not the serialization step. For maximum runtime performance, use jsoniter-scala directly.
+The combo gives a **1.5x reading speedup** within the circe ecosystem — swap two imports and decoding gets 50% faster. For writing, stick with circe's default `Printer` — it's already optimized for circe's own `Json` AST and slightly outperforms the jsoniter bridge. For maximum runtime performance in both directions, use jsoniter-scala directly.
 
 ## How it works
 
