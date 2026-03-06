@@ -35,6 +35,8 @@ bash bench.sh --configured 5    # configured derivation timed comparison (~230 t
 ./mill benchmark.generic.compile # compile benchmark: circe-generic (auto)
 ./mill benchmark-configured.sanely.compile   # compile benchmark: our library (configured)
 ./mill benchmark-configured.generic.compile  # compile benchmark: circe-core (configured)
+bash bench-runtime.sh           # runtime benchmark: circe-jawn vs circe+jsoniter vs jsoniter-scala
+./mill benchmark-runtime.run    # run runtime benchmark directly
 ```
 
 ### Profiling
@@ -74,6 +76,7 @@ open /tmp/flamegraph.html
 | `demo/` | Runnable examples |
 | `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
 | `benchmark-configured/` | Configured derivation benchmark. Three sub-modules: `sanely`, `generic`, `generic-compat` sharing `benchmark-configured/shared/src/` |
+| `benchmark-runtime/` | Runtime performance benchmark. Compares circe-jawn vs circe+jsoniter-parser vs pure jsoniter-scala (reading + writing throughput) |
 
 ## Source Files
 
@@ -162,14 +165,27 @@ Update `CHANGELOG.md` with new features, bug fixes, and breaking changes. Use `g
 When completing a roadmap item from `README.md`, **always** run the full validation suite before marking it done:
 
 1. **All tests**: `./mill sanely.jvm.test`, `./mill sanely.js.test`, `./mill compat.jvm.test`, `./mill compat.js.test`
-2. **Benchmarks**: `bash bench.sh 5` (auto) and `bash bench.sh --configured 5` (configured)
-3. **Macro profile**: `SANELY_PROFILE=true` on both `benchmark.sanely.compile` and `benchmark-configured.sanely.compile`, then run `analyze_profile.py`
-4. **JVM profile**: async-profiler on `benchmark.sanely.compile` and `benchmark-configured.sanely.compile`, then run `analyze_jvm_profile.py`
-5. **Memory profile**: `/usr/bin/time -l` for peak RSS, async-profiler `event=alloc` for allocation pressure
+2. **Compile-time benchmarks**: `bash bench.sh 5` (auto) and `bash bench.sh --configured 5` (configured)
+3. **Runtime benchmark**: `bash bench-runtime.sh 5 5` — measures encoding/decoding throughput (circe-jawn vs circe+jsoniter vs jsoniter-scala)
+4. **Macro profile**: `SANELY_PROFILE=true` on both `benchmark.sanely.compile` and `benchmark-configured.sanely.compile`, then run `analyze_profile.py`
+5. **JVM profile**: async-profiler on `benchmark.sanely.compile` and `benchmark-configured.sanely.compile`, then run `analyze_jvm_profile.py`
+6. **Memory profile**: `/usr/bin/time -l` for peak RSS, async-profiler `event=alloc` for allocation pressure
 
-**If improved**: mark `[x]` in README roadmap, update benchmark/profile numbers in README tables.
+**If improved**: mark `[x]` in README roadmap, update benchmark/profile numbers in README tables (both compile-time and runtime).
 
 **If regression**: revert the change, mark with `~~strikethrough~~` in README roadmap, and explain the regression (what regressed, by how much, root cause).
+
+## Pre-Release Checklist
+
+Before tagging a release, run the full benchmark suite to establish baseline numbers and catch regressions:
+
+1. All tests pass (step 1 above)
+2. Compile-time benchmarks show no regression vs previous release
+3. Runtime benchmark shows no regression vs previous release — update README runtime table if numbers change
+4. If macro changes were made: macro profile + JVM profile to verify no new bottlenecks
+5. If generated codec structure changed: runtime benchmark is critical (affects encoding/decoding speed)
+
+See the `runtime-benchmark` skill for detailed instructions on running and interpreting runtime benchmarks.
 
 ## Known Issues
 
