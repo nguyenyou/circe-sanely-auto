@@ -57,7 +57,7 @@ mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-circe:2.38.9"
 
 Your `Encoder`/`Decoder` instances (whether from sanely-auto, semi-auto, or hand-written) are untouched — only the parse/print layer changes.
 
-**Runtime benchmark** (1.2 KB JSON payload, M3 Max, JDK 21):
+**Runtime benchmark** (1.2 KB JSON payload, M3 Max, JDK 25):
 
 | | Reading (ops/sec) | | Writing (ops/sec) | |
 |---|---|---|---|---|

@@ -95,7 +95,7 @@ Uses `@volatile var sink` to prevent dead code elimination (same principle as JM
 
 ## Interpreting Results
 
-### Expected ratios (M3 Max, JDK 21)
+### Expected ratios (M3 Max, JDK 25)
 
 | | Reading | Writing |
 |---|---|---|
@@ -135,7 +135,7 @@ After running the benchmark, update the runtime table in README.md under
 Update the prose with the reading speedup ratio (e.g., "1.5x reading speedup").
 
 Include the payload size and platform info in the table caption:
-`(1.2 KB JSON payload, M3 Max, JDK 21)`
+`(1.2 KB JSON payload, M3 Max, JDK 25)`
 
 ## Full Pre-Release Benchmark Workflow
 
@@ -184,7 +184,7 @@ but takes longer to do it — focus on macro profiling.
 
 ## Baseline Numbers
 
-Reference from initial setup (M3 Max, JDK 21, 1.2 KB payload):
+Reference from initial setup (M3 Max, JDK 25, 1.2 KB payload):
 
 ```
 Reading (bytes -> case class):
