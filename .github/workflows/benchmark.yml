@@ -18,26 +18,82 @@ on:
       runtime_iterations:
         description: "Runtime benchmark measurement iterations"
         default: "5"
+  issue_comment:
+    types: [created]
 
 concurrency:
-  group: benchmark
+  group: benchmark-${{ github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 env:
   COMPILE_RUNS: ${{ inputs.compile_runs || '5' }}
   RUNTIME_WARMUP: ${{ inputs.runtime_warmup || '5' }}
   RUNTIME_ITERATIONS: ${{ inputs.runtime_iterations || '5' }}
-  BENCHMARK_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    # Run for: manual dispatch, successful release, or /benchmark comment from collaborators
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, '/benchmark') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    permissions:
+      pull-requests: read
+    outputs:
+      ref: ${{ steps.config.outputs.ref }}
+      version: ${{ steps.config.outputs.version }}
+      mode: ${{ steps.config.outputs.mode }}
+      pr_number: ${{ steps.config.outputs.pr_number }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure
+        id: config
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR="${{ github.event.issue.number }}"
+            REF=$(gh pr view "$PR" --json headRefOid --jq '.headRefOid')
+            echo "ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "version=PR #$PR" >> "$GITHUB_OUTPUT"
+            echo "mode=pr" >> "$GITHUB_OUTPUT"
+            echo "pr_number=$PR" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "ref=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+            echo "version=${{ github.event.workflow_run.head_branch }}" >> "$GITHUB_OUTPUT"
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+          else
+            REF="${{ github.sha }}"
+            VERSION="${{ inputs.version }}"
+            if [ -z "$VERSION" ]; then
+              VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)
+            fi
+            echo "ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: React to comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions -f content=rocket
+
   compile-auto:
     name: compile-auto
+    needs: setup
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ env.BENCHMARK_REF }}
+          ref: ${{ needs.setup.outputs.ref }}
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -51,12 +107,12 @@ jobs:
 
   compile-configured:
     name: compile-configured
+    needs: setup
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ env.BENCHMARK_REF }}
+          ref: ${{ needs.setup.outputs.ref }}
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -70,12 +126,12 @@ jobs:
 
   runtime:
     name: runtime
+    needs: setup
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ env.BENCHMARK_REF }}
+          ref: ${{ needs.setup.outputs.ref }}
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -89,12 +145,12 @@ jobs:
 
   macro-profile-auto:
     name: macro-profile-auto
+    needs: setup
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ env.BENCHMARK_REF }}
+          ref: ${{ needs.setup.outputs.ref }}
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -112,12 +168,12 @@ jobs:
 
   macro-profile-configured:
     name: macro-profile-configured
+    needs: setup
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ env.BENCHMARK_REF }}
+          ref: ${{ needs.setup.outputs.ref }}
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -133,9 +189,11 @@ jobs:
           name: macro-profile-configured
           path: macro-profile-configured.txt
 
+  # ── Post-release: accumulate results in BENCHMARK.md ──
   update-benchmark-md:
     name: Update BENCHMARK.md
-    needs: [compile-auto, compile-configured, runtime, macro-profile-auto, macro-profile-configured]
+    needs: [setup, compile-auto, compile-configured, runtime, macro-profile-auto, macro-profile-configured]
+    if: needs.setup.outputs.mode == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -150,22 +208,10 @@ jobs:
         with:
           path: results
 
-      - name: Determine version
-        id: version
-        run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            TAG="${{ inputs.version }}"
-          elif [ -n "${{ github.event.workflow_run.head_branch }}" ]; then
-            TAG="${{ github.event.workflow_run.head_branch }}"
-          else
-            TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)"
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
       - name: Build new section
         run: |
-          VERSION="${{ steps.version.outputs.tag }}"
-          SHA="${{ env.BENCHMARK_REF }}"
+          VERSION="${{ needs.setup.outputs.version }}"
+          SHA="${{ needs.setup.outputs.ref }}"
           DATE="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 
           {
@@ -229,7 +275,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ steps.version.outputs.tag }}"
+          VERSION="${{ needs.setup.outputs.version }}"
           BRANCH="benchmark/$VERSION"
 
           git config user.name "github-actions[bot]"
@@ -240,7 +286,6 @@ jobs:
           git commit -m "docs: add benchmark results for $VERSION"
           git push -f -u origin "$BRANCH"
 
-          # Create PR only if one doesn't already exist for this branch
           EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
           if [ -n "$EXISTING" ]; then
             echo "PR #$EXISTING already exists — updated via force push"
@@ -261,3 +306,72 @@ jobs:
               --body-file /tmp/pr-body.md \
               --base main
           fi
+
+  # ── PR comment: post results on the pull request ──
+  post-pr-comment:
+    name: Post PR comment
+    needs: [setup, compile-auto, compile-configured, runtime, macro-profile-auto, macro-profile-configured]
+    if: needs.setup.outputs.mode == 'pr'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+
+      - name: Post comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ needs.setup.outputs.ref }}"
+          PR="${{ needs.setup.outputs.pr_number }}"
+
+          {
+            echo "## Benchmark Results"
+            echo ""
+            echo "**SHA:** \`${SHA:0:7}\` | **Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC') | **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo ""
+            echo "<details>"
+            echo "<summary>Compile Time — Auto Derivation</summary>"
+            echo ""
+            echo '```'
+            cat results/compile-auto/*.txt
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details>"
+            echo "<summary>Compile Time — Configured Derivation</summary>"
+            echo ""
+            echo '```'
+            cat results/compile-configured/*.txt
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details>"
+            echo "<summary>Runtime Performance</summary>"
+            echo ""
+            echo '```'
+            cat results/runtime/*.txt
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details>"
+            echo "<summary>Macro Profile — Auto</summary>"
+            echo ""
+            echo '```'
+            cat results/macro-profile-auto/*.txt
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details>"
+            echo "<summary>Macro Profile — Configured</summary>"
+            echo ""
+            echo '```'
+            cat results/macro-profile-configured/*.txt
+            echo '```'
+            echo "</details>"
+          } > /tmp/comment-body.md
+
+          gh pr comment "$PR" --body-file /tmp/comment-body.md

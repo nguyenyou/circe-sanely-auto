@@ -383,6 +383,8 @@ Every release automatically triggers a [benchmark workflow](.github/workflows/be
 
 Results accumulate in [`BENCHMARK.md`](BENCHMARK.md) — each release adds a new section so you can track performance across versions. The workflow opens a PR with the updated results after each run.
 
+**Benchmarking a PR:** Maintainers can comment `/benchmark` on any pull request to run the full benchmark suite against that PR's code. Results are posted as a collapsible comment on the PR. Only repository collaborators can trigger this.
+
 You can also trigger it manually from the Actions tab with custom parameters (number of runs, warmup iterations, etc.).
 
 ## Building
