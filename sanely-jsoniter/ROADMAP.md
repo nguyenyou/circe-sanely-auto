@@ -58,7 +58,7 @@ Real codebases use configured derivation for the vast majority of types (default
 
 ## P2 — Polish
 
-- [ ] **Value enum macro derivation** — `deriveJsoniterValueEnumCodec` that generates codecs from a `ValueEnumCompanion` or similar pattern, instead of requiring manual `Codecs.stringValueEnum(values, _.value)`.
+- [x] **Value enum macro derivation** — `deriveJsoniterValueEnumCodec` auto-detects String vs Int value field from the enum's constructor parameter. Replaces manual `Codecs.stringValueEnum(values, _.value)` / `Codecs.intValueEnum(values, _.value)`.
 
 - [ ] **`derives` support** — Companion objects like `JsoniterCodec.WithDefaults` that enable `case class Foo(...) derives JsoniterCodec.WithDefaults` syntax. Mirrors the `derives CirceCodec.WithDefaults` pattern used in some codebases (~336 call sites). This is a convenience layer — the underlying `deriveJsoniterConfiguredCodec` already works.
 
