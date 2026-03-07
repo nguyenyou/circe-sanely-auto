@@ -62,4 +62,4 @@ Real codebases use configured derivation for the vast majority of types (default
 
 - [x] **`derives` support** — `JsoniterCodec`, `JsoniterCodec.WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`. Each extends `JsonValueCodec[A]` directly so no import conversions needed.
 
-- [ ] **Performance benchmarks vs bridge** — Formal JMH benchmarks comparing sanely-jsoniter direct codecs vs the `jsoniter-scala-circe` bridge approach on realistic payloads (nested products, sum types, optional fields). Current 5x claim is from synthetic benchmarks — validate on real-world-shaped data.
+- [x] **Performance benchmarks vs bridge** — Runtime benchmark with realistic payload (~1.4 KB: nested products, sealed trait sum types, optional fields). sanely-jsoniter: **3.4x read / 4.5x write** vs circe-jawn; bridge: **1.5x read / 0.9x write**; jsoniter-scala native: **5.0x read / 5.8x write**.

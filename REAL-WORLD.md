@@ -29,11 +29,11 @@ Not every layer benefits equally. Some are hot paths where runtime speed matters
 
 | Layer | Compile time (circe-sanely-auto) | Runtime (sanely-jsoniter) | Impact |
 |---|---|---|---|
-| **HTTP endpoints** | 2x faster derivation for every endpoint codec | **5x throughput** — eliminates `Json` tree on every request/response | **Highest.** This is the hot path. Every API call benefits |
-| **Object storage (S3)** | 2x faster derivation | **5x faster** serialization/deserialization for uploads and downloads | **High.** Large documents (forms, reports) serialized on every read/write |
+| **HTTP endpoints** | 2x faster derivation for every endpoint codec | **3-5x throughput** — eliminates `Json` tree on every request/response | **Highest.** This is the hot path. Every API call benefits |
+| **Object storage (S3)** | 2x faster derivation | **3-5x faster** serialization/deserialization for uploads and downloads | **High.** Large documents (forms, reports) serialized on every read/write |
 | **Structured logging** | 2x faster if log structs use circe derivation | Not applicable — log structs typically use jsoniter-scala directly | **Low runtime, medium compile.** Logging is already optimized |
 | **CDC / event pipelines** | 2x faster derivation | Not applicable — these genuinely need the `Json` AST (`deepMerge`, `Json.obj()`, cursors) | **Compile only.** Tree manipulation has no streaming equivalent |
-| **Caching layers** | 2x faster derivation | **5x faster** if serializing to/from cache as JSON strings | **Medium.** Depends on whether cache stores `Json` objects or serialized strings |
+| **Caching layers** | 2x faster derivation | **3-5x faster** if serializing to/from cache as JSON strings | **Medium.** Depends on whether cache stores `Json` objects or serialized strings |
 | **Configuration** | **2x faster** configured derivation (defaults, discriminators, transforms) | Not applicable — config is loaded once at startup, runtime is irrelevant | **Compile only.** But configured derivation is used heavily (~hundreds of call sites) |
 | **Cross-service protocols** | **2x faster** on both JVM and Scala.js (cross-compiled) | Potential for shared codec definitions | **Compile only.** But affects both frontend and backend builds |
 
@@ -118,13 +118,16 @@ bytes --jsoniter--> T directly                      (5x faster)
 T --jsoniter--> bytes directly                      (5x faster)
 ```
 
-| Approach | Throughput | vs circe |
-|----------|-----------|----------|
-| circe-jawn (pure circe) | ~150K ops/sec | 1.0x |
-| circe + jsoniter parser (the bridge) | ~235K ops/sec | 1.5x |
-| **sanely-jsoniter** | ~800K ops/sec | **5x** |
+Measured on realistic payloads (~1.4 KB JSON: nested products, sealed trait sum types, optional fields):
 
-The compatibility contract: encode with sanely-jsoniter, decode with circe (or vice versa) — identical results. The JSON on the wire doesn't change, so no client-side changes are needed.
+| Approach | Read | Write | vs circe (read / write) |
+|----------|------|-------|------------------------|
+| circe-jawn | ~140K ops/sec | ~128K ops/sec | 1.0x |
+| circe + jsoniter bridge | ~207K ops/sec | ~113K ops/sec | 1.5x / 0.9x |
+| **sanely-jsoniter** | **~476K ops/sec** | **~576K ops/sec** | **3.4x / 4.5x** |
+| jsoniter-scala native | ~696K ops/sec | ~738K ops/sec | 5.0x / 5.8x |
+
+sanely-jsoniter reaches 68-78% of jsoniter-scala native speed while producing circe-compatible JSON. The compatibility contract: encode with sanely-jsoniter, decode with circe (or vice versa) — identical results. The JSON on the wire doesn't change, so no client-side changes are needed.
 
 ## The migration path
 
@@ -220,7 +223,7 @@ Both codec systems coexist — `JsonValueCodec[T]` and `Encoder[T]`/`Decoder[T]`
 | | Before | After |
 |---|---|---|
 | **Compile time** | Slow implicit search chains | Single macro expansion (~2x faster) |
-| **Runtime (hot path)** | bytes -> Json tree -> T (1.0-1.5x) | bytes -> T directly (5x) |
+| **Runtime (hot path)** | bytes -> Json tree -> T (1.0-1.5x) | bytes -> T directly (3.4x read / 4.5x write) |
 | **Migration cost** | — | 1 dep swap for compile time; hot path requires matching jsoniter codecs per configuration variant |
 | **circe compatibility** | N/A | Same JSON format, coexists with circe |
 | **Risk** | — | Zero for compile time; hot path is opt-in and incremental |
@@ -231,6 +234,6 @@ The goal is not to replace circe. It's to make circe fast where it matters — c
 
 sanely-jsoniter's core derivation engine is complete — products, sum types, enums, recursive types, sub-trait hierarchies, Either, non-string map keys, and all configured derivation options (defaults, discriminator, snake_case, drop-null, arbitrary name transforms, strict decoding).
 
-**What's ready today**: semi-auto and auto derivation (both standard and configured), cross-codec tests proving format compatibility with circe across all configuration variants, and Tapir integration tests proving the HTTP codec swap works end-to-end.
+**What's ready today**: semi-auto and auto derivation (both standard and configured), `derives` syntax, value enum macro, cross-codec tests proving format compatibility with circe across all configuration variants, Tapir integration tests, and runtime benchmarks on realistic payloads (3.4x read / 4.5x write vs circe).
 
-**What's remaining**: formal JMH benchmarks. See the [sanely-jsoniter ROADMAP](sanely-jsoniter/ROADMAP.md) for the full tracker.
+All sanely-jsoniter [ROADMAP](sanely-jsoniter/ROADMAP.md) items are complete.

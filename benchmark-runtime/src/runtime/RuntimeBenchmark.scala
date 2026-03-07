@@ -6,9 +6,15 @@ import java.nio.charset.StandardCharsets.UTF_8
 // Data models — neutral, no library-specific annotations
 // ═══════════════════════════════════════════════════════════════════════
 case class Address(street: String, city: String, state: String, zip: String, country: String)
-case class User(id: Long, name: String, email: String, age: Int, active: Boolean, address: Address, tags: List[String])
+case class User(id: Long, name: String, email: String, age: Int, active: Boolean, address: Address, tags: List[String],
+                phone: Option[String], bio: Option[String])
 case class OrderItem(productId: Long, name: String, quantity: Int, price: Double)
-case class Order(id: Long, userId: Long, items: List[OrderItem], total: Double, status: String, createdAt: String)
+sealed trait OrderStatus
+case class Delivered(deliveredAt: String) extends OrderStatus
+case class Shipped(carrier: String, tracking: Option[String]) extends OrderStatus
+case class Processing(estimatedDays: Int) extends OrderStatus
+case class Order(id: Long, userId: Long, items: List[OrderItem], total: Double, status: OrderStatus,
+                 createdAt: String, note: Option[String])
 case class ApiResponse(user: User, orders: List[Order], requestId: String, timestamp: Long)
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -20,6 +26,10 @@ object CirceCodecs:
   given Codec[Address] = deriveCodec
   given Codec[User] = deriveCodec
   given Codec[OrderItem] = deriveCodec
+  given Codec[Delivered] = deriveCodec
+  given Codec[Shipped] = deriveCodec
+  given Codec[Processing] = deriveCodec
+  given Codec[OrderStatus] = deriveCodec
   given Codec[Order] = deriveCodec
   given Codec[ApiResponse] = deriveCodec
 
@@ -32,6 +42,22 @@ object JsoniterCodecs:
   import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
   import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
   given JsonValueCodec[ApiResponse] = JsonCodecMaker.make
+
+// ═══════════════════════════════════════════════════════════════════════
+// sanely-jsoniter codecs — circe-format-compatible direct streaming
+// ═══════════════════════════════════════════════════════════════════════
+object SanelyJsoniterCodecs:
+  import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
+  import sanely.jsoniter.semiauto.*
+  given JsonValueCodec[Address] = deriveJsoniterCodec
+  given JsonValueCodec[User] = deriveJsoniterCodec
+  given JsonValueCodec[OrderItem] = deriveJsoniterCodec
+  given JsonValueCodec[Delivered] = deriveJsoniterCodec
+  given JsonValueCodec[Shipped] = deriveJsoniterCodec
+  given JsonValueCodec[Processing] = deriveJsoniterCodec
+  given JsonValueCodec[OrderStatus] = deriveJsoniterCodec
+  given JsonValueCodec[Order] = deriveJsoniterCodec
+  given JsonValueCodec[ApiResponse] = deriveJsoniterCodec
 
 // ═══════════════════════════════════════════════════════════════════════
 // Benchmark harness
@@ -82,7 +108,8 @@ object RuntimeBenchmark:
   private def sampleData: ApiResponse =
     val address = Address("123 Main St", "Springfield", "IL", "62701", "US")
     val user = User(42L, "Alice Johnson", "alice@example.com", 30, true, address,
-      List("premium", "early-adopter", "beta-tester"))
+      List("premium", "early-adopter", "beta-tester"),
+      Some("+1-555-0123"), None)
     val items1 = List(
       OrderItem(101L, "Wireless Mouse", 2, 29.99),
       OrderItem(102L, "USB-C Cable", 5, 12.49),
@@ -99,9 +126,12 @@ object RuntimeBenchmark:
       OrderItem(304L, "Binder Clips", 4, 5.99),
     )
     val orders = List(
-      Order(1001L, 42L, items1, 234.95, "delivered", "2024-01-15T10:30:00Z"),
-      Order(1002L, 42L, items2, 149.97, "shipped", "2024-02-20T14:15:00Z"),
-      Order(1003L, 42L, items3, 86.89, "processing", "2024-03-01T09:00:00Z"),
+      Order(1001L, 42L, items1, 234.95, Delivered("2024-01-20T16:00:00Z"),
+        "2024-01-15T10:30:00Z", Some("Leave at door")),
+      Order(1002L, 42L, items2, 149.97, Shipped("FedEx", Some("FX123456789")),
+        "2024-02-20T14:15:00Z", None),
+      Order(1003L, 42L, items3, 86.89, Processing(3),
+        "2024-03-01T09:00:00Z", None),
     )
     ApiResponse(user, orders, "req-abc-123-def-456", 1709312400L)
 
@@ -119,18 +149,25 @@ object RuntimeBenchmark:
     import io.circe.syntax.*
     val circeJsonBytes = CirceCodecs.printer.print(obj.asJson).getBytes(UTF_8)
 
-    // Pre-serialize with jsoniter for reading benchmarks (same JSON content)
+    // Pre-serialize with jsoniter-scala native for reading benchmarks
     import JsoniterCodecs.given
     import com.github.plokhotnyuk.jsoniter_scala.core.*
-    val jsoniterBytes = writeToArray(obj)
+    val jsoniterBytes = writeToArray(obj)(using JsoniterCodecs.given_JsonValueCodec_ApiResponse)
+
+    // Pre-serialize with sanely-jsoniter for reading benchmarks (circe-compatible format)
+    import SanelyJsoniterCodecs.given
+    val sanelyBytes = writeToArray(obj)(using SanelyJsoniterCodecs.given_JsonValueCodec_ApiResponse)
 
     // Verify all approaches produce the same result
     val circeResult = io.circe.jawn.decodeByteArray[ApiResponse](circeJsonBytes)(using CirceCodecs.given_Codec_ApiResponse)
     assert(circeResult.isRight, s"circe decode failed: $circeResult")
     assert(circeResult.toOption.get == obj, "circe roundtrip mismatch")
 
-    val jsoniterResult = readFromArray[ApiResponse](jsoniterBytes)
+    val jsoniterResult = readFromArray[ApiResponse](jsoniterBytes)(using JsoniterCodecs.given_JsonValueCodec_ApiResponse)
     assert(jsoniterResult == obj, "jsoniter roundtrip mismatch")
+
+    val sanelyResult = readFromArray[ApiResponse](sanelyBytes)(using SanelyJsoniterCodecs.given_JsonValueCodec_ApiResponse)
+    assert(sanelyResult == obj, "sanely-jsoniter roundtrip mismatch")
 
     // jsoniter-scala-circe bridge codec
     val jsonCirceCodec = com.github.plokhotnyuk.jsoniter_scala.circe.JsoniterScalaCodec.jsonC3c
@@ -140,9 +177,14 @@ object RuntimeBenchmark:
     assert(circeJsoniterResult.isRight, s"circe+jsoniter decode failed: $circeJsoniterResult")
     assert(circeJsoniterResult.toOption.get == obj, "circe+jsoniter roundtrip mismatch")
 
-    println(s"Runtime benchmark: circe-jawn vs circe+jsoniter vs jsoniter-scala")
+    // Cross-decode: sanely-jsoniter bytes decoded by circe (proves format compatibility)
+    val crossResult = io.circe.jawn.decodeByteArray[ApiResponse](sanelyBytes)(using CirceCodecs.given_Codec_ApiResponse)
+    assert(crossResult.isRight, s"cross-decode (sanely->circe) failed: $crossResult")
+    assert(crossResult.toOption.get == obj, "cross-decode mismatch")
+
+    println(s"Runtime benchmark: circe-jawn vs circe+jsoniter-bridge vs sanely-jsoniter vs jsoniter-scala")
     println(s"  warmup=$warmup iterations=$iterations (each 1 second)")
-    println(s"  payload: ${circeJsonBytes.length} bytes (circe), ${jsoniterBytes.length} bytes (jsoniter)")
+    println(s"  payload: ${circeJsonBytes.length} bytes (circe), ${sanelyBytes.length} bytes (sanely-jsoniter), ${jsoniterBytes.length} bytes (jsoniter-scala)")
     println()
 
     // ═══════════════════════════════════════════════════════════════════
@@ -164,13 +206,18 @@ object RuntimeBenchmark:
     }
     printResult(readCirceJsoniter)
 
+    val readSanely = measure("sanely-jsoniter", warmup, iterations) {
+      readFromArray[ApiResponse](sanelyBytes)(using SanelyJsoniterCodecs.given_JsonValueCodec_ApiResponse)
+    }
+    printResult(readSanely)
+
     val readJsoniter = measure("jsoniter-scala", warmup, iterations) {
-      readFromArray[ApiResponse](jsoniterBytes)
+      readFromArray[ApiResponse](jsoniterBytes)(using JsoniterCodecs.given_JsonValueCodec_ApiResponse)
     }
     printResult(readJsoniter)
 
     println()
-    printComparison(readCirceJawn, Seq(readCirceJsoniter, readJsoniter))
+    printComparison(readCirceJawn, Seq(readCirceJsoniter, readSanely, readJsoniter))
 
     println()
 
@@ -190,10 +237,15 @@ object RuntimeBenchmark:
     }
     printResult(writeCirceJsoniter)
 
+    val writeSanely = measure("sanely-jsoniter", warmup, iterations) {
+      writeToArray(obj)(using SanelyJsoniterCodecs.given_JsonValueCodec_ApiResponse)
+    }
+    printResult(writeSanely)
+
     val writeJsoniter = measure("jsoniter-scala", warmup, iterations) {
-      writeToArray(obj)
+      writeToArray(obj)(using JsoniterCodecs.given_JsonValueCodec_ApiResponse)
     }
     printResult(writeJsoniter)
 
     println()
-    printComparison(writeCircePrinter, Seq(writeCirceJsoniter, writeJsoniter))
+    printComparison(writeCircePrinter, Seq(writeCirceJsoniter, writeSanely, writeJsoniter))
