@@ -74,6 +74,120 @@ object JsoniterRuntime:
             if !in.isNextToken('}') then in.objectEndOrCommaError()
             result.asInstanceOf[S]
 
+  // === Sum codec with sub-trait support (external tagging) ===
+
+  def sumCodecWithSubTraits[S](
+    mirror: => Mirror.SumOf[S],
+    directLabels: Array[String],
+    isSubTrait: Array[Boolean],
+    initDirectCodecs: () => Array[JsonValueCodec[Any]],
+    allLeafLabels: Array[String],
+    initAllLeafCodecs: () => Array[JsonValueCodec[Any]]
+  ): JsonValueCodec[S] =
+    new JsonValueCodec[S]:
+      private lazy val _directCodecs = initDirectCodecs()
+      private lazy val _allLeafCodecs = initAllLeafCodecs()
+      val nullValue: S = null.asInstanceOf[S]
+
+      def encodeValue(x: S, out: JsonWriter): Unit =
+        if (x: Any) == null then out.writeNull()
+        else
+          val ord = mirror.ordinal(x)
+          if isSubTrait(ord) then
+            // Sub-trait codec handles its own external tagging
+            _directCodecs(ord).encodeValue(x, out)
+          else
+            out.writeObjectStart()
+            out.writeKey(directLabels(ord))
+            _directCodecs(ord).encodeValue(x, out)
+            out.writeObjectEnd()
+
+      def decodeValue(in: JsonReader, default: S): S =
+        if !in.isNextToken('{') then
+          in.readNullOrTokenError(default, '{')
+        else
+          val key = in.readKeyAsString()
+          var idx = -1
+          var i = 0
+          while i < allLeafLabels.length && idx < 0 do
+            if key == allLeafLabels(i) then idx = i
+            i += 1
+          if idx < 0 then
+            in.decodeError(s"Unknown variant: $key")
+            default
+          else
+            val result = _allLeafCodecs(idx).decodeValue(in, _allLeafCodecs(idx).nullValue)
+            if !in.isNextToken('}') then in.objectEndOrCommaError()
+            result.asInstanceOf[S]
+
+  // === Configured sum codec with sub-trait support ===
+
+  def configuredSumCodecWithSubTraits[S](
+    mirror: => Mirror.SumOf[S],
+    rawDirectLabels: Array[String],
+    isSubTrait: Array[Boolean],
+    transformConstructorNames: String => String,
+    discriminator: Option[String],
+    initDirectCodecs: () => Array[JsonValueCodec[Any]],
+    rawAllLeafLabels: Array[String],
+    initAllLeafCodecs: () => Array[JsonValueCodec[Any]]
+  ): JsonValueCodec[S] =
+    val directLabels = rawDirectLabels.map(transformConstructorNames)
+    val allLeafLabels = rawAllLeafLabels.map(transformConstructorNames)
+    discriminator match
+      case None =>
+        sumCodecWithSubTraits[S](
+          mirror, directLabels, isSubTrait, initDirectCodecs,
+          allLeafLabels, initAllLeafCodecs)
+      case Some(disc) =>
+        // Discriminator with sub-traits: use flat leaf labels for lookup
+        new JsonValueCodec[S]:
+          private lazy val _directCodecs = initDirectCodecs()
+          private lazy val _allLeafCodecs = initAllLeafCodecs()
+          val nullValue: S = null.asInstanceOf[S]
+
+          def encodeValue(x: S, out: JsonWriter): Unit =
+            if (x: Any) == null then out.writeNull()
+            else
+              val ord = mirror.ordinal(x)
+              if isSubTrait(ord) then
+                _directCodecs(ord).encodeValue(x, out)
+              else
+                out.writeObjectStart()
+                out.writeKey(disc)
+                out.writeVal(directLabels(ord))
+                val product = x.asInstanceOf[Product]
+                if product.productArity > 0 then
+                  _directCodecs(ord).encodeValue(x, out)
+                out.writeObjectEnd()
+
+          def decodeValue(in: JsonReader, default: S): S =
+            if !in.isNextToken('{') then
+              in.readNullOrTokenError(default, '{')
+            else
+              if !in.isNextToken('}') then
+                in.rollbackToken()
+                val key = in.readKeyAsString()
+                if key == disc then
+                  val typeName = in.readString(null)
+                  var idx = -1
+                  var i = 0
+                  while i < allLeafLabels.length && idx < 0 do
+                    if typeName == allLeafLabels(i) then idx = i
+                    i += 1
+                  if idx < 0 then
+                    in.decodeError(s"Unknown variant: $typeName")
+                    return default
+                  val result = _allLeafCodecs(idx).decodeValue(in, _allLeafCodecs(idx).nullValue)
+                  if !in.isNextToken('}') then in.objectEndOrCommaError()
+                  result.asInstanceOf[S]
+                else
+                  in.decodeError(s"Expected discriminator field '$disc' but got '$key'")
+                  default
+              else
+                in.decodeError(s"Expected discriminator field '$disc' in empty object")
+                default
+
   // === Configured product codec ===
 
   def configuredProductCodec[P](

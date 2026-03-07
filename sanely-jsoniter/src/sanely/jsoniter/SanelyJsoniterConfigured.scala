@@ -21,6 +21,7 @@ object SanelyJsoniterConfigured:
     val selfType: TypeRepr = TypeRepr.of[A]
     private val exprCache = mutable.Map.empty[String, Expr[?]]
     private val negativeBuiltinCache = mutable.Set.empty[String]
+    private val summonedKeys = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[JsonValueCodec[A]] =
       // Check if A is a known container type before Mirror derivation
@@ -98,14 +99,89 @@ object SanelyJsoniterConfigured:
       selfRef: Expr[JsonValueCodec[A]]
     ): Expr[JsonValueCodec[S]] =
       val cases = resolveFields[Types, Labels](selfRef)
-      val labelsExpr = Expr(cases.map(_._1).toArray)
-      val codecExprs = cases.map { case (_, tpe, codec) =>
-        tpe match
-          case '[t] => '{ ${codec.asInstanceOf[Expr[JsonValueCodec[t]]]}.asInstanceOf[JsonValueCodec[Any]] }
-      }
-      val codecsArrayExpr = '{ Array(${Varargs(codecExprs)}*) }
 
-      '{ JsoniterRuntime.configuredSumCodec[S]($mirror, $labelsExpr, $conf.transformConstructorNames, $conf.discriminator, () => $codecsArrayExpr) }
+      // Detect sub-traits
+      val casesWithSubTrait = cases.map { case (label, tpe, codec) =>
+        val isSub = tpe match
+          case '[t] =>
+            val ck = cheapTypeKey(TypeRepr.of[t].dealias)
+            !summonedKeys.contains(ck) && Expr.summon[Mirror.SumOf[t]].isDefined
+        (label, tpe, codec, isSub)
+      }
+
+      val hasSubTraits = casesWithSubTrait.exists(_._4)
+
+      if !hasSubTraits then
+        val labelsExpr = Expr(cases.map(_._1).toArray)
+        val codecExprs = cases.map { case (_, tpe, codec) =>
+          tpe match
+            case '[t] => '{ ${codec.asInstanceOf[Expr[JsonValueCodec[t]]]}.asInstanceOf[JsonValueCodec[Any]] }
+        }
+        val codecsArrayExpr = '{ Array(${Varargs(codecExprs)}*) }
+        '{ JsoniterRuntime.configuredSumCodec[S]($mirror, $labelsExpr, $conf.transformConstructorNames, $conf.discriminator, () => $codecsArrayExpr) }
+      else
+        val directLabelsExpr = Expr(cases.map(_._1).toArray)
+        val isSubTraitExpr = Expr(casesWithSubTrait.map(_._4).toArray)
+        val directCodecExprs = casesWithSubTrait.map { case (_, tpe, codec, _) =>
+          tpe match
+            case '[t] => '{ ${codec.asInstanceOf[Expr[JsonValueCodec[t]]]}.asInstanceOf[JsonValueCodec[Any]] }
+        }
+        val directCodecsArrayExpr = '{ Array(${Varargs(directCodecExprs)}*) }
+
+        val allLeaves = casesWithSubTrait.flatMap { case (label, tpe, codec, isSub) =>
+          if isSub then
+            tpe match
+              case '[t] => collectLeafVariants[t](selfRef)
+          else
+            List((label, tpe, codec))
+        }.distinctBy(_._1)
+
+        val allLeafLabelsExpr = Expr(allLeaves.map(_._1).toArray)
+        val allLeafCodecExprs = allLeaves.map { case (_, tpe, codec) =>
+          tpe match
+            case '[t] => '{ ${codec.asInstanceOf[Expr[JsonValueCodec[t]]]}.asInstanceOf[JsonValueCodec[Any]] }
+        }
+        val allLeafCodecsArrayExpr = '{ Array(${Varargs(allLeafCodecExprs)}*) }
+
+        '{ JsoniterRuntime.configuredSumCodecWithSubTraits[S](
+          $mirror, $directLabelsExpr, $isSubTraitExpr,
+          $conf.transformConstructorNames, $conf.discriminator,
+          () => $directCodecsArrayExpr,
+          $allLeafLabelsExpr, () => $allLeafCodecsArrayExpr) }
+
+    // === Sub-trait leaf collection ===
+
+    private def collectLeafVariants[T: Type](
+      selfRef: Expr[JsonValueCodec[A]]
+    ): List[(String, Type[?], Expr[JsonValueCodec[?]])] =
+      Expr.summon[Mirror.SumOf[T]] match
+        case Some(subMirror) =>
+          subMirror match
+            case '{ $sm: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+              collectLeaves[types, labels](selfRef)
+        case None =>
+          report.errorAndAbort(s"Expected Mirror.SumOf for sub-trait ${Type.show[T]}")
+
+    private def collectLeaves[Types: Type, Labels: Type](
+      selfRef: Expr[JsonValueCodec[A]]
+    ): List[(String, Type[?], Expr[JsonValueCodec[?]])] =
+      (Type.of[Types], Type.of[Labels]) match
+        case ('[EmptyTuple], '[EmptyTuple]) => Nil
+        case ('[t *: ts], '[label *: ls]) =>
+          val labelStr = Type.of[label] match
+            case '[l] =>
+              Type.valueOfConstant[l].getOrElse(
+                report.errorAndAbort(s"Expected literal string type")
+              ).toString
+          val ck = cheapTypeKey(TypeRepr.of[t].dealias)
+          val isNestedSub = !summonedKeys.contains(ck) && Expr.summon[Mirror.SumOf[t]].isDefined
+          val casesForThis =
+            if isNestedSub then collectLeafVariants[t](selfRef)
+            else
+              val codec = resolveOneCodec[t](selfRef)
+              List((labelStr, Type.of[t], codec))
+          casesForThis ++ collectLeaves[ts, ls](selfRef)
+        case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
 
     // === Defaults resolution ===
 
@@ -188,7 +264,9 @@ object SanelyJsoniterConfigured:
 
       val resolved: Expr[JsonValueCodec[T]] =
         Expr.summonIgnoring[JsonValueCodec[T]](cachedIgnoreSymbols*) match
-          case Some(codec) => codec
+          case Some(codec) =>
+            summonedKeys += cacheKey
+            codec
           case None =>
             Expr.summon[Mirror.Of[T]] match
               case Some(mirrorExpr) =>
