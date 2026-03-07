@@ -4,6 +4,8 @@
 
 Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Swap one dependency, change one import, compile faster.
 
+> **The contract: 100% circe compatibility, zero compromise.** If your application works with circe, it must work identically with circe-sanely-auto — same JSON output, same decoded values, same error messages, same behavior in every edge case. Any difference is a bug. No exceptions, no "close enough", no subtle surprises. You swap the dependency and nothing changes except compile time. This is the promise that makes or breaks this library.
+
 **Scala 3.8.2+ | JVM + Scala.js | ✅ 327 tests passing**
 
 ## Why
