@@ -37,6 +37,23 @@ case object Chicken extends Farm
 // Recursive type
 case class Tree(value: String, children: List[Tree])
 
+// Types with defaults
+case class WithDefaults(name: String, age: Int = 25, active: Boolean = true)
+case class WithDefaultOption(name: String, tag: Option[String] = Some("default"))
+case class WithDefaultNone(name: String, tag: Option[String] = None)
+case class NoDefaults(name: String, age: Int)
+
+// Sum types for configured tests
+sealed trait Vehicle
+case class Car(make: String, year: Int) extends Vehicle
+case class Bike(brand: String) extends Vehicle
+
+// Types for snake_case tests
+case class SnakeCaseExample(firstName: String, lastName: String, isActive: Boolean = true)
+
+// Types for drop-null tests
+case class WithNullable(name: String, nickname: Option[String], age: Int)
+
 object SanelyJsoniterTest extends TestSuite:
   import sanely.jsoniter.semiauto.*
 
@@ -257,6 +274,194 @@ object SanelyJsoniterTest extends TestSuite:
         val j = writeToString(a)
         val d = readFromString[Animal](j)
         assert(d eq a)
+    }
+
+    // === Configured derivation tests ===
+
+    test("configured - withDefaults: missing fields use defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice"}"""
+      val decoded = readFromString[WithDefaults](json)
+      assert(decoded == WithDefaults("Alice", 25, true))
+    }
+
+    test("configured - withDefaults: provided fields override defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice","age":30,"active":false}"""
+      val decoded = readFromString[WithDefaults](json)
+      assert(decoded == WithDefaults("Alice", 30, false))
+    }
+
+    test("configured - withDefaults: Option with Some default") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithDefaultOption] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice"}"""
+      val decoded = readFromString[WithDefaultOption](json)
+      assert(decoded == WithDefaultOption("Alice", Some("default")))
+    }
+
+    test("configured - withDefaults: Option with None default") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithDefaultNone] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice"}"""
+      val decoded = readFromString[WithDefaultNone](json)
+      assert(decoded == WithDefaultNone("Alice", None))
+    }
+
+    test("configured - withDefaults: Option field without default gets None") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithNullable] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice","age":30}"""
+      val decoded = readFromString[WithNullable](json)
+      assert(decoded == WithNullable("Alice", None, 30))
+    }
+
+    test("configured - withDefaults: non-Option non-default field gets null value") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[NoDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice"}"""
+      val decoded = readFromString[NoDefaults](json)
+      assert(decoded == NoDefaults("Alice", 0))
+    }
+
+    test("configured - useDefaults=false ignores defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default // useDefaults=false
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice"}"""
+      val decoded = readFromString[WithDefaults](json)
+      // Without useDefaults, missing Int gets 0, missing Boolean gets false
+      assert(decoded == WithDefaults("Alice", 0, false))
+    }
+
+    test("configured - withDefaults: encode round-trip") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      val original = WithDefaults("Bob", 30, false)
+      val json = writeToString(original)
+      val decoded = readFromString[WithDefaults](json)
+      assert(decoded == original)
+    }
+
+    test("configured - snake_case member names") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      given JsonValueCodec[SnakeCaseExample] = deriveJsoniterConfiguredCodec
+      val original = SnakeCaseExample("Alice", "Smith", true)
+      val json = writeToString(original)
+      assert(json.contains("\"first_name\""))
+      assert(json.contains("\"last_name\""))
+      assert(json.contains("\"is_active\""))
+      val decoded = readFromString[SnakeCaseExample](json)
+      assert(decoded == original)
+    }
+
+    test("configured - snake_case with defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      given JsonValueCodec[SnakeCaseExample] = deriveJsoniterConfiguredCodec
+      val json = """{"first_name":"Alice","last_name":"Smith"}"""
+      val decoded = readFromString[SnakeCaseExample](json)
+      assert(decoded == SnakeCaseExample("Alice", "Smith", true))
+    }
+
+    test("configured - drop null values") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDropNullValues
+      given JsonValueCodec[WithNullable] = deriveJsoniterConfiguredCodec
+      val original = WithNullable("Alice", None, 30)
+      val json = writeToString(original)
+      assert(!json.contains("nickname"))
+      assert(json.contains("\"name\":\"Alice\""))
+      assert(json.contains("\"age\":30"))
+    }
+
+    test("configured - drop null values: Some values preserved") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDropNullValues
+      given JsonValueCodec[WithNullable] = deriveJsoniterConfiguredCodec
+      val original = WithNullable("Alice", Some("Ali"), 30)
+      val json = writeToString(original)
+      assert(json.contains("\"nickname\":\"Ali\""))
+    }
+
+    test("configured - sum type external tagging with constructor name transform") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[Car] = deriveJsoniterConfiguredCodec
+      given JsonValueCodec[Bike] = deriveJsoniterConfiguredCodec
+      given JsonValueCodec[Vehicle] = deriveJsoniterConfiguredCodec
+      val car: Vehicle = Car("Toyota", 2024)
+      val json = writeToString(car)
+      // External tagging uses constructor names (not transformed by transformMemberNames)
+      assert(json == """{"Car":{"make":"Toyota","year":2024}}""")
+      val decoded = readFromString[Vehicle](json)
+      assert(decoded == car)
+    }
+
+    test("configured - discriminator tagging") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDiscriminator("type")
+      given JsonValueCodec[Car] = deriveJsoniterConfiguredCodec
+      given JsonValueCodec[Bike] = deriveJsoniterConfiguredCodec
+      given JsonValueCodec[Vehicle] = deriveJsoniterConfiguredCodec
+      val car: Vehicle = Car("Toyota", 2024)
+      val json = writeToString(car)
+      assert(json.contains("\"type\":\"Car\""))
+      assert(json.contains("\"make\":\"Toyota\""))
+    }
+
+    test("configured - cross-codec compatibility with circe (withDefaults)") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.{deriveConfiguredCodec}
+
+      given Configuration = Configuration.default.withDefaults
+      given CirceCodec[WithDefaults] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+
+      // Full fields: jsoniter -> circe
+      val full = WithDefaults("Alice", 30, false)
+      val jsoniterJson = writeToString(full)
+      val circeResult = circeDecode[WithDefaults](jsoniterJson)
+      assert(circeResult == Right(full))
+
+      // Full fields: circe -> jsoniter
+      val circeJson = full.asJson.noSpaces
+      val jsoniterResult = readFromString[WithDefaults](circeJson)
+      assert(jsoniterResult == full)
+
+      // Missing fields: both should decode with defaults
+      val partial = """{"name":"Bob"}"""
+      val circePartial = circeDecode[WithDefaults](partial)
+      val jsoniterPartial = readFromString[WithDefaults](partial)
+      assert(circePartial == Right(jsoniterPartial))
+      assert(jsoniterPartial == WithDefaults("Bob", 25, true))
+    }
+
+    test("configured - cross-codec compatibility with circe (snake_case)") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.{deriveConfiguredCodec}
+
+      given Configuration = Configuration.default.withDefaults.withSnakeCaseMemberNames
+      given CirceCodec[SnakeCaseExample] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      given JsonValueCodec[SnakeCaseExample] = deriveJsoniterConfiguredCodec
+
+      val original = SnakeCaseExample("Alice", "Smith", true)
+
+      // jsoniter -> circe
+      val jsoniterJson = writeToString(original)
+      val circeResult = circeDecode[SnakeCaseExample](jsoniterJson)
+      assert(circeResult == Right(original))
+
+      // circe -> jsoniter
+      val circeJson = original.asJson.noSpaces
+      val jsoniterResult = readFromString[SnakeCaseExample](circeJson)
+      assert(jsoniterResult == original)
     }
 
     test("enum - circe format compatibility") {
