@@ -12,7 +12,7 @@ Drop-in replacement for circe's derivation on Scala 3. Compile faster, run faste
 
 But circe has two performance problems:
 
-**Slow compilation.** circe-generic's `auto` derivation triggers a new round of implicit resolution for every nested type. For a codebase with hundreds of types, these rounds compound — each type waits for all its fields to be resolved, which wait for their fields, and so on. A clean compile of 300 types takes over 6 seconds just for derivation. In large monorepos with thousands of types, this adds minutes to every build.
+**Slow compilation.** circe-generic's `auto` derivation triggers a new round of implicit resolution for every nested type. For a codebase with hundreds of types, these rounds compound — each type waits for all its fields to be resolved, which wait for their fields, and so on. A clean compile of 350 types takes over 9 seconds just for derivation. In large monorepos with thousands of types, this adds minutes to every build.
 
 **Slow runtime.** circe parses JSON into an intermediate `Json` AST, then traverses that AST to build your domain objects. Every request allocates a full tree of `Json` nodes only to throw them away immediately. This parse-allocate-traverse pipeline caps throughput at ~130K ops/sec and allocates ~28 KB per decode for a typical 1.4 KB payload.
 
@@ -28,17 +28,17 @@ This contract is enforced by 327 tests — including 192 property-based tests au
 
 ## The numbers
 
-### Compile time — 2.9x faster
+### Compile time — 3.6x faster
 
-~300 types, M3 Max, JDK 25, Mill 1.1.2, Scala 3.8.2, measured with [hyperfine](https://github.com/sharkdp/hyperfine):
+~350 types, M3 Max, JDK 25, Mill 1.1.2, Scala 3.8.2, measured with [hyperfine](https://github.com/sharkdp/hyperfine):
 
 | | circe | circe-sanely-auto | |
 |---|---|---|---|
-| **Auto derivation** | 6.15s | **2.11s** | **2.9x faster** |
-| **Configured derivation** | 2.59s | **1.39s** | **1.9x faster** |
-| **Compiler work** | 1,542 samples | **806 samples** | **48% less** |
-| **Memory allocations** | 8,547 samples | **4,168 samples** | **51% less** |
-| **Peak RSS** | 963 MB | **769 MB** | **20% less** |
+| **Auto derivation** | 9.25s | **2.56s** | **3.6x faster** |
+| **Configured derivation** | 2.74s | **1.27s** | **2.2x faster** |
+| **Compiler work** | 1,558 samples | **825 samples** | **47% less** |
+| **Memory allocations** | 10,674 samples | **3,942 samples** | **63% less** |
+| **Peak RSS** | 1,133 MB | **893 MB** | **21% less** |
 
 ### Runtime — 4.8x faster reads, 6.2x faster writes, 85–95% less allocation
 
@@ -58,7 +58,7 @@ sanely-jsoniter reaches **97% of jsoniter-scala native** on decode and **surpass
 
 **Environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2 (zinc on JDK 21.0.9), Scala 3.8.2.
 
-**Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~300 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 2.88x–3.01x across 25 runs in 3 separate sessions.
+**Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~350 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 3.55x–3.61x across 20 runs in 2 separate sessions.
 
 **Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Allocation per operation measured via `ThreadMXBean.getThreadAllocatedBytes` (precise, per-thread, no GC noise). Three full benchmark runs were performed to verify consistency. Reading ranged 653K–665K ops/sec across runs; writing ranged 775K–784K ops/sec. Numbers reported are the median run.
 
@@ -283,7 +283,7 @@ Supports hierarchical sealed traits with diamond inheritance.
 Two benchmark suites compare compile times against circe's native derivation. All numbers from M3 Max MacBook Pro, Mill 1.1.2, Scala 3.8.2.
 
 ```bash
-bash bench.sh 5              # auto derivation (~300 types)
+bash bench.sh 5              # auto derivation (~350 types)
 bash bench.sh --configured 5 # configured derivation (~230 types)
 ```
 
@@ -291,8 +291,8 @@ bash bench.sh --configured 5 # configured derivation (~230 types)
 
 | Suite | circe-sanely-auto | circe baseline | Speedup |
 |---|---|---|---|
-| **Auto derivation** (~300 types) | **2.11s** ± 0.04s | 6.15s ± 0.04s (circe-generic) | **2.91x** ± 0.06 |
-| **Configured derivation** (~230 types) | **1.39s** ± 0.03s | 2.59s ± 0.04s (circe-core) | **1.86x** ± 0.05 |
+| **Auto derivation** (~350 types) | **2.56s** ± 0.07s | 9.25s ± 0.04s (circe-generic) | **3.61x** ± 0.09 |
+| **Configured derivation** (~230 types) | **1.27s** ± 0.03s | 2.74s ± 0.04s (circe-core) | **2.16x** ± 0.05 |
 
 #### Benchmark method
 
@@ -311,19 +311,19 @@ JVM-level profiling with async-profiler shows where the Scala compiler spends ti
 
 #### Auto derivation — compiler workload
 
-| Phase | sanely (806 samples) | circe-generic (1542 samples) | Delta |
+| Phase | sanely (825 samples) | circe-generic (1558 samples) | Delta |
 |---|---|---|---|
-| core (types, symbols, contexts) | 269 (33%) | 574 (37%) | **-53%** |
-| ast (tree maps, accumulators) | 83 (10%) | 202 (13%) | **-59%** |
-| typer | 78 (10%) | 123 (8%) | -37% |
-| other (infra, denotations) | 101 (13%) | 133 (9%) | -24% |
-| transform (erasure, lambdalift) | 59 (7%) | 82 (5%) | -28% |
-| backend (bytecode, classfiles) | 49 (6%) | 60 (4%) | -18% |
-| macro inlines | 12 (1%) | 67 (4%) | **-82%** |
-| macro quoted | 25 (3%) | 7 (0%) | sanely only |
-| typer implicits | 8 (1%) | 16 (1%) | -50% |
-| parsing | 7 (1%) | 8 (1%) | -12% |
-| **total compiler** | **806** | **1542** | **-48%** |
+| core (types, symbols, contexts) | 298 (36%) | 519 (33%) | **-43%** |
+| ast (tree maps, accumulators) | 89 (11%) | 242 (16%) | **-63%** |
+| typer | 69 (8%) | 90 (6%) | -23% |
+| other (infra, denotations) | 113 (14%) | 148 (10%) | -24% |
+| transform (erasure, lambdalift) | 63 (8%) | 78 (5%) | -19% |
+| backend (bytecode, classfiles) | 45 (5%) | 70 (4%) | -36% |
+| macro inlines | 7 (1%) | 71 (5%) | **-90%** |
+| macro quoted | 12 (1%) | 7 (0%) | sanely only |
+| typer implicits | 14 (2%) | 14 (1%) | 0% |
+| parsing | 11 (1%) | 7 (0%) | +57% |
+| **total compiler** | **825** | **1558** | **-47%** |
 
 #### Configured derivation — compiler workload
 
@@ -341,7 +341,7 @@ JVM-level profiling with async-profiler shows where the Scala compiler spends ti
 | parsing | 9 (1%) | 7 (1%) | +29% |
 | **total compiler** | **621** | **805** | **-23%** |
 
-**Key pattern**: Sanely trades inlining for quote reflection. circe-generic/circe-core's `inline` + `summonInline` approach forces the compiler to do heavy inlining work (67 samples for auto, 30 for configured). Sanely's `Expr.summonIgnoring` approach shifts that work to the quote reflection phase (25/6 samples) which is cheaper. Factory method consolidation eliminated the previous regression in transform+backend phases — sanely is now lighter than circe in all phases. For auto derivation, the total compiler workload is **48% lighter**. For configured, the compiler workload is **23% lighter**.
+**Key pattern**: Sanely trades inlining for quote reflection. circe-generic/circe-core's `inline` + `summonInline` approach forces the compiler to do heavy inlining work (71 samples for auto, 30 for configured). Sanely's `Expr.summonIgnoring` approach shifts that work to the quote reflection phase (12/6 samples) which is cheaper. Factory method consolidation eliminated the previous regression in transform+backend phases — sanely is now lighter than circe in all phases. For auto derivation, the total compiler workload is **47% lighter**. For configured, the compiler workload is **23% lighter**.
 
 ### Memory profiling
 
@@ -351,24 +351,24 @@ Peak RSS via `/usr/bin/time -l`, allocation samples via async-profiler `event=al
 
 | Suite | sanely | circe baseline | Delta |
 |---|---|---|---|
-| **Auto derivation** (~300 types) | **769 MB** | 963 MB (circe-generic) | **-20%** |
+| **Auto derivation** (~350 types) | **893 MB** | 1,133 MB (circe-generic) | **-21%** |
 | **Configured derivation** (~230 types) | **752 MB** | 750 MB (circe-core) | ~0% |
 
-Auto derivation uses **20% less peak memory** thanks to fewer generated classes and smaller ASTs. Configured derivation uses comparable peak memory. RSS includes compiler heap, JIT code, metaspace, and OS buffers.
+Auto derivation uses **21% less peak memory** thanks to fewer generated classes and smaller ASTs. Configured derivation uses comparable peak memory. RSS includes compiler heap, JIT code, metaspace, and OS buffers.
 
 #### Allocation pressure — auto derivation
 
 | Category | sanely | circe-generic | Delta |
 |---|---|---|---|
-| **total** | **4,168** | **8,547** | **-51%** |
-| compiler | 3,319 (80%) | 7,667 (90%) | **-57%** |
-| compiler.core | 1,163 | 2,862 | **-59%** |
-| compiler.core.types | 321 | 1,009 | **-68%** |
-| compiler.ast | 280 | 1,059 | **-74%** |
-| compiler.macro.inlines | 55 | 502 | **-89%** |
-| compiler.typer | 199 | 402 | -51% |
-| compiler.backend | 186 | 304 | -39% |
-| mill / zinc / jvm | 849 | 880 | -4% |
+| **total** | **4,822** | **11,571** | **-58%** |
+| compiler | 3,942 (82%) | 10,674 (92%) | **-63%** |
+| compiler.core | 1,444 | 4,069 | **-65%** |
+| compiler.core.types | 465 | 1,477 | **-69%** |
+| compiler.ast | 335 | 1,582 | **-79%** |
+| compiler.macro.inlines | 70 | 721 | **-90%** |
+| compiler.typer | 246 | 549 | -55% |
+| compiler.backend | 204 | 351 | -42% |
+| mill / zinc / jvm | 880 | 897 | -2% |
 
 #### Allocation pressure — configured derivation
 
@@ -388,12 +388,12 @@ Auto derivation uses **20% less peak memory** thanks to fewer generated classes 
 
 Bytecode size and method count measured with `javap` across all compiled class files. Fewer methods means faster classloading, less JIT work, and smaller vtables. Measured with `python3 .claude/skills/bytecode-impact/scripts/analyze_bytecode.py`.
 
-#### Auto derivation (~300 types)
+#### Auto derivation (~350 types)
 
 | Metric | circe-sanely-auto | circe-generic | Delta |
 |---|---|---|---|
-| Total bytecode | 2,377,615 bytes | 2,935,557 bytes | **-19.0%** |
-| Total methods | 11,273 | 12,197 | **-7.6%** |
+| Total bytecode | 2,634,732 bytes | 3,384,133 bytes | **-22.1%** |
+| Total methods | 12,433 | 13,761 | **-9.7%** |
 | LazyRef/lzyINIT/monitor | 0 | 0 | — |
 
 #### Configured derivation (~230 types)
@@ -404,14 +404,14 @@ Bytecode size and method count measured with `javap` across all compiled class f
 | Total methods | 8,991 | 9,449 | **-4.8%** |
 | lzyINIT patterns | 1,200 | 1,658 | **-27.6%** |
 
-Auto derivation generates **19% less bytecode** and **924 fewer methods** thanks to `SanelyRuntime` factory methods (consolidating encoder/decoder construction into shared templates) and lazy-val elimination for non-recursive types. Configured derivation generates **10% less bytecode** with **27% fewer lazy initialization patterns**.
+Auto derivation generates **22% less bytecode** and **1,328 fewer methods** thanks to `SanelyRuntime` factory methods (consolidating encoder/decoder construction into shared templates) and lazy-val elimination for non-recursive types. Configured derivation generates **10% less bytecode** with **27% fewer lazy initialization patterns**.
 
 ### Macro profiling
 
 Built-in compile-time profiling via `SANELY_PROFILE=true` tracks where time is spent inside our macros:
 
 ```bash
-# Profile auto derivation (~300 types)
+# Profile auto derivation (~350 types)
 rm -rf out/benchmark/sanely
 SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/profile.txt
 python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
@@ -422,19 +422,19 @@ SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 
 python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 ```
 
-#### Auto derivation (308 expansions, 2.8s total macro time)
+#### Auto derivation (398 expansions, 2.5s total macro time)
 
 | Category | Time | % | Calls | Avg |
 |---|---|---|---|---|
-| `summonIgnoring` | 1375ms | 49.3% | 660 | 2.08ms |
-| `derive` | 952ms | 34.1% | 586 | 1.63ms |
-| `summonMirror` | 118ms | 4.2% | 586 | 0.20ms |
-| `subTraitDetect` | 64ms | 2.3% | 336 | 0.19ms |
-| `tryBuiltin` | 47ms | 1.7% | 1366 | 0.03ms |
-| `cheapTypeKey` | 4ms | 0.1% | 3080 | 0.00ms |
-| `builtinHit` | — | — | 706 | — |
-| cache hits | — | — | 1714 (75%) | — |
-| overhead | 231ms | 8.3% | — | macro framework (tuple recursion, AST construction) |
+| `summonIgnoring` | 1340ms | 53.7% | 894 | 1.50ms |
+| `derive` | 916ms | 36.7% | 920 | 1.00ms |
+| `tryBuiltin` | 125ms | 5.0% | 1943 | 0.06ms |
+| `summonMirror` | 102ms | 4.1% | 920 | 0.11ms |
+| `subTraitDetect` | 45ms | 1.8% | 336 | 0.13ms |
+| `cheapTypeKey` | 3ms | 0.1% | 4342 | 0.00ms |
+| `builtinHit` | — | — | 907 | — |
+| `constructorNegHit` | — | — | 142 | — |
+| cache hits | — | — | 2399 (75%) | — |
 
 #### Configured derivation (230 expansions, 815ms total macro time)
 
@@ -458,10 +458,10 @@ Every release automatically triggers a [benchmark workflow](.github/workflows/be
 
 | Job | What it measures |
 |---|---|
-| **compile-auto** | Compile time — auto derivation (~300 types), sanely vs circe-generic |
+| **compile-auto** | Compile time — auto derivation (~350 types), sanely vs circe-generic |
 | **compile-configured** | Compile time — configured derivation (~230 types), sanely vs circe-core |
 | **runtime** | Encoding/decoding throughput — circe-jawn vs circe+jsoniter vs sanely-jsoniter vs jsoniter-scala |
-| **macro-profile-auto** | Macro expansion profiling — auto derivation (308 expansions) |
+| **macro-profile-auto** | Macro expansion profiling — auto derivation (398 expansions) |
 | **macro-profile-configured** | Macro expansion profiling — configured derivation (230 expansions) |
 
 Results accumulate in [`BENCHMARK.md`](BENCHMARK.md) — each release adds a new section so you can track performance across versions. The workflow opens a PR with the updated results after each run.
