@@ -940,6 +940,46 @@ object SanelyJsoniterTest extends TestSuite:
       assert(caught.getMessage.contains("does not contain value"))
     }
 
+    // === Strict decoding tests ===
+
+    test("strict - product: unknown field rejected") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withStrictDecoding
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice","age":25,"active":true,"extra":"bad"}"""
+      val caught =
+        try
+          readFromString[WithDefaults](json)
+          throw new RuntimeException("expected exception")
+        catch
+          case e: com.github.plokhotnyuk.jsoniter_scala.core.JsonReaderException => e
+      assert(caught.getMessage.contains("Strict decoding"))
+      assert(caught.getMessage.contains("unexpected field"))
+    }
+
+    test("strict - product: known fields pass") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withStrictDecoding
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice","age":30,"active":false}"""
+      val decoded = readFromString[WithDefaults](json)
+      assert(decoded == WithDefaults("Alice", 30, false))
+    }
+
+    test("strict - product with defaults: unknown field rejected even with defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withStrictDecoding
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"Alice","unknown":42}"""
+      val caught =
+        try
+          readFromString[WithDefaults](json)
+          throw new RuntimeException("expected exception")
+        catch
+          case e: com.github.plokhotnyuk.jsoniter_scala.core.JsonReaderException => e
+      assert(caught.getMessage.contains("Strict decoding"))
+    }
+
+    // Strict sum/discriminator tests are in StrictSumTest.scala
+    // (separate file to avoid Scala.js linker dispatch issue with circe Encoder.AsObject)
+
     // === Auto-configured derivation tests ===
 
     test("auto-configured - withDefaults: missing fields use defaults") {

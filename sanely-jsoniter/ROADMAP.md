@@ -8,7 +8,7 @@ Core derivation engine is complete: products, sum types, enums, recursive types,
 
 **What works today**: semi-auto derivation (`deriveJsoniterCodec`, `deriveJsoniterConfiguredCodec`, `deriveJsoniterEnumCodec`) with all configuration options. Auto derivation for standard (non-configured) types.
 
-**What's missing**: auto-configured derivation, cross-codec tests for some config combos, Tapir integration guidance, strict decoding runtime, and REAL-WORLD.md accuracy for configured types.
+**What's missing**: Tapir integration guidance, strict decoding runtime, and migration guide for configured codebases.
 
 ## Completed
 
@@ -32,11 +32,11 @@ Real codebases use configured derivation for the vast majority of types (default
 
 - [x] **Auto-configured derivation** — `sanely.jsoniter.configured.auto.given` that auto-derives `JsonValueCodec[T]` using a `given JsoniterConfiguration` in scope. Without this, every configured type needs explicit `deriveJsoniterConfiguredCodec`. Pattern: `given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults; import sanely.jsoniter.configured.auto.given`. This covers ~500+ call sites in a typical codebase that all use the same base config (withDefaults).
 
-- [ ] **Cross-codec test: discriminator** — Prove that `JsoniterConfiguration.default.withDiscriminator("type")` produces identical JSON to circe's `Configuration.default.withDiscriminator("type")`. Encode with jsoniter → decode with circe and vice versa. ~45 call sites in a typical codebase use discriminator tagging.
+- [x] **Cross-codec test: discriminator** — Prove that `JsoniterConfiguration.default.withDiscriminator("type")` produces identical JSON to circe's `Configuration.default.withDiscriminator("type")`. Encode with jsoniter → decode with circe and vice versa. ~45 call sites in a typical codebase use discriminator tagging.
 
-- [ ] **Cross-codec test: drop-null** — Prove that `withDropNullValues` encoding matches circe's `.mapJsonObject(_.filter(!_._2.isNull))`. Encode with jsoniter → decode with circe. ~5+ call sites.
+- [x] **Cross-codec test: drop-null** — Prove that `withDropNullValues` encoding matches circe's `.mapJsonObject(_.filter(!_._2.isNull))`. Encode with jsoniter → decode with circe. ~5+ call sites.
 
-- [ ] **Cross-codec test: combined configs** — Test the real-world combos: defaults+discriminator, defaults+snake_case+drop-null. These are the actual configuration patterns used in production wrappers.
+- [x] **Cross-codec test: combined configs** — Test the real-world combos: defaults+discriminator, defaults+snake_case+drop-null. These are the actual configuration patterns used in production wrappers.
 
 - [x] **Fix REAL-WORLD.md migration path** — Updated Step 2 to show three paths: (a) auto for standard types, (b) semi-auto with matching config for configured types, (c) extend centralized wrapper for codebases with one. Honest about what the hot path swap requires.
 
@@ -52,7 +52,7 @@ Real codebases use configured derivation for the vast majority of types (default
 
   This is the strongest proof that the REAL-WORLD.md migration path actually works. Without it, the HTTP hot path swap is a theoretical claim.
 
-- [ ] **Strict decoding** — `JsoniterConfiguration.withStrictDecoding` config option exists but is not wired into the runtime. Implement: reject unknown fields during decoding. ~18 call sites in typical codebases use strict decoding via direct `ConfiguredCodec.derived`.
+- [x] **Strict decoding** — `JsoniterConfiguration.withStrictDecoding` config option exists but is not wired into the runtime. Implement: reject unknown fields during decoding. ~18 call sites in typical codebases use strict decoding via direct `ConfiguredCodec.derived`.
 
 - [ ] **Migration guide for configured codebases** — Document the pattern for codebases with centralized configuration wrappers: extend the wrapper to derive both circe and jsoniter codecs side by side. Show how `deriveCodecWithDefaults` gets a parallel `deriveJsoniterCodecWithDefaults`. One-time wrapper change, not per-type.
 
