@@ -177,7 +177,7 @@ These cover the most common circe derivation patterns in real-world codebases.
 
 - [x] **Sub-trait support**: Sealed trait variants that are nested sealed traits (currently must be case classes or case objects)
 - [x] **Either codec**: Support `Either[L, R]` with `{"Left": value}` / `{"Right": value}` format (matching circe's `disjunctionCodecs`)
-- [ ] **Non-string map keys**: Support `Map[K, V]` where K is not String (encode as array of pairs, matching circe's `MapCodecs` pattern)
+- [x] **Non-string map keys**: Support `Map[K, V]` where K is not String — keys stringified via `KeyCodec[K]` (matching circe's `KeyEncoder`/`KeyDecoder` pattern)
 
 ### P2 — Enables complete replacement
 

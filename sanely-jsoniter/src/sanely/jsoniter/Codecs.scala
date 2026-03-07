@@ -189,6 +189,30 @@ object Codecs:
           if !in.isNextToken('}') then in.objectEndOrCommaError()
           result
 
+  def map[K, V](keyCodec: KeyCodec[K], valueCodec: JsonValueCodec[V]): JsonValueCodec[Map[K, V]] = new JsonValueCodec[Map[K, V]]:
+    val nullValue: Map[K, V] = null
+    def encodeValue(x: Map[K, V], out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeObjectStart()
+        x.foreach { (k, v) =>
+          out.writeKey(keyCodec.encode(k))
+          valueCodec.encodeValue(v, out)
+        }
+        out.writeObjectEnd()
+    def decodeValue(in: JsonReader, default: Map[K, V]): Map[K, V] =
+      if !in.isNextToken('{') then
+        in.readNullOrTokenError(default, '{')
+      else
+        val buf = Map.newBuilder[K, V]
+        if !in.isNextToken('}') then
+          in.rollbackToken()
+          buf += (keyCodec.decode(in.readKeyAsString()) -> valueCodec.decodeValue(in, valueCodec.nullValue))
+          while in.isNextToken(',') do
+            buf += (keyCodec.decode(in.readKeyAsString()) -> valueCodec.decodeValue(in, valueCodec.nullValue))
+          if !in.isCurrentToken('}') then in.objectEndOrCommaError()
+        buf.result()
+
   def stringMap[V](inner: JsonValueCodec[V]): JsonValueCodec[Map[String, V]] = new JsonValueCodec[Map[String, V]]:
     val nullValue: Map[String, V] = null
     def encodeValue(x: Map[String, V], out: JsonWriter): Unit =
