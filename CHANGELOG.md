@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.16.0] - 2026-03-07
+
+### Performance
+- **Constructor-level negative cache (P2)** — added `constructorNegCache` across all 6 macro files. When a type constructor (e.g., `Paginated`) is first encountered and `summonIgnoring` returns `None`, the constructor is cached. Subsequent encounters with different type args (e.g., `Paginated[Money2]`, `Paginated[MetricVal]`) skip `summonIgnoring` entirely (~5.5ms saved per skip). 142 cache hits across 398 macro expansions in the benchmark suite.
+- **Emit `val` instead of `lazy val` for non-recursive types (P3)** — added `MacroUtils.isRecursiveType` pre-check that traverses the type graph to detect if `selfRef` would ever be used. Non-recursive types (the vast majority) now return the encoder/decoder expression directly — no `lazy val`, no `LazyRef`, no `lzyINIT` method. Reduces bytecode size and method count.
+- **Auto benchmark**: 2.56s, **3.6x faster** than circe-generic (9.25s) — was 2.11s/2.9x in v0.15.0
+- **Configured benchmark**: 1.27s, **2.2x faster** than circe-core (2.74s) — was 1.39s/1.9x in v0.15.0
+- **Compiler work**: -47% (825 vs 1,558 samples)
+- **Memory**: -63% allocations, -21% peak RSS (893 MB vs 1,133 MB)
+- **Bytecode**: -22% total bytes, -9.7% methods (auto derivation)
+
+### Fixed
+- **Discriminator slow path fails on null field values** — configured decoder no longer crashes when a JSON object has null-valued fields during discriminator-based sum type decoding
+
 ## [0.15.0] - 2026-03-07
 
 ### sanely-jsoniter — new module
