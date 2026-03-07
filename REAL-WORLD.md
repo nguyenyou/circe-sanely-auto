@@ -11,7 +11,17 @@ In mature Scala codebases, circe stops being "just a JSON library" and becomes i
 - **Deep framework coupling** — HTTP frameworks (Tapir, http4s) wired to circe's `Encoder[T]`/`Decoder[T]` at the codec layer, with 1,000+ endpoint definitions
 - **Tree manipulation everywhere** — `.deepMerge()`, `.mapObject()`, `Json.obj()` for event schemas, analytics, API construction
 
-You cannot remove circe from such a codebase. The `Json` AST is embedded in domain models, API contracts, framework integrations, and business logic. Any improvement must be incremental.
+circe shows up in nearly every layer of the system:
+
+- **HTTP endpoints** — A central Tapir codec wires `Encoder[T]`/`Decoder[T]` for every API route. Every request and response goes through circe
+- **Object storage (S3)** — Domain objects are serialized to JSON with `writeToString(formData.asJson)` before uploading to S3, and deserialized back when reading. circe is the storage format
+- **Structured logging** — Log entries are serialized to JSON for ingestion by observability pipelines (some teams use jsoniter directly for the log struct, but the domain data inside is still circe-encoded)
+- **CDC / event pipelines** — Change data capture events are built with `Json.obj()`, `.deepMerge()`, and cursor navigation, then published to message queues
+- **Caching layers** — Redis and in-memory caches store circe `Json` or circe-encoded strings. The cache contract assumes circe's format
+- **Configuration** — Application config parsed through circe decoders with defaults, discriminators, and custom transforms via `Configuration`
+- **Cross-service protocols** — Shared endpoint definitions use circe codecs as the contract between frontend (Scala.js) and backend (JVM)
+
+You cannot remove circe from such a codebase. The `Json` AST is embedded in domain models, API contracts, storage formats, event schemas, and business logic. Any improvement must be incremental.
 
 ## Two independent performance problems
 
