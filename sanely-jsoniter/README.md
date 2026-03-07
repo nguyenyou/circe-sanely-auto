@@ -182,7 +182,7 @@ These cover the most common circe derivation patterns in real-world codebases.
 ### P2 — Enables complete replacement
 
 - [ ] **Protobuf codec bridge**: Support ScalaPB `GeneratedMessage`/`GeneratedEnum` types (matching `scalapb_circe` JSON format)
-- [ ] **Value enum codecs**: Support custom value enum types (e.g. `StringEnum`/`IntEnum`) where the enum value is a raw string or int, not the case name. Currently requires manual `Codec.from(decoder.emap(...), encoder.contramap(...))` — could be macro-derived.
+- [x] **Value enum codecs**: `Codecs.stringValueEnum` and `Codecs.intValueEnum` — encode by associated value (not case name). E.g. `Status.Active` → `"active"`, `Priority.High` → `3`.
 
 ### Done
 
