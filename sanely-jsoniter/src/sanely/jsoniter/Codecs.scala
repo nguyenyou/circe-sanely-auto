@@ -160,6 +160,35 @@ object Codecs:
           if !in.isCurrentToken(']') then in.arrayEndOrCommaError()
         buf.result()
 
+  def either[L, R](leftCodec: JsonValueCodec[L], rightCodec: JsonValueCodec[R]): JsonValueCodec[Either[L, R]] =
+    new JsonValueCodec[Either[L, R]]:
+      val nullValue: Either[L, R] = null
+      def encodeValue(x: Either[L, R], out: JsonWriter): Unit =
+        if x == null then out.writeNull()
+        else
+          out.writeObjectStart()
+          x match
+            case Left(v) =>
+              out.writeNonEscapedAsciiKey("Left")
+              leftCodec.encodeValue(v, out)
+            case Right(v) =>
+              out.writeNonEscapedAsciiKey("Right")
+              rightCodec.encodeValue(v, out)
+          out.writeObjectEnd()
+      def decodeValue(in: JsonReader, default: Either[L, R]): Either[L, R] =
+        if !in.isNextToken('{') then
+          in.readNullOrTokenError(default, '{')
+        else
+          val key = in.readKeyAsString()
+          val result =
+            if key == "Left" then Left(leftCodec.decodeValue(in, leftCodec.nullValue))
+            else if key == "Right" then Right(rightCodec.decodeValue(in, rightCodec.nullValue))
+            else
+              in.decodeError(s"Expected 'Left' or 'Right' key for Either, got: $key")
+              default
+          if !in.isNextToken('}') then in.objectEndOrCommaError()
+          result
+
   def stringMap[V](inner: JsonValueCodec[V]): JsonValueCodec[Map[String, V]] = new JsonValueCodec[Map[String, V]]:
     val nullValue: Map[String, V] = null
     def encodeValue(x: Map[String, V], out: JsonWriter): Unit =

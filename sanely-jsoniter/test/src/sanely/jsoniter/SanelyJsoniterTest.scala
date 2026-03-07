@@ -37,6 +37,10 @@ case object Chicken extends Farm
 // Recursive type
 case class Tree(value: String, children: List[Tree])
 
+// Either types
+case class WithEither(result: Either[String, Int])
+case class WithNestedEither(data: Either[String, List[Int]])
+
 // Types with defaults
 case class WithDefaults(name: String, age: Int = 25, active: Boolean = true)
 case class WithDefaultOption(name: String, tag: Option[String] = Some("default"))
@@ -93,6 +97,8 @@ object SanelyJsoniterTest extends TestSuite:
   given JsonValueCodec[Color] = deriveJsoniterEnumCodec
   given JsonValueCodec[Direction] = deriveJsoniterEnumCodec
   given JsonValueCodec[Animal] = deriveJsoniterEnumCodec
+  given JsonValueCodec[WithEither] = deriveJsoniterCodec
+  given JsonValueCodec[WithNestedEither] = deriveJsoniterCodec
 
   private def roundtrip[A: JsonValueCodec](value: A): A =
     val json = writeToString(value)
@@ -570,6 +576,65 @@ object SanelyJsoniterTest extends TestSuite:
       assert(json == """{"LeafA1":{"x":42}}""")
       val decoded = readFromString[ADTWithSub](json)
       assert(decoded == v)
+    }
+
+    // === Either codec tests ===
+
+    test("either - Right value round-trip") {
+      val v = WithEither(Right(42))
+      val json = writeToString(v)
+      assert(json.contains(""""result":{"Right":42}"""))
+      val decoded = readFromString[WithEither](json)
+      assert(decoded == v)
+    }
+
+    test("either - Left value round-trip") {
+      val v = WithEither(Left("error"))
+      val json = writeToString(v)
+      assert(json.contains(""""result":{"Left":"error"}"""))
+      val decoded = readFromString[WithEither](json)
+      assert(decoded == v)
+    }
+
+    test("either - nested Either[String, List[Int]]") {
+      val v = WithNestedEither(Right(List(1, 2, 3)))
+      val decoded = roundtrip(v)
+      assert(decoded == v)
+
+      val v2 = WithNestedEither(Left("fail"))
+      val decoded2 = roundtrip(v2)
+      assert(decoded2 == v2)
+    }
+
+    test("either - circe format compatibility") {
+      import io.circe.{Encoder, Decoder, *}
+      import io.circe.disjunctionCodecs.given
+      import io.circe.generic.semiauto.{deriveEncoder, deriveDecoder}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+
+      // WithEither has an Either[String, Int] field — circe needs disjunctionCodecs for Either
+      given Encoder[WithEither] = deriveEncoder
+      given Decoder[WithEither] = deriveDecoder
+
+      val right = WithEither(Right(42))
+      val left = WithEither(Left("err"))
+
+      // jsoniter -> circe (Right)
+      val jRight = writeToString(right)
+      assert(circeDecode[WithEither](jRight) == Right(right))
+
+      // jsoniter -> circe (Left)
+      val jLeft = writeToString(left)
+      assert(circeDecode[WithEither](jLeft) == Right(left))
+
+      // circe -> jsoniter (Right)
+      val cRight = (right: WithEither).asJson.noSpaces
+      assert(readFromString[WithEither](cRight) == right)
+
+      // circe -> jsoniter (Left)
+      val cLeft = (left: WithEither).asJson.noSpaces
+      assert(readFromString[WithEither](cLeft) == left)
     }
 
     test("enum - circe format compatibility") {
