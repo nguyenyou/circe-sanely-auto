@@ -11,11 +11,12 @@ val scalaJSVersion = "1.20.2"
 
 object demo extends ScalaModule {
   def scalaVersion = scala3Version
-  def moduleDeps = Seq(sanely.jvm)
+  def moduleDeps = Seq(sanely.jvm, `sanely-jsoniter`.jvm)
   def mvnDeps = Task {
     super.mvnDeps() ++ Seq(
       mvn"io.circe::circe-core:$circeVersion",
-      mvn"io.circe::circe-parser:$circeVersion"
+      mvn"io.circe::circe-parser:$circeVersion",
+      mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::$jsoniterScalaVersion",
     )
   }
 }
