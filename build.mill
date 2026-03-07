@@ -7,6 +7,7 @@ val circeVersion = "0.14.15"
 val jsoniterScalaVersion = "2.38.9"
 val utestVersion = "0.10.0-RC1"
 val scala3Version = "3.8.2"
+val scalaJSVersion = "1.20.2"
 
 object demo extends ScalaModule {
   def scalaVersion = scala3Version
