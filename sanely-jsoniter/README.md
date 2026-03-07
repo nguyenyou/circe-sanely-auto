@@ -162,12 +162,31 @@ That's it. The JSON on the wire is identical, so no client changes are needed.
 
 ## Roadmap
 
+Prioritized for enabling migration from circe-based codebases — replacing the circe intermediary in HTTP layers (e.g. `readFromString[io.circe.Json]` + `json.as[T]` → direct `readFromString[T]`).
+
+### P0 — Blocks migration
+
+These cover the most common circe derivation patterns in real-world codebases.
+
+- [ ] **Configured derivation: `withDefaults`** — Decode missing fields using companion default values. The most common configured derivation pattern (`Configuration.default.withDefaults`).
+- [ ] **Configured derivation: discriminator** — Sum type tagging via `withDiscriminator(field)`. Required for sealed trait hierarchies that use a type discriminator field.
+- [ ] **Configured derivation: snake_case member names** — `withSnakeCaseMemberNames` for external API integration where JSON uses `snake_case` but Scala uses `camelCase`.
+- [ ] **Drop-null encoder** — Omit `null`-valued fields from JSON output. In circe this requires post-processing (`.mapJsonObject(_.filter(!_._2.isNull))`) — jsoniter can do this natively by skipping null field writes.
+
+### P1 — Enables full hot-path optimization
+
 - [ ] **Sub-trait support**: Sealed trait variants that are nested sealed traits (currently must be case classes or case objects)
-- [ ] **Configured derivation**: Field name transforms, discriminators, and strict decoding
-- [x] **Enum string codec**: Encode enum cases as strings (`"Red"`) instead of empty-object variants (`{"Red":{}}`)
-- [ ] **Non-string map keys**: Support `Map[K, V]` where K is not String (encode as array of pairs, matching circe's `MapCodecs` pattern)
 - [ ] **Either codec**: Support `Either[L, R]` with configurable field names (matching circe's `encodeEither`/`decodeEither`)
+- [ ] **Non-string map keys**: Support `Map[K, V]` where K is not String (encode as array of pairs, matching circe's `MapCodecs` pattern)
+
+### P2 — Enables complete replacement
+
 - [ ] **Protobuf codec bridge**: Support ScalaPB `GeneratedMessage`/`GeneratedEnum` types (matching `scalapb_circe` JSON format)
+- [ ] **Value enum codecs**: Support custom value enum types (e.g. `StringEnum`/`IntEnum`) where the enum value is a raw string or int, not the case name. Currently requires manual `Codec.from(decoder.emap(...), encoder.contramap(...))` — could be macro-derived.
+
+### Done
+
+- [x] **Enum string codec**: Encode enum cases as strings (`"Red"`) instead of empty-object variants (`{"Red":{}}`)
 - [x] **Scala.js support**: Cross-compile for Scala.js
 
 ## Dependencies
