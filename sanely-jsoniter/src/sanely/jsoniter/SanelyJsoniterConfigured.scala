@@ -89,7 +89,7 @@ object SanelyJsoniterConfigured:
           $mirror, $namesExpr, $conf.transformMemberNames,
           () => $codecsArrayExpr, $nullValuesExpr,
           $hasDefaultArrayExpr, $defaultsArrayExpr, $isOptionArrayExpr,
-          $conf.useDefaults, $conf.dropNullValues)
+          $conf.useDefaults, $conf.dropNullValues, $conf.strictDecoding)
       }
 
     // === Sum derivation (configured) ===
@@ -118,7 +118,7 @@ object SanelyJsoniterConfigured:
             case '[t] => '{ ${codec.asInstanceOf[Expr[JsonValueCodec[t]]]}.asInstanceOf[JsonValueCodec[Any]] }
         }
         val codecsArrayExpr = '{ Array(${Varargs(codecExprs)}*) }
-        '{ JsoniterRuntime.configuredSumCodec[S]($mirror, $labelsExpr, $conf.transformConstructorNames, $conf.discriminator, () => $codecsArrayExpr) }
+        '{ JsoniterRuntime.configuredSumCodec[S]($mirror, $labelsExpr, $conf.transformConstructorNames, $conf.discriminator, () => $codecsArrayExpr, $conf.strictDecoding) }
       else
         val directLabelsExpr = Expr(cases.map(_._1).toArray)
         val isSubTraitExpr = Expr(casesWithSubTrait.map(_._4).toArray)
@@ -147,7 +147,7 @@ object SanelyJsoniterConfigured:
           $mirror, $directLabelsExpr, $isSubTraitExpr,
           $conf.transformConstructorNames, $conf.discriminator,
           () => $directCodecsArrayExpr,
-          $allLeafLabelsExpr, () => $allLeafCodecsArrayExpr) }
+          $allLeafLabelsExpr, () => $allLeafCodecsArrayExpr, $conf.strictDecoding) }
 
     // === Sub-trait leaf collection ===
 

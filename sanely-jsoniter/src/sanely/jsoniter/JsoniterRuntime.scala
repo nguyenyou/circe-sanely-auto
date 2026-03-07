@@ -142,7 +142,8 @@ object JsoniterRuntime:
     discriminator: Option[String],
     initDirectCodecs: () => Array[JsonValueCodec[Any]],
     rawAllLeafLabels: Array[String],
-    initAllLeafCodecs: () => Array[JsonValueCodec[Any]]
+    initAllLeafCodecs: () => Array[JsonValueCodec[Any]],
+    strictDecoding: Boolean = false
   ): JsonValueCodec[S] =
     val directLabels = rawDirectLabels.map(transformConstructorNames)
     val allLeafLabels = rawAllLeafLabels.map(transformConstructorNames)
@@ -186,7 +187,8 @@ object JsoniterRuntime:
     defaults: Array[Any],
     isOption: Array[Boolean],
     useDefaults: Boolean,
-    dropNullValues: Boolean
+    dropNullValues: Boolean,
+    strictDecoding: Boolean = false
   ): JsonValueCodec[P] =
     val names = rawNames.map(transformMemberNames)
     new InlineFieldsCodec[P]:
@@ -200,7 +202,7 @@ object JsoniterRuntime:
 
       def decodeValue(in: JsonReader, default: P): P =
         if in.isNextToken('{') then
-          decodeProductConfigured(in, mirror, names, _codecs, nullValues, hasDefaults, defaults, isOption, useDefaults)
+          decodeProductConfigured(in, mirror, names, _codecs, nullValues, hasDefaults, defaults, isOption, useDefaults, strictDecoding)
         else
           in.readNullOrTokenError(default, '{')
 
@@ -245,7 +247,10 @@ object JsoniterRuntime:
                 results(i) = _codecs(i).decodeValue(in, nullValues(i))
                 matched = true
               i += 1
-            if !matched then in.skip()
+            if !matched then
+              if strictDecoding then
+                in.decodeError(s"Strict decoding: unexpected field; valid fields: ${names.mkString(", ")}")
+              else in.skip()
             continue = in.isNextToken(',')
           if !in.isCurrentToken('}') then in.objectEndOrCommaError()
         else if !in.isCurrentToken('}') then
@@ -259,7 +264,8 @@ object JsoniterRuntime:
     rawLabels: Array[String],
     transformConstructorNames: String => String,
     discriminator: Option[String],
-    initCodecs: () => Array[JsonValueCodec[Any]]
+    initCodecs: () => Array[JsonValueCodec[Any]],
+    strictDecoding: Boolean = false
   ): JsonValueCodec[S] =
     val labels = rawLabels.map(transformConstructorNames)
     discriminator match
@@ -292,7 +298,11 @@ object JsoniterRuntime:
                 default
               else
                 val result = _codecs(idx).decodeValue(in, _codecs(idx).nullValue)
-                if !in.isNextToken('}') then in.objectEndOrCommaError()
+                if strictDecoding then
+                  if !in.isNextToken('}') then
+                    in.decodeError(s"Strict decoding: expected a single key object with one of: ${labels.mkString(", ")}")
+                else
+                  if !in.isNextToken('}') then in.objectEndOrCommaError()
                 result.asInstanceOf[S]
 
       case Some(disc) => // discriminator tagging (flat: fields inline with discriminator)
@@ -508,7 +518,8 @@ object JsoniterRuntime:
     names: Array[String], codecs: Array[JsonValueCodec[Any]],
     nullValues: Array[Any],
     hasDefaults: Array[Boolean], defaults: Array[Any],
-    isOption: Array[Boolean], useDefaults: Boolean
+    isOption: Array[Boolean], useDefaults: Boolean,
+    strictDecoding: Boolean = false
   ): P =
     val n = names.length
     val results = new Array[Any](n)
@@ -534,7 +545,10 @@ object JsoniterRuntime:
             results(i) = codecs(i).decodeValue(in, nullValues(i))
             matched = true
           i += 1
-        if !matched then in.skip()
+        if !matched then
+          if strictDecoding then
+            in.decodeError(s"Strict decoding: unexpected field; valid fields: ${names.mkString(", ")}")
+          else in.skip()
         continue = in.isNextToken(',')
       if !in.isCurrentToken('}') then in.objectEndOrCommaError()
     mirror.fromProduct(new ArrayProduct(results))
