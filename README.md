@@ -48,17 +48,27 @@ This library replaces circe-generic with a macro that derives everything in one 
 
 That's it. Same JSON format, same API, same behavior. Everything else stays the same.
 
-### Faster runtime with jsoniter-scala-circe
+### Faster runtime serialization
 
-For even better runtime performance, pair with [jsoniter-scala-circe](https://github.com/plokhotnyuk/jsoniter-scala) — it replaces circe's JSON parser with jsoniter-scala's faster one while keeping all your circe codecs unchanged:
+circe-sanely-auto fixes compile time. For **runtime** performance, there are two options depending on how much speedup you need:
+
+**Runtime benchmark** (~1.4 KB JSON payload with nested products, sealed traits, optional fields — M3 Max, JDK 25):
+
+| Approach | Reading (ops/sec) | | Writing (ops/sec) | |
+|---|---|---|---|---|
+| **circe + jawn** (baseline) | ~140K | 1.0x | ~128K | 1.0x |
+| **circe + jsoniter bridge** | ~207K | **1.5x** | ~113K | 0.9x |
+| **sanely-jsoniter** (experimental) | **~476K** | **3.4x** | **~576K** | **4.5x** |
+| jsoniter-scala native | ~696K | 5.0x | ~738K | 5.8x |
+
+#### Option 1: jsoniter-scala-circe bridge (1.5x read, drop-in)
+
+Pair with [jsoniter-scala-circe](https://github.com/plokhotnyuk/jsoniter-scala) — it replaces circe's jawn parser with jsoniter-scala's faster one while keeping all your circe codecs unchanged:
 
 ```scala
-// Add jsoniter-scala-circe alongside sanely-auto
 mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core:2.38.9"
 mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-circe:2.38.9"
 ```
-
-Use jsoniter-scala's parser for reading (1.5x faster) and circe's default printer for writing (already optimal):
 
 ```scala
 import io.circe.*
@@ -76,17 +86,29 @@ val user = readFromArray[Json](jsonBytes).as[User].toOption.get
 val bytes = Printer.noSpaces.print(user.asJson).getBytes("UTF-8")
 ```
 
-Your `Encoder`/`Decoder` instances (whether from sanely-auto, semi-auto, or hand-written) are untouched — only the reading parser changes.
+Swap two imports, decoding gets 50% faster. The `Json` AST is still allocated on every request — the bridge just parses bytes faster.
 
-**Runtime benchmark** (1.2 KB JSON payload, M3 Max, JDK 25):
+#### Option 2: sanely-jsoniter (3-5x, experimental)
 
-| | Reading (ops/sec) | | Writing (ops/sec) | |
-|---|---|---|---|---|
-| **circe + jawn** (baseline) | 151,191 | 1.0x | 138,259 | 1.0x |
-| **circe + jsoniter parser** | 230,501 | **1.5x** | 134,789 | 1.0x |
-| **jsoniter-scala native** | 905,596 | **6.0x** | 729,633 | **5.3x** |
+[sanely-jsoniter](sanely-jsoniter/) eliminates the `Json` tree entirely. It generates `JsonValueCodec[T]` instances (jsoniter-scala's codec type) that go directly from bytes to domain objects — no intermediate AST allocation. The generated codecs produce **identical JSON** to circe, so the wire format stays the same.
 
-The combo gives a **1.5x reading speedup** within the circe ecosystem — swap two imports and decoding gets 50% faster. For writing, stick with circe's default `Printer` — it's already optimized for circe's own `Json` AST and slightly outperforms the jsoniter bridge. For maximum runtime performance in both directions, use jsoniter-scala directly.
+```scala
+mvn"io.github.nguyenyou::sanely-jsoniter:0.13.0"
+```
+
+```scala
+import sanely.jsoniter.auto.given  // auto-derives JsonValueCodec for all types
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+
+case class User(name: String, age: Int)
+
+val json = writeToString(User("Alice", 30))  // {"name":"Alice","age":30}
+val user = readFromString[User](json)        // User(Alice, 30)
+```
+
+Both circe codecs and jsoniter codecs can coexist — they're different types, no conflicts. circe stays for everything that needs the `Json` AST (cursor navigation, tree merging, programmatic construction). Only the serialization hot path changes.
+
+See the [sanely-jsoniter README](sanely-jsoniter/README.md) for full documentation, supported types, configured derivation, and migration guide.
 
 ## How it works
 
@@ -405,7 +427,7 @@ Every release automatically triggers a [benchmark workflow](.github/workflows/be
 |---|---|
 | **compile-auto** | Compile time — auto derivation (~300 types), sanely vs circe-generic |
 | **compile-configured** | Compile time — configured derivation (~230 types), sanely vs circe-core |
-| **runtime** | Encoding/decoding throughput — circe-jawn vs circe+jsoniter vs jsoniter-scala |
+| **runtime** | Encoding/decoding throughput — circe-jawn vs circe+jsoniter vs sanely-jsoniter vs jsoniter-scala |
 | **macro-profile-auto** | Macro expansion profiling — auto derivation (308 expansions) |
 | **macro-profile-configured** | Macro expansion profiling — configured derivation (230 expansions) |
 
@@ -429,7 +451,7 @@ Requires [Mill](https://mill-build.org/) 1.1.2+.
 ./mill compat.jvm.test       # circe compatibility tests (JVM)
 ./mill compat.js.test        # circe compatibility tests (Scala.js)
 ./mill demo.run              # run demo
-bash bench-runtime.sh        # runtime benchmark (circe vs circe+jsoniter vs jsoniter-scala)
+bash bench-runtime.sh        # runtime benchmark (circe vs circe+jsoniter vs sanely-jsoniter vs jsoniter-scala)
 ```
 
 ## How it's made
