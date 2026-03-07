@@ -2,8 +2,10 @@ package build
 
 import mill._, scalalib._, publish._
 
+val publishVersion = "0.14.0"
 val circeVersion = "0.14.15"
 val jsoniterScalaVersion = "2.38.9"
+val utestVersion = "0.10.0-RC1"
 val scala3Version = "3.8.2"
 
 object demo extends ScalaModule {
