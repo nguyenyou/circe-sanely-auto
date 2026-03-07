@@ -137,7 +137,7 @@ The compatibility contract: encode with sanely-jsoniter, decode with circe (or v
 
 Every module that derives circe codecs compiles faster. No code changes beyond the import.
 
-### Step 2: Runtime hot path (one dependency + one file)
+### Step 2: Runtime hot path
 
 Add sanely-jsoniter alongside circe-sanely-auto:
 
@@ -145,7 +145,7 @@ Add sanely-jsoniter alongside circe-sanely-auto:
 + mvn"io.github.nguyenyou::sanely-jsoniter:0.14.0"
 ```
 
-Then in the central HTTP codec (the one file that all endpoints go through):
+Then swap the central HTTP codec (the one file that all endpoints go through) from circe's `Json` tree to direct jsoniter codecs:
 
 ```diff
 - val json = readFromString[io.circe.Json](s)  // still allocates Json tree
@@ -158,7 +158,52 @@ Then in the central HTTP codec (the one file that all endpoints go through):
 + writeToString(t)         // direct serialization
 ```
 
-With `sanely-jsoniter.auto.given` imported, `JsonValueCodec[T]` instances are auto-derived for all domain types. One import, one file change, 5x throughput on every API endpoint.
+For this to work, every domain type `T` needs a `JsonValueCodec[T]` in scope. How much work that takes depends on how the codebase derives its circe codecs:
+
+**Simple case — standard derivation (no configuration):**
+
+If types use plain `deriveCodec` or `import auto.given` without any `Configuration`, one import is enough:
+
+```scala
+import sanely.jsoniter.auto.given  // auto-derives JsonValueCodec for all types
+```
+
+**Common case — configured derivation (defaults, discriminator, snake_case):**
+
+Most real codebases use configured derivation — `withDefaults`, `withDiscriminator("type")`, `withSnakeCaseMemberNames`, drop-null encoding. These types need **matching** jsoniter configuration, because the JSON format differs from standard encoding:
+
+| Config | Standard JSON | Configured JSON |
+|---|---|---|
+| `withDiscriminator("type")` | `{"Car":{"make":"Toyota"}}` | `{"type":"Car","make":"Toyota"}` |
+| `withSnakeCaseMemberNames` | `{"firstName":"Alice"}` | `{"first_name":"Alice"}` |
+| `withDefaults` | Encoding identical, but decode must handle missing fields | |
+
+For configured types, derive jsoniter codecs with matching config using semi-auto derivation:
+
+```scala
+import sanely.jsoniter.semiauto.*
+import sanely.jsoniter.JsoniterConfiguration
+
+given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+given JsonValueCodec[User] = deriveJsoniterConfiguredCodec
+```
+
+**Practical case — centralized config wrapper:**
+
+Many large codebases already have a centralized derivation wrapper (e.g., `deriveCodecWithDefaults`, `deriveCodecWithSnakeCaseAndDefaults`). In that case, extend the wrapper once to derive both circe and jsoniter codecs:
+
+```scala
+// Before: wrapper derives only circe codec
+inline def deriveCodecWithDefaults[A](using inline m: Mirror.Of[A]): Codec.AsObject[A] = ...
+
+// After: add a parallel jsoniter method
+inline def deriveJsoniterCodecWithDefaults[A](using inline m: Mirror.Of[A]): JsonValueCodec[A] = {
+  given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+  deriveJsoniterConfiguredCodec
+}
+```
+
+This is a one-time change to the wrapper, not a per-type change. Types that need jsoniter codecs add one line alongside their existing circe codec.
 
 ### What stays on circe (everything else)
 
@@ -176,8 +221,16 @@ Both codec systems coexist — `JsonValueCodec[T]` and `Encoder[T]`/`Decoder[T]`
 |---|---|---|
 | **Compile time** | Slow implicit search chains | Single macro expansion (~2x faster) |
 | **Runtime (hot path)** | bytes -> Json tree -> T (1.0-1.5x) | bytes -> T directly (5x) |
-| **Migration cost** | — | 1 dep swap + 1 file for the hot path |
+| **Migration cost** | — | 1 dep swap for compile time; hot path requires matching jsoniter codecs per configuration variant |
 | **circe compatibility** | N/A | Same JSON format, coexists with circe |
-| **Risk** | — | Zero for compile time; hot path is opt-in |
+| **Risk** | — | Zero for compile time; hot path is opt-in and incremental |
 
 The goal is not to replace circe. It's to make circe fast where it matters — compile time across the board, and runtime on the serialization boundary — while leaving everything else untouched.
+
+## Current status (sanely-jsoniter)
+
+sanely-jsoniter's core derivation engine is complete — products, sum types, enums, recursive types, sub-trait hierarchies, Either, non-string map keys, and all configured derivation options (defaults, discriminator, snake_case, drop-null, arbitrary name transforms).
+
+**What's ready today**: semi-auto derivation with all configuration options, auto derivation for standard types, cross-codec tests proving format compatibility with circe for products, sums, enums, either, sub-traits, maps, defaults, and snake_case.
+
+**What's still in progress**: auto-configured derivation (so configured types don't need explicit semi-auto calls), cross-codec tests for discriminator and drop-null, Tapir integration tests, strict decoding, and a migration guide for configured codebases. See the [sanely-jsoniter ROADMAP](sanely-jsoniter/ROADMAP.md) for the full tracker.
