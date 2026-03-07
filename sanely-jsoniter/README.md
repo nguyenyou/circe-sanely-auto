@@ -34,6 +34,49 @@ T  -->  JsonValueCodec[T]  -->  HTTP response bytes
 
 This is 3-5x faster because jsoniter-scala streams tokens directly without allocating intermediate `Json` nodes. The key insight: **this only works for the serialization boundary**, not for code that genuinely needs the JSON tree (cursor navigation, merging, programmatic construction). Those parts stay on circe.
 
+## Where sanely-jsoniter fits
+
+```
+                        Your Scala Application
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         │                       │                       │
+  Business Logic          Cursor Navigation       Tree Manipulation
+  (typed domain)          .hcursor.downField      .deepMerge, Json.obj
+         │                       │                       │
+         │                 circe Json AST          circe Json AST
+         │                 (must stay circe)       (must stay circe)
+         │
+         ▼
+ ┌───────────────┐
+ │     Tapir     │  endpoint descriptions: jsonBody[T], paths, headers
+ └───────┬───────┘
+         │
+         │  needs: T ↔ bytes   ◄── THIS is the hot path
+         │
+    ┌────┴────┐
+    │         │
+    ▼         ▼
+tapir-json  tapir-jsoniter
+  -circe      -scala
+    │         │
+    │         │  JsonValueCodec[T]
+    │         │         ▲
+    │         │    ┌────┴─────┐
+    │         │    │ sanely-  │
+    │         │    │ jsoniter │  circe-compatible derivation
+    │         │    └──────────┘
+    │         │
+    ▼         ▼
+Json tree   direct streaming
+(allocate)  (zero alloc)
+    │         │
+ ~150K      ~800K ops/sec
+ ops/sec    (5x faster)
+```
+
+Tapir is the **HTTP boundary** — where every request/response passes through. It doesn't serialize anything itself; the integration module (`tapir-json-circe` vs `tapir-jsoniter-scala`) decides how `T` becomes bytes. sanely-jsoniter provides the `JsonValueCodec[T]` that `tapir-jsoniter-scala` needs, producing **circe-compatible JSON** so the wire format stays identical.
+
 ## What this module does
 
 Generates `JsonValueCodec[A]` instances (jsoniter-scala's codec type) that produce **identical JSON** to what circe would produce. This means:
