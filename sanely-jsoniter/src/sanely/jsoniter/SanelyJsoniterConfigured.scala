@@ -332,6 +332,36 @@ object SanelyJsoniterConfigured:
                   Some('{ Codecs.stringMap[v]($vc) }.asInstanceOf[Expr[JsonValueCodec[T]]])
                 case _ => None
             }
+          case AppliedType(tycon, List(leftArg, rightArg))
+            if tycon.typeSymbol.fullName == "scala.util.Either" =>
+            def resolveArg(arg: TypeRepr): Option[Expr[JsonValueCodec[?]]] =
+              val argKey = cheapTypeKey(arg)
+              val fromCache: Option[Expr[JsonValueCodec[?]]] =
+                if negativeBuiltinCache.contains(argKey) then exprCache.get(argKey).map(_.asInstanceOf[Expr[JsonValueCodec[?]]])
+                else resolvePrimCodec(arg.dealias).orElse(exprCache.get(argKey).map(_.asInstanceOf[Expr[JsonValueCodec[?]]]))
+              fromCache.orElse {
+                arg.asType match
+                  case '[a] =>
+                    Expr.summonIgnoring[JsonValueCodec[a]](cachedIgnoreSymbols*).map { codec =>
+                      exprCache(argKey) = codec
+                      codec: Expr[JsonValueCodec[?]]
+                    }
+              }.orElse {
+                arg.asType match
+                  case '[a] =>
+                    tryResolveBuiltin[a](arg.dealias).map { codec =>
+                      exprCache(argKey) = codec
+                      codec: Expr[JsonValueCodec[?]]
+                    }
+              }
+            (resolveArg(leftArg), resolveArg(rightArg)) match
+              case (Some(lc), Some(rc)) =>
+                (leftArg.asType, rightArg.asType) match
+                  case ('[l], '[r]) =>
+                    val leftCodec = lc.asInstanceOf[Expr[JsonValueCodec[l]]]
+                    val rightCodec = rc.asInstanceOf[Expr[JsonValueCodec[r]]]
+                    Some('{ Codecs.either[l, r]($leftCodec, $rightCodec) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+              case _ => None
           case _ => None
       }
 
