@@ -8,7 +8,7 @@
 
 Drop-in replacement for circe's auto/semi-auto/configured derivation. Scala 3.8.2+ only. Uses the "sanely-automatic" approach — Scala 3 macros with `Expr.summonIgnoring` to derive all instances in a single macro expansion, avoiding implicit search chains.
 
-**The Contract (non-negotiable)**: 100% behavioral compatibility with circe's derivation, zero compromise. If an application works with circe-generic or circe's configured derivation, switching to circe-sanely-auto must produce identical JSON output, accept identical JSON input, and yield identical error messages in every edge case. Any deviation — no matter how minor — is a bug that must be fixed before release. This overrides all other priorities including performance. We never compromise compatibility for speed, convenience, or code elegance. Only the implementation changes; the observable behavior is identical.
+**The Contract (non-negotiable)**: 100% behavioral compatibility with circe's derivation, zero compromise. If an application works with circe-generic or circe's configured derivation, switching to circe-sanely-auto or sanely-jsoniter must produce identical JSON output, accept identical JSON input, and yield identical error messages in every edge case. Any deviation — no matter how minor — is a bug that must be fixed before release. This overrides all other priorities including performance. We never compromise compatibility for speed, convenience, or code elegance. Only the implementation changes; the observable behavior is identical. Experimental status does not weaken this contract.
 
 ## Build Commands
 
