@@ -26,6 +26,7 @@ object SanelyConfiguredEncoder:
     private val exprCache = mutable.Map.empty[String, Expr[?]]
     private val negativeBuiltinCache = mutable.Set.empty[String]
     private val summonedKeys = mutable.Set.empty[String]
+    private val constructorNegCache = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Encoder.AsObject[A]] =
       if MacroUtils.isRecursiveType(selfType) then
@@ -136,23 +137,34 @@ object SanelyConfiguredEncoder:
       if containsType(dealiased, selfType) then
         return constructRecursiveEncoder[T](dealiased, selfRef)
 
-      val resolved: Expr[Encoder[T]] =
-        timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*)) match
-          case Some(enc) =>
-            summonedKeys += cacheKey
-            enc
-          case None =>
-            timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
-              case Some(mirrorExpr) =>
-                timer.time("derive") {
-                  mirrorExpr match
-                    case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                      deriveProduct[T, types, labels](m, selfRef)
-                    case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                      deriveSum[T, types, labels](m, selfRef)
-                }
-              case None =>
-                report.errorAndAbort(s"Cannot derive Encoder for ${Type.show[T]}: no implicit Encoder and no Mirror available")
+      val constructorKey = dealiased match
+        case AppliedType(tycon, _) => Some(tycon.typeSymbol.fullName)
+        case _ => None
+
+      val summonResult =
+        if constructorKey.exists(constructorNegCache.contains) then
+          timer.count("constructorNegHit")
+          None
+        else
+          val result = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedIgnoreSymbols*))
+          if result.isDefined then summonedKeys += cacheKey
+          else constructorKey.foreach(constructorNegCache += _)
+          result
+
+      val resolved: Expr[Encoder[T]] = summonResult match
+        case Some(enc) => enc
+        case None =>
+          timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
+            case Some(mirrorExpr) =>
+              timer.time("derive") {
+                mirrorExpr match
+                  case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                    deriveProduct[T, types, labels](m, selfRef)
+                  case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                    deriveSum[T, types, labels](m, selfRef)
+              }
+            case None =>
+              report.errorAndAbort(s"Cannot derive Encoder for ${Type.show[T]}: no implicit Encoder and no Mirror available")
       exprCache(cacheKey) = resolved
       resolved
 

@@ -27,6 +27,7 @@ object SanelyConfiguredCodec:
     private val exprCache = mutable.Map.empty[String, (Expr[?], Expr[?])]
     private val negativeBuiltinCache = mutable.Set.empty[String]
     private val summonedKeys = mutable.Set.empty[String]
+    private val constructorNegCache = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Codec.AsObject[A]] =
       if MacroUtils.isRecursiveType(selfType) then
@@ -339,20 +340,33 @@ object SanelyConfiguredCodec:
         val dec = constructRecursiveDecoder[T](tpe, selfDecRef)
         return (enc, dec)
 
-      // Codec-first fast path: single summonIgnoring instead of two
-      val summonedCodec = timer.time("summonIgnoring")(Expr.summonIgnoring[Codec.AsObject[T]](cachedCodecIgnoreSymbols*))
-      summonedCodec match
-        case Some(codec) =>
-          timer.count("codecHit")
-          summonedKeys += cacheKey
-          val pair = (codec.asInstanceOf[Expr[Encoder[T]]], codec.asInstanceOf[Expr[Decoder[T]]])
-          exprCache(cacheKey) = pair
-          return pair
-        case None => ()
+      val constructorKey = dealiased match
+        case AppliedType(tycon, _) => Some(tycon.typeSymbol.fullName)
+        case _ => None
+      val skipSummon = constructorKey.exists(constructorNegCache.contains)
 
-      val summonedEnc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
-      val summonedDec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
-      if summonedEnc.isDefined || summonedDec.isDefined then summonedKeys += cacheKey
+      if skipSummon then
+        timer.count("constructorNegHit")
+      else
+        // Codec-first fast path: single summonIgnoring instead of two
+        val summonedCodec = timer.time("summonIgnoring")(Expr.summonIgnoring[Codec.AsObject[T]](cachedCodecIgnoreSymbols*))
+        summonedCodec match
+          case Some(codec) =>
+            timer.count("codecHit")
+            summonedKeys += cacheKey
+            val pair = (codec.asInstanceOf[Expr[Encoder[T]]], codec.asInstanceOf[Expr[Decoder[T]]])
+            exprCache(cacheKey) = pair
+            return pair
+          case None => ()
+
+      val (summonedEnc, summonedDec) =
+        if skipSummon then (None, None)
+        else
+          val enc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
+          val dec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
+          if enc.isDefined || dec.isDefined then summonedKeys += cacheKey
+          else constructorKey.foreach(constructorNegCache += _)
+          (enc, dec)
 
       val resolved: (Expr[Encoder[T]], Expr[Decoder[T]]) = (summonedEnc, summonedDec) match
         case (Some(enc), Some(dec)) => (enc, dec)
