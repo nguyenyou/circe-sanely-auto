@@ -8,6 +8,18 @@ import scala.deriving.Mirror
   */
 object JsoniterRuntime:
 
+  /** Codec that supports inline field encoding/decoding (without object braces).
+    * Used by discriminator-tagged sum codecs to write/read variant fields
+    * at the same level as the discriminator field.
+    */
+  private[jsoniter] trait InlineFieldsCodec[P] extends JsonValueCodec[P]:
+    /** Encode fields only (no writeObjectStart/writeObjectEnd). */
+    def encodeFields(x: P, out: JsonWriter): Unit
+    /** Decode fields from current position after a prior field (e.g. discriminator).
+      * Handles both cases: more fields follow (comma) or object ends immediately.
+      */
+    def decodeFieldsAfterDiscriminator(in: JsonReader): P
+
   /** Lightweight Product wrapper over an Array for use with Mirror.fromProduct. */
   private[jsoniter] final class ArrayProduct(val arr: Array[Any]) extends Product:
     def canEqual(that: Any): Boolean = true
@@ -140,7 +152,7 @@ object JsoniterRuntime:
           mirror, directLabels, isSubTrait, initDirectCodecs,
           allLeafLabels, initAllLeafCodecs)
       case Some(disc) =>
-        // Discriminator with sub-traits: use flat leaf labels for lookup
+        // Discriminator with sub-traits: flat encoding with inline fields
         new JsonValueCodec[S]:
           private lazy val _directCodecs = initDirectCodecs()
           private lazy val _allLeafCodecs = initAllLeafCodecs()
@@ -156,37 +168,11 @@ object JsoniterRuntime:
                 out.writeObjectStart()
                 out.writeKey(disc)
                 out.writeVal(directLabels(ord))
-                val product = x.asInstanceOf[Product]
-                if product.productArity > 0 then
-                  _directCodecs(ord).encodeValue(x, out)
+                _directCodecs(ord).asInstanceOf[InlineFieldsCodec[Any]].encodeFields(x, out)
                 out.writeObjectEnd()
 
           def decodeValue(in: JsonReader, default: S): S =
-            if !in.isNextToken('{') then
-              in.readNullOrTokenError(default, '{')
-            else
-              if !in.isNextToken('}') then
-                in.rollbackToken()
-                val key = in.readKeyAsString()
-                if key == disc then
-                  val typeName = in.readString(null)
-                  var idx = -1
-                  var i = 0
-                  while i < allLeafLabels.length && idx < 0 do
-                    if typeName == allLeafLabels(i) then idx = i
-                    i += 1
-                  if idx < 0 then
-                    in.decodeError(s"Unknown variant: $typeName")
-                    return default
-                  val result = _allLeafCodecs(idx).decodeValue(in, _allLeafCodecs(idx).nullValue)
-                  if !in.isNextToken('}') then in.objectEndOrCommaError()
-                  result.asInstanceOf[S]
-                else
-                  in.decodeError(s"Expected discriminator field '$disc' but got '$key'")
-                  default
-              else
-                in.decodeError(s"Expected discriminator field '$disc' in empty object")
-                default
+            decodeWithDiscriminator[S](in, disc, allLeafLabels, _allLeafCodecs, default)
 
   // === Configured product codec ===
 
@@ -203,7 +189,7 @@ object JsoniterRuntime:
     dropNullValues: Boolean
   ): JsonValueCodec[P] =
     val names = rawNames.map(transformMemberNames)
-    new JsonValueCodec[P]:
+    new InlineFieldsCodec[P]:
       private lazy val _codecs = initCodecs()
       val nullValue: P = null.asInstanceOf[P]
 
@@ -217,6 +203,54 @@ object JsoniterRuntime:
           decodeProductConfigured(in, mirror, names, _codecs, nullValues, hasDefaults, defaults, isOption, useDefaults)
         else
           in.readNullOrTokenError(default, '{')
+
+      def encodeFields(x: P, out: JsonWriter): Unit =
+        if (x: Any) != null then
+          val product = x.asInstanceOf[Product]
+          val n = names.length
+          var i = 0
+          while i < n do
+            val v = product.productElement(i)
+            if dropNullValues then
+              val isNull = v == null || (v.isInstanceOf[Option[?]] && v.asInstanceOf[Option[?]].isEmpty)
+              if !isNull then
+                out.writeNonEscapedAsciiKey(names(i))
+                _codecs(i).encodeValue(v, out)
+            else
+              out.writeNonEscapedAsciiKey(names(i))
+              _codecs(i).encodeValue(v, out)
+            i += 1
+
+      def decodeFieldsAfterDiscriminator(in: JsonReader): P =
+        val n = names.length
+        val results = new Array[Any](n)
+        if useDefaults then
+          var i = 0
+          while i < n do
+            if hasDefaults(i) then results(i) = defaults(i)
+            else if isOption(i) then results(i) = None
+            else results(i) = nullValues(i)
+            i += 1
+        else
+          System.arraycopy(nullValues, 0, results, 0, n)
+        // After discriminator value, next token is ',' (more fields) or '}' (done)
+        if in.isNextToken(',') then
+          var continue = true
+          while continue do
+            val keyLen = in.readKeyAsCharBuf()
+            var matched = false
+            var i = 0
+            while i < n && !matched do
+              if in.isCharBufEqualsTo(keyLen, names(i)) then
+                results(i) = _codecs(i).decodeValue(in, nullValues(i))
+                matched = true
+              i += 1
+            if !matched then in.skip()
+            continue = in.isNextToken(',')
+          if !in.isCurrentToken('}') then in.objectEndOrCommaError()
+        else if !in.isCurrentToken('}') then
+          in.objectEndOrCommaError()
+        mirror.fromProduct(new ArrayProduct(results))
 
   // === Configured sum codec ===
 
@@ -261,7 +295,7 @@ object JsoniterRuntime:
                 if !in.isNextToken('}') then in.objectEndOrCommaError()
                 result.asInstanceOf[S]
 
-      case Some(disc) => // discriminator tagging
+      case Some(disc) => // discriminator tagging (flat: fields inline with discriminator)
         new JsonValueCodec[S]:
           private lazy val _codecs = initCodecs()
           val nullValue: S = null.asInstanceOf[S]
@@ -270,59 +304,150 @@ object JsoniterRuntime:
             if (x: Any) == null then out.writeNull()
             else
               val ord = mirror.ordinal(x)
-              val inner = _codecs(ord)
-              // Write discriminator field then the product fields (flattened)
               out.writeObjectStart()
               out.writeKey(disc)
               out.writeVal(labels(ord))
-              // Encode the variant's fields inline (skip its own { })
-              val product = x.asInstanceOf[Product]
-              val arity = product.productArity
-              if arity > 0 then
-                // For case classes, we need the inner codec to write fields only
-                // We encode via the inner codec into a temporary buffer, then replay without outer braces
-                // Simpler approach: just write each field from the product
-                // But we don't have the field names here... use inner codec
-                inner.encodeValue(x, out)
+              _codecs(ord).asInstanceOf[InlineFieldsCodec[Any]].encodeFields(x, out)
               out.writeObjectEnd()
 
           def decodeValue(in: JsonReader, default: S): S =
-            if !in.isNextToken('{') then
-              in.readNullOrTokenError(default, '{')
-            else
-              // Read all fields, find discriminator
-              // For now, simple approach: first key must be discriminator
-              // More robust: scan for discriminator key
-              var idx = -1
-              var foundDisc = false
-              // Buffer approach: read tokens until we find discriminator
-              if !in.isNextToken('}') then
-                in.rollbackToken()
-                // We need to find the discriminator. For simplicity, require it first.
-                val key = in.readKeyAsString()
-                if key == disc then
-                  val typeName = in.readString(null)
-                  var i = 0
-                  while i < labels.length && idx < 0 do
-                    if typeName == labels(i) then idx = i
-                    i += 1
-                  if idx < 0 then
-                    in.decodeError(s"Unknown variant: $typeName")
-                    return default
-                  foundDisc = true
-                else
-                  in.decodeError(s"Expected discriminator field '$disc' but got '$key'")
-                  return default
+            decodeWithDiscriminator[S](in, disc, labels, _codecs, default)
 
-                // Now decode the rest as the variant
-                // The remaining fields are the variant's fields
-                val result = _codecs(idx).decodeValue(in, _codecs(idx).nullValue)
-                // Consume closing }
-                if !in.isNextToken('}') then in.objectEndOrCommaError()
-                result.asInstanceOf[S]
-              else
-                in.decodeError(s"Expected discriminator field '$disc' in empty object")
-                default
+  // === Discriminator decode helper ===
+
+  /** Decode an object with a discriminator field that may appear at any position.
+    * Buffers non-discriminator fields as raw JSON strings, finds the discriminator,
+    * then reconstructs and decodes the variant.
+    */
+  private def decodeWithDiscriminator[S](
+    in: JsonReader, disc: String, labels: Array[String],
+    codecs: Array[JsonValueCodec[Any]], default: S
+  ): S =
+    if !in.isNextToken('{') then
+      in.readNullOrTokenError(default, '{')
+    else if in.isNextToken('}') then
+      in.decodeError(s"Expected discriminator field '$disc' in empty object")
+      default
+    else
+      in.rollbackToken()
+      // Fast path: discriminator is first key
+      val firstKey = in.readKeyAsString()
+      if firstKey == disc then
+        val typeName = in.readString(null)
+        val idx = findLabel(typeName, labels)
+        if idx < 0 then
+          in.decodeError(s"Unknown variant: $typeName")
+          return default
+        codecs(idx).asInstanceOf[InlineFieldsCodec[Any]].decodeFieldsAfterDiscriminator(in).asInstanceOf[S]
+      else
+        // Slow path: buffer fields, find discriminator at any position
+        val buf = new java.util.ArrayList[(String, String)]()
+        val firstValSb = new java.lang.StringBuilder(32)
+        readJsonValueToString(in, firstValSb)
+        buf.add((firstKey, firstValSb.toString))
+        var discValue: String = null
+        var cont = in.isNextToken(',')
+        while cont do
+          val k = in.readKeyAsString()
+          if k == disc then
+            discValue = in.readString(null)
+          else
+            val sb = new java.lang.StringBuilder(32)
+            readJsonValueToString(in, sb)
+            buf.add((k, sb.toString))
+          cont = in.isNextToken(',')
+        if !in.isCurrentToken('}') then in.objectEndOrCommaError()
+        if discValue == null then
+          in.decodeError(s"Discriminator field '$disc' not found")
+          return default
+        val idx = findLabel(discValue, labels)
+        if idx < 0 then
+          in.decodeError(s"Unknown variant: $discValue")
+          return default
+        // Reconstruct JSON object from buffered fields and decode
+        val sb = new java.lang.StringBuilder(64)
+        sb.append('{')
+        var fi = 0
+        while fi < buf.size do
+          if fi > 0 then sb.append(',')
+          val entry = buf.get(fi)
+          sb.append('"')
+          appendEscaped(sb, entry._1)
+          sb.append("\":")
+          sb.append(entry._2)
+          fi += 1
+        sb.append('}')
+        readFromString[Any](sb.toString)(using codecs(idx)).asInstanceOf[S]
+
+  private def findLabel(name: String, labels: Array[String]): Int =
+    var i = 0
+    while i < labels.length do
+      if name == labels(i) then return i
+      i += 1
+    -1
+
+  /** Read a JSON value from the reader and append its string representation to sb. */
+  private def readJsonValueToString(in: JsonReader, sb: java.lang.StringBuilder): Unit =
+    val b = in.nextToken()
+    in.rollbackToken()
+    (b: @annotation.switch) match
+      case '"' =>
+        val s = in.readString(null)
+        sb.append('"')
+        appendEscaped(sb, s)
+        sb.append('"')
+      case 't' | 'f' =>
+        sb.append(in.readBoolean())
+      case 'n' =>
+        in.readNullOrError[String](null, "expected null")
+        sb.append("null")
+      case '{' =>
+        in.isNextToken('{')
+        sb.append('{')
+        if !in.isNextToken('}') then
+          in.rollbackToken()
+          var first = true
+          var cont = true
+          while cont do
+            if !first then sb.append(',')
+            val key = in.readKeyAsString()
+            sb.append('"')
+            appendEscaped(sb, key)
+            sb.append("\":")
+            readJsonValueToString(in, sb)
+            first = false
+            cont = in.isNextToken(',')
+          if !in.isCurrentToken('}') then in.objectEndOrCommaError()
+        sb.append('}')
+      case '[' =>
+        in.isNextToken('[')
+        sb.append('[')
+        if !in.isNextToken(']') then
+          in.rollbackToken()
+          var first = true
+          var cont = true
+          while cont do
+            if !first then sb.append(',')
+            readJsonValueToString(in, sb)
+            first = false
+            cont = in.isNextToken(',')
+        sb.append(']')
+      case _ => // number
+        sb.append(in.readBigDecimal(null).toString)
+
+  private def appendEscaped(sb: java.lang.StringBuilder, s: String): Unit =
+    var i = 0
+    while i < s.length do
+      val c = s.charAt(i)
+      c match
+        case '"' => sb.append("\\\"")
+        case '\\' => sb.append("\\\\")
+        case '\n' => sb.append("\\n")
+        case '\r' => sb.append("\\r")
+        case '\t' => sb.append("\\t")
+        case _ if c < 0x20 => sb.append(f"\\u${c.toInt}%04x")
+        case _ => sb.append(c)
+      i += 1
 
   // === Internal helpers ===
 
