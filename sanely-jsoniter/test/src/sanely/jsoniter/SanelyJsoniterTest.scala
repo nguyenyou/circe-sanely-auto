@@ -37,6 +37,10 @@ case object Chicken extends Farm
 // Recursive type
 case class Tree(value: String, children: List[Tree])
 
+// Non-string map key types
+case class WithIntMap(scores: Map[Int, String])
+case class WithLongMap(ids: Map[Long, Boolean])
+
 // Either types
 case class WithEither(result: Either[String, Int])
 case class WithNestedEither(data: Either[String, List[Int]])
@@ -97,6 +101,8 @@ object SanelyJsoniterTest extends TestSuite:
   given JsonValueCodec[Color] = deriveJsoniterEnumCodec
   given JsonValueCodec[Direction] = deriveJsoniterEnumCodec
   given JsonValueCodec[Animal] = deriveJsoniterEnumCodec
+  given JsonValueCodec[WithIntMap] = deriveJsoniterCodec
+  given JsonValueCodec[WithLongMap] = deriveJsoniterCodec
   given JsonValueCodec[WithEither] = deriveJsoniterCodec
   given JsonValueCodec[WithNestedEither] = deriveJsoniterCodec
 
@@ -164,6 +170,44 @@ object SanelyJsoniterTest extends TestSuite:
       val w = WithMap(Map("k1" -> "v1", "k2" -> "v2"), Map("a" -> 1, "b" -> 2))
       val decoded = roundtrip(w)
       assert(decoded == w)
+    }
+
+    test("map - int keys") {
+      val w = WithIntMap(Map(1 -> "one", 2 -> "two"))
+      val json = writeToString(w)
+      assert(json.contains("\"1\":\"one\""))
+      assert(json.contains("\"2\":\"two\""))
+      val decoded = readFromString[WithIntMap](json)
+      assert(decoded == w)
+    }
+
+    test("map - long keys") {
+      val w = WithLongMap(Map(100L -> true, 200L -> false))
+      val json = writeToString(w)
+      assert(json.contains("\"100\":true"))
+      assert(json.contains("\"200\":false"))
+      val decoded = readFromString[WithLongMap](json)
+      assert(decoded == w)
+    }
+
+    test("map - int keys circe format compatibility") {
+      import io.circe.generic.semiauto.{deriveEncoder, deriveDecoder}
+      import io.circe.{Encoder, Decoder, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+
+      given Encoder[WithIntMap] = deriveEncoder
+      given Decoder[WithIntMap] = deriveDecoder
+
+      val v = WithIntMap(Map(1 -> "one", 2 -> "two"))
+
+      // jsoniter -> circe
+      val jJson = writeToString(v)
+      assert(circeDecode[WithIntMap](jJson) == Right(v))
+
+      // circe -> jsoniter
+      val cJson = (v: WithIntMap).asJson.noSpaces
+      assert(readFromString[WithIntMap](cJson) == v)
     }
 
     test("sum - circle") {

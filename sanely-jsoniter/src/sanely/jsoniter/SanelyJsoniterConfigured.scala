@@ -312,8 +312,7 @@ object SanelyJsoniterConfigured:
                   buildContainerCodec[T, a](tycon, inner)
             }
           case AppliedType(tycon, List(keyArg, valArg))
-            if tycon.typeSymbol.fullName.endsWith(".Map") &&
-               keyArg =:= TypeRepr.of[String] =>
+            if tycon.typeSymbol.fullName.endsWith(".Map") =>
             val valKey = cheapTypeKey(valArg)
             val valOpt = (if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
                          else resolvePrimCodec(valArg.dealias).orElse(exprCache.get(valKey)))
@@ -324,13 +323,26 @@ object SanelyJsoniterConfigured:
                     exprCache(valKey) = codec
                     codec
                   }
+            }.orElse {
+              valArg.asType match
+                case '[v] =>
+                  tryResolveBuiltin[v](valArg.dealias).map { codec =>
+                    exprCache(valKey) = codec
+                    codec
+                  }
             }
             valResolved.flatMap { valCodec =>
               valArg.asType match
                 case '[v] =>
                   val vc = valCodec.asInstanceOf[Expr[JsonValueCodec[v]]]
-                  Some('{ Codecs.stringMap[v]($vc) }.asInstanceOf[Expr[JsonValueCodec[T]]])
-                case _ => None
+                  if keyArg =:= TypeRepr.of[String] then
+                    Some('{ Codecs.stringMap[v]($vc) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+                  else
+                    keyArg.asType match
+                      case '[k] =>
+                        Expr.summon[KeyCodec[k]].map { kc =>
+                          '{ Codecs.map[k, v]($kc, $vc) }.asInstanceOf[Expr[JsonValueCodec[T]]]
+                        }
             }
           case AppliedType(tycon, List(leftArg, rightArg))
             if tycon.typeSymbol.fullName == "scala.util.Either" =>
