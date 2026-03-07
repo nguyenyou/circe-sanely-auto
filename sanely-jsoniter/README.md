@@ -174,7 +174,7 @@ The 5x improvement comes from eliminating the `Json` tree allocation entirely.
 
 ## Migration guide
 
-Adopting sanely-jsoniter is straightforward — you keep circe for everything else and only swap the serialization hot path.
+Adopting sanely-jsoniter is straightforward — you keep circe for everything else and only swap the serialization hot path. For codebases with **configured derivation** (withDefaults, discriminator, snake_case, drop-null), see the full [Migration Guide for Configured Codebases](MIGRATION.md).
 
 ### Step 1: Add the dependency
 

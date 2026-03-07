@@ -54,7 +54,7 @@ Real codebases use configured derivation for the vast majority of types (default
 
 - [x] **Strict decoding** — `JsoniterConfiguration.withStrictDecoding` config option exists but is not wired into the runtime. Implement: reject unknown fields during decoding. ~18 call sites in typical codebases use strict decoding via direct `ConfiguredCodec.derived`.
 
-- [ ] **Migration guide for configured codebases** — Document the pattern for codebases with centralized configuration wrappers: extend the wrapper to derive both circe and jsoniter codecs side by side. Show how `deriveCodecWithDefaults` gets a parallel `deriveJsoniterCodecWithDefaults`. One-time wrapper change, not per-type.
+- [x] **Migration guide for configured codebases** — [MIGRATION.md](MIGRATION.md): configuration mapping, semi-auto per-type, configured auto, centralized wrapper pattern (extend once, add one line per call site), HTTP codec swap with incremental fallback.
 
 ## P2 — Polish
 
