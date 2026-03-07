@@ -2,41 +2,74 @@
 
 [![CI](https://github.com/nguyenyou/circe-sanely-auto/actions/workflows/ci.yml/badge.svg)](https://github.com/nguyenyou/circe-sanely-auto/actions/workflows/ci.yml)
 
-Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Swap one dependency, change one import, compile faster.
-
-> **The contract: 100% circe compatibility, zero compromise.** If your application works with circe, it must work identically with circe-sanely-auto — same JSON output, same decoded values, same error messages, same behavior in every edge case. Any difference is a bug. No exceptions, no "close enough", no subtle surprises. You swap the dependency and nothing changes except compile time. This is the promise that makes or breaks this library.
+Drop-in replacement for circe's derivation on Scala 3. Compile faster, run faster, change nothing else.
 
 **Scala 3.8.2+ | JVM + Scala.js | ✅ 327 tests passing**
 
-## Why
+## The circe problem
 
-circe-generic is slow. Every nested type triggers another round of implicit resolution, and those rounds compound. On a codebase with 300 types:
+[circe](https://github.com/circe/circe) is the most widely used JSON library in the Scala ecosystem. It's well-designed, well-tested, and deeply embedded in production codebases everywhere — from startups to large enterprises. Frameworks like Tapir, http4s, and Pekko HTTP all integrate with circe. If you write Scala, you probably use circe.
 
-| | circe-generic | circe-sanely-auto | |
+But circe has two performance problems:
+
+**Slow compilation.** circe-generic's `auto` derivation triggers a new round of implicit resolution for every nested type. For a codebase with hundreds of types, these rounds compound — each type waits for all its fields to be resolved, which wait for their fields, and so on. A clean compile of 300 types takes over 6 seconds just for derivation. In large monorepos with thousands of types, this adds minutes to every build.
+
+**Slow runtime.** circe parses JSON into an intermediate `Json` AST, then traverses that AST to build your domain objects. Every request allocates a full tree of `Json` nodes only to throw them away immediately. This parse-allocate-traverse pipeline caps throughput at ~130K ops/sec for a typical 1.4 KB payload.
+
+The catch: you can't just switch libraries. circe is not merely a dependency — it's infrastructure. Production codebases have `io.circe.Json` as field types in domain models, cursor navigation in business logic, tree manipulation in API layers, and framework integrations wired to `Encoder[T]`/`Decoder[T]`. Migrating away from circe is a rewrite, not a refactor.
+
+## What this library does
+
+circe-sanely-auto fixes both problems without changing anything else:
+
+> **The contract: 100% circe compatibility, zero compromise.** Same JSON output, same decoded values, same error messages, same behavior in every edge case. You swap the dependency and nothing changes except performance. Any difference is a bug. No exceptions, no "close enough", no subtle surprises. This is the promise that makes or breaks this library.
+
+This contract is enforced by 327 tests — including 192 property-based tests auto-generated from circe's own test suite using the same types, same `Arbitrary` instances, and same property checks.
+
+## The numbers
+
+### Compile time — 2.9x faster
+
+~300 types, M3 Max, JDK 25, Mill 1.1.2, Scala 3.8.2, measured with [hyperfine](https://github.com/sharkdp/hyperfine):
+
+| | circe | circe-sanely-auto | |
 |---|---|---|---|
-| **Auto derivation** | 6.15s | **2.11s** | **2.9x faster**\* |
-| **Configured derivation** | 2.59s | **1.39s** | **1.9x faster**\* |
+| **Auto derivation** | 6.15s | **2.11s** | **2.9x faster** |
+| **Configured derivation** | 2.59s | **1.39s** | **1.9x faster** |
 | **Compiler work** | 1,542 samples | **806 samples** | **48% less** |
 | **Memory allocations** | 8,547 samples | **4,168 samples** | **51% less** |
 | **Peak RSS** | 963 MB | **769 MB** | **20% less** |
 
+### Runtime — 4.8x faster reads, 6x faster writes
+
+~1.4 KB JSON payload, nested products, sealed traits, optional fields:
+
+| Approach | Reading (ops/sec) | | Writing (ops/sec) | |
+|---|---|---|---|---|
+| **circe + jawn** (baseline) | ~136K | 1.0x | ~121K | 1.0x |
+| **circe + jsoniter bridge** | ~197K | 1.5x | ~111K | 0.9x |
+| **sanely-jsoniter** | **~655K** | **4.8x** | **~732K** | **6.0x** |
+| jsoniter-scala native | ~667K | 4.9x | ~729K | 6.0x |
+
+sanely-jsoniter reaches **98% of jsoniter-scala native** on decode and **matches it** on encode — while producing circe-compatible JSON on the wire.
+
 <details>
-<summary>*Benchmark methodology & environment</summary>
+<summary>Benchmark methodology & cross-session stability</summary>
 
-**Environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2 (runs zinc on JDK 21.0.9), Scala 3.8.2.
+**Environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2 (zinc on JDK 21.0.9), Scala 3.8.2.
 
-**Methodology**: Compile-time numbers are measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output (`rm -rf out/benchmark/…`) then recompiles ~300 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order to prevent ordering bias. Reported values are mean ± σ. Dependencies (`sanely.jvm`) are pre-compiled and cached — only the benchmark types are recompiled each run.
+**Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~300 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 2.88x–3.01x across 25 runs in 3 separate sessions.
 
-**Cross-session stability**: We ran benchmarks 3 times (5+10+10 = 25 total runs per suite) across separate sessions. Auto derivation speedup ranged from 2.88x to 3.01x across sessions (σ < 0.08 within each session). Configured derivation ranged from 1.86x to 1.93x (σ < 0.09). The hero table reports the most conservative 10-run session. The first 5-run session produced a 3.01x outlier (sanely hit its best at 2.02s) — we chose not to report it.
+**Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Three full benchmark runs were performed to verify consistency. Reading ranged 647K–667K ops/sec across runs; writing ranged 660K–770K ops/sec. Numbers reported are the median run.
 
-**Fairness**: Both libraries compile the same source files from the same `benchmark/shared/src/` directory, using the same Scala version, same JVM, same Mill daemon, in the same hyperfine invocation. The only difference is the derivation import (`sanely.auto.given` vs `io.circe.generic.auto.given` for auto; `sanely.SanelyConfiguredCodec.derived` vs `io.circe.derivation.ConfiguredCodec.derived` for configured). The benchmark measures derivation overhead only — shared dependencies are pre-compiled and not re-timed.
-
-**Caveats**: These are synthetic benchmarks on ~300 isolated types. Real-world speedups depend on codebase size, type complexity, nesting depth, and how many types use derivation. The benchmark is single-module — projects with many parallel modules may see different bottleneck distributions. Numbers vary across machines and JDK versions. We encourage you to run `bash bench.sh 10` on your own hardware. See the [detailed benchmark section](#compile-time-benchmarks) for the full methodology and profiling data.
+**Fairness**: Both libraries compile the same source files, same Scala version, same JVM, same Mill daemon, in the same hyperfine invocation. The only difference is the derivation import.
 </details>
 
-This library replaces circe-generic with a macro that derives everything in one expansion — no implicit search chains, no Shapeless. It passes circe's own test suite (318 property-based tests) plus 129 additional unit tests.
+## How to use it
 
-### How to try it
+### Step 1: Faster compilation
+
+Swap one dependency, change one import:
 
 ```diff
 - mvn"io.circe::circe-generic:0.14.x"
@@ -48,54 +81,14 @@ This library replaces circe-generic with a macro that derives everything in one 
 + import io.circe.generic.auto.given
 ```
 
-That's it. Same JSON format, same API, same behavior. Everything else stays the same.
+That's it. Same JSON format, same API, same behavior. Everything else stays the same — semiauto (`deriveEncoder`, `deriveDecoder`, `deriveCodec`), configured (`deriveConfiguredCodec`, `deriveEnumCodec`), and all `io.circe.derivation.Configuration` options work identically.
 
-### Faster runtime serialization
+### Step 2: Faster runtime (optional)
 
-circe-sanely-auto fixes compile time. For **runtime** performance, there are two options depending on how much speedup you need:
-
-**Runtime benchmark** (~1.4 KB JSON payload with nested products, sealed traits, optional fields — M3 Max, JDK 25):
-
-| Approach | Reading (ops/sec) | | Writing (ops/sec) | |
-|---|---|---|---|---|
-| **circe + jawn** (baseline) | ~136K | 1.0x | ~121K | 1.0x |
-| **circe + jsoniter bridge** | ~197K | **1.5x** | ~111K | 0.9x |
-| **sanely-jsoniter** (experimental) | **~655K** | **4.8x** | **~732K** | **6.0x** |
-| jsoniter-scala native | ~667K | 4.9x | ~729K | 6.0x |
-
-#### Option 1: jsoniter-scala-circe bridge (1.5x read, drop-in)
-
-Pair with [jsoniter-scala-circe](https://github.com/plokhotnyuk/jsoniter-scala) — it replaces circe's jawn parser with jsoniter-scala's faster one while keeping all your circe codecs unchanged:
+For HTTP hot paths where runtime throughput matters, [sanely-jsoniter](sanely-jsoniter/) generates `JsonValueCodec[T]` instances that skip the `Json` tree entirely — bytes go directly to domain objects:
 
 ```scala
-mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core:2.38.9"
-mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-circe:2.38.9"
-```
-
-```scala
-import io.circe.*
-import io.circe.syntax.*
-import sanely.auto.given  // fast compile-time derivation
-import com.github.plokhotnyuk.jsoniter_scala.circe.JsoniterScalaCodec.given
-import com.github.plokhotnyuk.jsoniter_scala.core.*
-
-case class User(name: String, age: Int)
-
-// Reading: use jsoniter-scala's parser (1.5x faster than jawn)
-val user = readFromArray[Json](jsonBytes).as[User].toOption.get
-
-// Writing: use circe's printer (faster than jsoniter bridge for writing)
-val bytes = Printer.noSpaces.print(user.asJson).getBytes("UTF-8")
-```
-
-Swap two imports, decoding gets 50% faster. The `Json` AST is still allocated on every request — the bridge just parses bytes faster.
-
-#### Option 2: sanely-jsoniter (3-5x, experimental)
-
-[sanely-jsoniter](sanely-jsoniter/) eliminates the `Json` tree entirely. It generates `JsonValueCodec[T]` instances (jsoniter-scala's codec type) that go directly from bytes to domain objects — no intermediate AST allocation. The generated codecs produce **identical JSON** to circe, so the wire format stays the same.
-
-```scala
-mvn"io.github.nguyenyou::sanely-jsoniter:0.13.0"
+mvn"io.github.nguyenyou::sanely-jsoniter:0.14.0"
 ```
 
 ```scala
@@ -108,25 +101,72 @@ val json = writeToString(User("Alice", 30))  // {"name":"Alice","age":30}
 val user = readFromString[User](json)        // User(Alice, 30)
 ```
 
-Both circe codecs and jsoniter codecs can coexist — they're different types, no conflicts. circe stays for everything that needs the `Json` AST (cursor navigation, tree merging, programmatic construction). Only the serialization hot path changes.
+Both circe codecs and jsoniter codecs coexist — they're different types, no conflicts. circe stays for everything that needs the `Json` AST (cursor navigation, tree merging, programmatic construction). Only the serialization hot path changes.
 
-See the [sanely-jsoniter README](sanely-jsoniter/README.md) for full documentation, supported types, configured derivation, and migration guide.
+There's also a lighter option — pair circe-sanely-auto with the [jsoniter-scala-circe bridge](https://github.com/plokhotnyuk/jsoniter-scala) for a drop-in 1.5x decode speedup without changing any codec code.
+
+See the [sanely-jsoniter README](sanely-jsoniter/README.md) for full documentation, configured derivation, and migration guide.
 
 ## How it works
 
-Based on Mateusz Kubuszok's [sanely-automatic derivation](https://kubuszok.com/2025/sanely-automatic-derivation/) technique. Scala 3.7+ provides `Expr.summonIgnoring`, which lets a macro summon implicit instances while excluding specific symbols:
+### Compile time: one macro, no search chains
 
-1. Define an `inline given autoEncoder[A]` that delegates to a macro
-2. Inside the macro, use `Expr.summonIgnoring` to search for an existing `Encoder[A]` — excluding our own auto-given from the search
-3. If a user-provided instance exists, use it. Otherwise, derive it internally using `Mirror` — recursively, within the same macro expansion
+Based on Mateusz Kubuszok's [sanely-automatic derivation](https://kubuszok.com/2025/sanely-automatic-derivation/) technique. The core problem with circe-generic is how `inline given` and `summonInline` interact: every nested type triggers a new round of implicit resolution through the compiler, and each round must wait for all its dependencies. For 300 types with 5 fields average, that's 1,500+ implicit searches the compiler performs sequentially.
 
-One macro call derives everything. No implicit search chains. No Shapeless.
+circe-sanely-auto replaces this with a single macro expansion:
+
+1. An `inline given autoEncoder[A]` delegates to a macro
+2. The macro uses `Expr.summonIgnoring` (Scala 3.7+) to search for existing instances — excluding our own auto-given from the search to prevent infinite loops
+3. If a user-provided instance exists, it's used. Otherwise, the macro derives it recursively within the same expansion
+
+One macro call derives everything. The compiler never re-enters implicit search. Seven optimizations on top of this reduce both macro expansion time and generated AST size:
+
+- **Single-pass codec derivation** — `deriveConfiguredCodec` resolves both encoder and decoder in one traversal, sharing one cache, one `Mirror` summon, and one builtin check per type (230 vs 460 expansions)
+- **Builtin short-circuit** — primitives resolve directly to circe instances without `summonIgnoring`, saving ~66% of implicit searches
+- **Container composition** — `Option[String]`, `List[Int]`, `Map[String, T]` etc. are composed directly from cached inner codecs (10 container types supported)
+- **Factory method consolidation** — 11 runtime factory methods replace per-expansion anonymous class generation, reducing generated AST size by ~30-50%
+- **Sub-trait detection cache** — O(1) set lookup replaces redundant `summonIgnoring` calls for sealed trait sub-type detection (-90% per-call time)
+- **Codec-first summon** — tries `Codec.AsObject[T]` before separate `Encoder[T]` + `Decoder[T]`, reducing configured implicit searches by 30%
+- **Cross-expansion cache** — 75% hit rate in auto derivation, avoiding redundant derivations for repeated types
+
+### Runtime: no intermediate AST, direct streaming
+
+circe's pipeline allocates a `Json` tree on every request:
+
+```
+bytes  →  Json tree (allocated)  →  Decoder[T]  →  T
+T  →  Encoder[T]  →  Json tree (allocated)  →  bytes
+```
+
+sanely-jsoniter eliminates the tree entirely, using jsoniter-scala as the streaming engine:
+
+```
+bytes  →  JsonValueCodec[T]  →  T
+T  →  JsonValueCodec[T]  →  bytes
+```
+
+The macro generates optimized codec bodies using TASTy API:
+
+- **Typed local variables** — `var _0: Int = 0; var _1: String = null` instead of `Array[Any]`, keeping primitives unboxed on the stack during the decode loop
+- **Unrolled if-else field matching** — compile-time-known field names in an inlined chain (`if isCharBufEqualsTo(keyLen, "name") then ... else if ...`) instead of runtime linear scan over an array
+- **Direct primitive read/write calls** — `in.readInt()`, `out.writeVal(x.age)` instead of virtual dispatch through `codec.decodeValue()`/`codec.encodeValue()` for primitive fields
+- **Boxing only at the boundary** — primitives stay unboxed through the entire field loop, boxing once at the final `mirror.fromProduct` call
+
+This brings sanely-jsoniter to 98% of jsoniter-scala native speed on decode, and matching on encode.
 
 ## Compatibility
 
-The goal is full API compatibility with circe's derivation — same JSON format, same behavior, same error messages where possible.
+circe-sanely-auto provides the same packages and APIs as circe-generic:
 
-**327 tests total**: 135 unit tests (utest, cross-compiled JVM + Scala.js) covering auto, semiauto, and configured derivation. Plus 192 compatibility tests (munit + discipline) auto-generated from circe's own `DerivesSuite`, `SemiautoDerivationSuite`, `ConfiguredDerivesSuite`, and `ConfiguredEnumDerivesSuites` via `scripts/sync-circe-tests.py` — same types, same Arbitrary instances, same property-based checks.
+| Before | After |
+|---|---|
+| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.14.0"` |
+| `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` |
+| `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto.*` (unchanged) |
+
+**327 tests**: 135 unit tests (utest, cross-compiled JVM + Scala.js) covering auto, semiauto, and configured derivation. Plus 192 compatibility tests (munit + discipline) auto-generated from circe's own `DerivesSuite`, `SemiautoDerivationSuite`, `ConfiguredDerivesSuite`, and `ConfiguredEnumDerivesSuites` via `scripts/sync-circe-tests.py` — same types, same Arbitrary instances, same property-based checks.
+
+**Requirement**: Scala 3.8.2+. No Scala 2 support.
 
 ## Features
 
@@ -223,19 +263,9 @@ Supports hierarchical sealed traits with diamond inheritance.
 - Generic classes with default values
 - Cross-platform: JVM and Scala.js
 
-## Migration from circe-generic
+## Detailed benchmarks
 
-| Before | After |
-|---|---|
-| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.14.0"` |
-| `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` |
-| `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto.*` (unchanged) |
-
-The `io.circe.generic.auto` and `io.circe.generic.semiauto` packages are provided by this library with the same API. Semiauto calls (`deriveEncoder`, `deriveDecoder`, `deriveCodec`) and configured derivation (`deriveConfiguredEncoder`, `deriveConfiguredDecoder`, `deriveConfiguredCodec`, `deriveEnumCodec`) work identically. JSON format is the same. User-provided instances are still respected.
-
-**Requirements**: Scala 3.8.2+, no Scala 2 support.
-
-## Compile-time benchmarks
+### Compile-time benchmarks
 
 Two benchmark suites compare compile times against circe's native derivation. All numbers from M3 Max MacBook Pro, Mill 1.1.2, Scala 3.8.2.
 
@@ -244,14 +274,14 @@ bash bench.sh 5              # auto derivation (~300 types)
 bash bench.sh --configured 5 # configured derivation (~230 types)
 ```
 
-### Results
+#### Results
 
 | Suite | circe-sanely-auto | circe baseline | Speedup |
 |---|---|---|---|
 | **Auto derivation** (~300 types) | **2.11s** ± 0.04s | 6.15s ± 0.04s (circe-generic) | **2.91x** ± 0.06 |
 | **Configured derivation** (~230 types) | **1.39s** ± 0.03s | 2.59s ± 0.04s (circe-core) | **1.86x** ± 0.05 |
 
-### Benchmark method
+#### Benchmark method
 
 Measurements use [hyperfine](https://github.com/sharkdp/hyperfine) for statistical rigor. The harness (`bench.sh`) works as follows:
 
@@ -261,22 +291,6 @@ Measurements use [hyperfine](https://github.com/sharkdp/hyperfine) for statistic
 4. **`--runs N`** — N timed runs per command. Hyperfine randomizes execution order across runs to prevent systematic ordering bias, and reports mean ± σ with min/max range.
 
 This measures what users actually experience: warm-daemon, incremental-dependency compilation of the benchmark types only.
-
-### Why the difference?
-
-**Auto derivation** (2.9x faster): With `import io.circe.generic.auto.given`, the compiler must implicitly search for and synthesize codecs at every use site — each nested type triggers another round of implicit resolution. Sanely avoids this by deriving everything in a single macro expansion.
-
-**Configured derivation** (1.9x faster): Even though configured derivation uses explicit semi-auto calls (`deriveConfiguredCodec` in each companion object) with no implicit search chain to eliminate, our optimizations reduce both macro expansion time and generated AST size.
-
-Seven optimizations drive this:
-
-1. **Single-pass codec derivation** — `deriveConfiguredCodec` uses a dedicated macro that resolves both encoder and decoder for each field type in one traversal, sharing one cache, one `Mirror` summon, and one builtin check per type. Halves the number of macro expansions (230 vs 460).
-2. **Builtin short-circuit** — primitive types (String, Int, Long, Double, Float, Boolean, Short, Byte, BigDecimal, BigInt) are resolved directly to their circe instances without calling `Expr.summonIgnoring`, saving ~66% of summonIgnoring calls.
-3. **Container composition** — containers of primitives or already-cached types (`Option[String]`, `List[Int]`, `Map[String, Double]`, `Option[CustomType]`, etc.) are composed directly using `buildContainerEncoder`/`buildContainerDecoder`, covering all 10 container types (Option, List, Vector, Set, Seq, Chain, NonEmptyList, NonEmptyVector, NonEmptySeq, NonEmptyChain). Saves ~12% more summonIgnoring calls.
-4. **Runtime dispatch** — instead of generating N nested `.add()` calls (products) or N if-then-else branches (sum types) in the macro AST, the macro builds flat `Array[Encoder]`/`Array[Decoder]` and delegates to runtime while-loops in `SanelyRuntime`, reducing generated AST size by ~30-50%.
-5. **Sub-trait detection cache** — when `resolveOneEncoder`/`resolveOneDecoder` resolves a type via `Expr.summonIgnoring`, the cache key is recorded in a `summonedKeys` set. In `deriveSum`, sub-trait detection checks this set (O(1) lookup) instead of calling `summonIgnoring` again, eliminating redundant implicit searches. For configured codec derivation, this reduced per-call sub-trait detection time from 0.29ms to 0.03ms (-90%).
-6. **Factory method consolidation** — instead of each macro expansion generating its own anonymous `Encoder`/`Decoder`/`Codec` class definition (300+ classes for 300 types), all 6 macro files delegate to 11 factory methods in `SanelyRuntime` that define each anonymous class template once. Type-specific data (field names, encoder/decoder arrays) is passed as parameters. Lazy initialization uses `() => Array[Encoder[Any]]` lambdas which compile to `invokedynamic` (not anonymous classes). This dramatically reduces the transform+backend compiler phases — from heavier than circe to lighter.
-7. **Codec-first `summonIgnoring`** — in configured codec derivation, `resolveOneCodec` tries `Expr.summonIgnoring[Codec.AsObject[T]]` before falling back to separate `Encoder[T]` + `Decoder[T]` calls. When the nested type has a user-provided `Codec.AsObject[T]` in scope (the norm in configured derivation), one implicit search replaces two. Reduces configured summonIgnoring calls by 30% (294 → 205).
 
 ### JVM profiling (async-profiler)
 
@@ -357,8 +371,6 @@ Auto derivation uses **20% less peak memory** thanks to fewer generated classes 
 | compiler.backend | 211 | 216 | -2% |
 | mill / zinc / jvm | 831 | 865 | -4% |
 
-**Auto derivation** allocates **51% fewer objects** — the biggest wins are in `compiler.ast` (-74%, smaller generated ASTs from factory methods), `compiler.core.types` (-68%, fewer type representations), and `compiler.macro.inlines` (-89%, no inline expansion chains). **Configured derivation** allocates **26% fewer objects** with the same pattern. Factory method consolidation reversed the previous backend allocation regression — sanely now allocates fewer objects than circe in all categories including backend (-39% auto, -2% configured).
-
 ### Macro profiling
 
 Built-in compile-time profiling via `SANELY_PROFILE=true` tracks where time is spent inside our macros:
@@ -404,22 +416,6 @@ python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
 | cache hits | — | — | 327 | — |
 
 *`topDerive` is a container category that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, and `resolveDefaults`. Percentages sum > 100% due to nesting.
-
-#### Optimization effectiveness
-
-| Metric | Auto | Configured |
-|---|---|---|
-| Total macro expansions | 308 | 230 |
-| `summonIgnoring` calls | 660 | 205 |
-| Builtin short-circuit hits | 706 | 345 |
-| Container composition hits | included in builtin | included in builtin |
-| Cache hit rate | 75% (1714 hits) | — (327 hits) |
-| Codec-first hits | — | 118 |
-| summonIgnoring % of total | 49% | 37% |
-| `tryBuiltin` time | 47ms (1.7%) | 30ms (3.7%) |
-| `cheapTypeKey` time | 4ms (0.1%) | 1ms (0.2%) |
-
-`summonIgnoring` (the compiler's implicit search) dominates auto derivation at 49%. Builtin short-circuiting and container composition resolve ~706 type lookups without calling `summonIgnoring` at all. Sub-trait detection uses cached `summonedKeys` (O(1) set lookup) instead of re-calling `summonIgnoring`, reducing per-call time from 0.29ms to 0.04ms in configured derivation (-86%). For configured derivation, single-pass codec derivation halved the macro expansion count from 460 (separate CfgEncoder + CfgDecoder) to 230 (unified CfgCodec), while sharing one cache and one Mirror summon per type. Codec-first `summonIgnoring` further reduced configured calls from 294 to 205 (-30%) by trying `Codec.AsObject[T]` before separate `Encoder[T]` + `Decoder[T]` — 118 of 147 type pairs were resolved with a single call. The intra-expansion cache achieves a 75% hit rate in auto derivation, avoiding redundant derivations for repeated types within a single macro call. Factory method consolidation reduced macro framework overhead from 359ms to 231ms (-36%) by generating simpler factory calls instead of full anonymous class definitions. The remaining overhead is intrinsic to Scala 3's quote reflection (tuple type recursion at ~2ms/field, AST construction, quote splicing).
 
 ## Automated benchmarks
 

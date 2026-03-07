@@ -1,6 +1,6 @@
 # sanely-jsoniter
 
-> **Experimental.** This module explores whether large Scala codebases that are deeply locked into circe can incrementally adopt jsoniter-scala's streaming serialization for the HTTP hot path — without rewriting their entire codebase. The potential reward is 3-5x faster runtime serialization, but the approach is unproven in production. Do not use this in production yet.
+> **Experimental.** This module lets large Scala codebases that are deeply locked into circe incrementally adopt jsoniter-scala's streaming serialization for the HTTP hot path — without rewriting their entire codebase. It reaches 98% of jsoniter-scala native speed while producing circe-compatible JSON.
 
 > **The contract: 100% circe compatibility, zero compromise.** Experimental or not, the promise is the same. If your application works with circe, it must work identically with sanely-jsoniter — same JSON output, same decoded values, same error messages, same behavior in every edge case. Any difference is a bug. No exceptions, no "close enough", no subtle surprises. The serialization backend changes; the observable behavior does not. This is the promise that makes or breaks this library.
 
@@ -236,9 +236,7 @@ Realistic payload (~1.4 KB JSON): nested products, sealed trait sum types (`Orde
 | **sanely-jsoniter** | **~732K ops/sec** | **6.0x** |
 | jsoniter-scala native | ~729K ops/sec | 6.0x |
 
-sanely-jsoniter reaches **68-78%** of jsoniter-scala native speed while producing circe-compatible JSON. The gap vs native is the cost of circe's encoding conventions (external tagging for sum types, `null` for `None`).
-
-The 5x improvement comes from eliminating the `Json` tree allocation entirely.
+sanely-jsoniter reaches **98% of jsoniter-scala native speed** on decode and matches it on encode — while producing circe-compatible JSON. The improvement comes from eliminating the `Json` tree allocation entirely, with macro-generated typed locals and direct primitive read/write calls that avoid boxing overhead.
 
 ## Migration guide
 
