@@ -165,7 +165,9 @@ That's it. The JSON on the wire is identical, so no client changes are needed.
 - [ ] **Sub-trait support**: Sealed trait variants that are nested sealed traits (currently must be case classes or case objects)
 - [ ] **Configured derivation**: Field name transforms, discriminators, and strict decoding
 - [x] **Enum string codec**: Encode enum cases as strings (`"Red"`) instead of empty-object variants (`{"Red":{}}`)
-- [ ] **Non-string map keys**: Support `Map[K, V]` where K is not String
+- [ ] **Non-string map keys**: Support `Map[K, V]` where K is not String (encode as array of pairs, matching circe's `MapCodecs` pattern)
+- [ ] **Either codec**: Support `Either[L, R]` with configurable field names (matching circe's `encodeEither`/`decodeEither`)
+- [ ] **Protobuf codec bridge**: Support ScalaPB `GeneratedMessage`/`GeneratedEnum` types (matching `scalapb_circe` JSON format)
 - [x] **Scala.js support**: Cross-compile for Scala.js
 
 ## Dependencies
