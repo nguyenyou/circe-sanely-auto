@@ -181,7 +181,6 @@ These cover the most common circe derivation patterns in real-world codebases.
 
 ### P2 — Enables complete replacement
 
-- [x] **Protobuf codec bridge**: `sanely-jsoniter-scalapb` module — streaming `JsonValueCodec` for ScalaPB `GeneratedMessage`/`GeneratedEnum` via descriptor reflection (no circe dependency)
 - [x] **Value enum codecs**: `Codecs.stringValueEnum` and `Codecs.intValueEnum` — encode by associated value (not case name). E.g. `Status.Active` → `"active"`, `Priority.High` → `3`.
 
 ### Done
