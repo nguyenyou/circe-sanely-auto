@@ -18,6 +18,22 @@ sealed trait Shape
 case class Circle(radius: Double) extends Shape
 case class Rect(width: Double, height: Double) extends Shape
 
+// Enums for string codec
+enum Color:
+  case Red, Green, Blue
+
+enum Direction:
+  case North, South, East, West
+
+// Hierarchical sealed trait enum (diamond)
+sealed trait Animal
+sealed trait Pet extends Animal
+sealed trait Farm extends Animal
+case object Dog extends Pet
+case object Cat extends Pet
+case object Cow extends Farm
+case object Chicken extends Farm
+
 // Recursive type
 case class Tree(value: String, children: List[Tree])
 
@@ -34,6 +50,9 @@ object SanelyJsoniterTest extends TestSuite:
   given JsonValueCodec[Empty] = deriveJsoniterCodec
   given JsonValueCodec[Shape] = deriveJsoniterCodec
   given JsonValueCodec[Tree] = deriveJsoniterCodec
+  given JsonValueCodec[Color] = deriveJsoniterEnumCodec
+  given JsonValueCodec[Direction] = deriveJsoniterEnumCodec
+  given JsonValueCodec[Animal] = deriveJsoniterEnumCodec
 
   private def roundtrip[A: JsonValueCodec](value: A): A =
     val json = writeToString(value)
@@ -199,5 +218,65 @@ object SanelyJsoniterTest extends TestSuite:
       val json = "null"
       val result = readFromString[Option[Address]](json)
       assert(result == None)
+    }
+
+    test("enum - basic round-trip") {
+      val json = writeToString(Color.Red)
+      assert(json == "\"Red\"")
+      val decoded = readFromString[Color](json)
+      assert(decoded == Color.Red)
+    }
+
+    test("enum - all variants round-trip") {
+      for dir <- Direction.values do
+        val json = writeToString(dir)
+        assert(json == s"\"${dir.toString}\"")
+        val decoded = readFromString[Direction](json)
+        assert(decoded == dir)
+    }
+
+    test("enum - unknown value decode error") {
+      val caught =
+        try
+          readFromString[Color]("\"Purple\"")
+          throw new RuntimeException("expected exception")
+        catch
+          case e: com.github.plokhotnyuk.jsoniter_scala.core.JsonReaderException => e
+      assert(caught.getMessage.contains("does not contain case"))
+    }
+
+    test("enum - hierarchical sealed trait with diamond dedup") {
+      val json = writeToString[Animal](Dog)
+      assert(json == "\"Dog\"")
+      val decoded = readFromString[Animal](json)
+      assert(decoded eq Dog)
+
+      // All variants
+      val all = List[Animal](Dog, Cat, Cow, Chicken)
+      for a <- all do
+        val j = writeToString(a)
+        val d = readFromString[Animal](j)
+        assert(d eq a)
+    }
+
+    test("enum - circe format compatibility") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveEnumCodec
+
+      given Configuration = Configuration.default
+      given CirceCodec[Color] = deriveEnumCodec
+
+      // jsoniter → circe
+      val jsoniterJson = writeToString(Color.Green)
+      val circeResult = circeDecode[Color](jsoniterJson)
+      assert(circeResult == Right(Color.Green))
+
+      // circe → jsoniter
+      val circeJson = (Color.Blue: Color).asJson.noSpaces
+      val jsoniterResult = readFromString[Color](circeJson)
+      assert(jsoniterResult == Color.Blue)
     }
   }
