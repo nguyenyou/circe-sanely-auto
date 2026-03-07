@@ -9,7 +9,7 @@ object `package` extends mill.Module {
   }
 
   object js extends ScalaJSModule with SharedModule {
-    override def scalaJSVersion = "1.20.2"
+    override def scalaJSVersion = build.scalaJSVersion
     object test extends ScalaJSTests with SharedTests
   }
 
