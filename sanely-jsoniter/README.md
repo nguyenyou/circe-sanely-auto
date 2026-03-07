@@ -117,6 +117,26 @@ val json = writeToString(Color.Red)        // "Red"
 val back = readFromString[Color](json)     // Color.Red
 ```
 
+### Value enum codec
+
+For enums with a value parameter (e.g., `val value: String` or `val value: Int`):
+
+```scala
+import sanely.jsoniter.semiauto.*
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+
+enum Status(val value: String):
+  case Active extends Status("active")
+  case Inactive extends Status("inactive")
+
+given JsonValueCodec[Status] = deriveJsoniterValueEnumCodec
+
+val json = writeToString(Status.Active)        // "active"
+val back = readFromString[Status](json)        // Status.Active
+```
+
+The macro auto-detects whether the value field is `String` or `Int`. For enums with multiple constructor parameters or other value types, use `Codecs.stringValueEnum` / `Codecs.intValueEnum` manually.
+
 ### Auto derivation
 
 ```scala

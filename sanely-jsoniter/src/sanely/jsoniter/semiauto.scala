@@ -21,3 +21,6 @@ object semiauto:
 
   inline def deriveJsoniterEnumCodec[A](using inline m: Mirror.SumOf[A]): JsonValueCodec[A] =
     SanelyJsoniterEnum.derived[A]
+
+  inline def deriveJsoniterValueEnumCodec[A](using inline m: Mirror.SumOf[A]): JsonValueCodec[A] =
+    SanelyJsoniterValueEnum.derived[A]

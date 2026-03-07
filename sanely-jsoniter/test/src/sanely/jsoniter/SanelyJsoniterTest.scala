@@ -940,6 +940,64 @@ object SanelyJsoniterTest extends TestSuite:
       assert(caught.getMessage.contains("does not contain value"))
     }
 
+    // === Value enum macro derivation tests ===
+
+    test("value enum macro - string round-trip") {
+      given JsonValueCodec[Status] = deriveJsoniterValueEnumCodec
+      val json = writeToString(Status.Active)
+      assert(json == "\"active\"")
+      val decoded = readFromString[Status](json)
+      assert(decoded == Status.Active)
+    }
+
+    test("value enum macro - all string variants") {
+      given JsonValueCodec[Status] = deriveJsoniterValueEnumCodec
+      for s <- Status.values do
+        val json = writeToString(s)
+        assert(json == s"\"${s.value}\"")
+        val decoded = readFromString[Status](json)
+        assert(decoded == s)
+    }
+
+    test("value enum macro - int round-trip") {
+      given JsonValueCodec[Priority] = deriveJsoniterValueEnumCodec
+      val json = writeToString(Priority.High)
+      assert(json == "3")
+      val decoded = readFromString[Priority](json)
+      assert(decoded == Priority.High)
+    }
+
+    test("value enum macro - all int variants") {
+      given JsonValueCodec[Priority] = deriveJsoniterValueEnumCodec
+      for p <- Priority.values do
+        val json = writeToString(p)
+        assert(json == p.value.toString)
+        val decoded = readFromString[Priority](json)
+        assert(decoded == p)
+    }
+
+    test("value enum macro - unknown string value decode error") {
+      given JsonValueCodec[Status] = deriveJsoniterValueEnumCodec
+      val caught =
+        try
+          readFromString[Status]("\"unknown\"")
+          throw new RuntimeException("expected exception")
+        catch
+          case e: com.github.plokhotnyuk.jsoniter_scala.core.JsonReaderException => e
+      assert(caught.getMessage.contains("does not contain value"))
+    }
+
+    test("value enum macro - unknown int value decode error") {
+      given JsonValueCodec[Priority] = deriveJsoniterValueEnumCodec
+      val caught =
+        try
+          readFromString[Priority]("99")
+          throw new RuntimeException("expected exception")
+        catch
+          case e: com.github.plokhotnyuk.jsoniter_scala.core.JsonReaderException => e
+      assert(caught.getMessage.contains("does not contain value"))
+    }
+
     // === Strict decoding tests ===
 
     test("strict - product: unknown field rejected") {
