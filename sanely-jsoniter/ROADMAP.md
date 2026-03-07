@@ -66,7 +66,7 @@ Real codebases use configured derivation for the vast majority of types (default
 
 ## P3 — Performance (closing the gap with native jsoniter-scala)
 
-With P3.1–P3.4 complete, sanely-jsoniter reaches **98% of jsoniter-scala native** on decode and **surpasses it by 6%** on encode. The remaining gap on decode comes from circe format constraints (external tagging, null-writing for None).
+With P3.1–P3.4 complete, sanely-jsoniter reaches **98% of jsoniter-scala native** on decode and **surpasses it by 6%** on encode. The remaining 2% decode gap comes from result construction overhead and sum type allocation.
 
 ### Encoding bottlenecks
 
@@ -79,6 +79,10 @@ With P3.1–P3.4 complete, sanely-jsoniter reaches **98% of jsoniter-scala nativ
 - [x] **P3.3: Inline decode with typed locals** — Macro generates typed local variables (`var _name: String = null; var _age: Int = 0`) instead of `Array[Any]` boxing.
 
 - [x] **P3.4: Hash-based field key dispatch** — For products with > 8 fields or > 64 total field name chars, generates `(in.charBufToHashCode(l): @switch) match { ... }` with compile-time pre-computed hashes. Hash collisions fall back to `isCharBufEqualsTo`. Products with ≤ 8 fields keep the linear if-else chain (hashing overhead not worth it). Matches jsoniter-scala's own strategy.
+
+- [ ] **P3.5: Direct constructor call** — Currently result construction uses `mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))` which boxes every primitive (`Int` → `Integer`), allocates an `Array[Any]`, allocates an `ArrayProduct` wrapper, then `fromProduct` unboxes via `productElement(i)`. For `User` (9 fields, 5 primitives) that's 5 boxing ops + 2 allocations per decode. Replace with `Apply(Select(New(TypeTree.of[P]), primaryConstructor), varRefs)` — direct `new P(_f0, _f1, ...)` with zero boxing and zero intermediate allocations. This is exactly what jsoniter-scala native does. Expected: largest single improvement, should close most of the 2% decode gap.
+
+- [ ] **P3.6: Char-buf sum type dispatch** — Sum type decode in `JsoniterRuntime.sumCodec.decodeValue` uses `readKeyAsString()` + `String ==` for variant key matching, allocating a `String` per sum value decoded. Replace with macro-generated `readKeyAsCharBuf()` + hash/linear `isCharBufEqualsTo` dispatch (same pattern as product field matching). Requires moving sum decode body from runtime to macro-generated code. Expected: small improvement (~3 sum values per benchmark payload).
 
 ### Not optimizable (circe format constraints)
 
