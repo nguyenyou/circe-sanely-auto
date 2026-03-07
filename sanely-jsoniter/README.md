@@ -1,24 +1,47 @@
 # sanely-jsoniter
 
-Drop-in `JsonValueCodec[A]` derivation for Scala 3, using the sanely-automatic macro approach. Produces JSON format compatible with circe's default encoding, enabling 3-5x faster runtime serialization compared to circe's tree-based approach.
+> **Experimental.** This module explores whether large Scala codebases that are deeply locked into circe can incrementally adopt jsoniter-scala's streaming serialization for the HTTP hot path — without rewriting their entire codebase. The potential reward is 3-5x faster runtime serialization, but the approach is unproven in production. Do not use this in production yet.
 
-## Problem
+## Why large codebases are stuck with circe
 
-circe's encode/decode pipeline always goes through an intermediate `Json` tree:
+In mature Scala codebases, circe is not just a serialization library — it becomes infrastructure. A typical large codebase may have:
+
+- **1,600+ files** importing `io.circe`, with 7,000+ derivation call sites
+- **Hundreds of domain model classes** with `json: io.circe.Json` as a field type — these are public API contracts, not internal implementation details. Changing them is a breaking change that ripples across the entire codebase
+- **800+ files** using cursor navigation (`.hcursor.downField("x").as[T]`) to traverse JSON trees — operations that fundamentally require the entire JSON AST in memory and have no streaming equivalent
+- **3,000+ occurrences** of `.asJson` and 750+ of `.as[T]` — circe's encode/decode operations that go through the `Json` tree
+- **Deep framework coupling** — HTTP frameworks (Tapir, http4s) wired to circe's `Encoder[T]`/`Decoder[T]` traits at the codec layer, with 1,000+ endpoint definitions depending on this integration
+- **Tree manipulation everywhere** — `.deepMerge()`, `.mapObject()`, `Json.obj()` used to construct JSON programmatically for CDC event schemas, analytics pipelines, API request building
+- **Circular dependencies** — code that produces `Json` ASTs and code that consumes them cannot be migrated independently
+
+The result: you cannot remove circe from such a codebase. The `Json` AST is embedded in domain models, API contracts, framework integrations, and business logic. Any migration must be incremental.
+
+## The opportunity
+
+Despite circe being deeply embedded, the **HTTP serialization hot path** — where bytes are parsed into domain objects and domain objects are serialized back to bytes — is a narrow, well-defined layer. In a typical request:
 
 ```
-Encode:  A  -->  Json tree (allocations)  -->  bytes
-Decode:  bytes  -->  Json tree (allocations)  -->  A
+HTTP request bytes  -->  circe Json tree (allocated)  -->  Decoder[T]  -->  T
+T  -->  Encoder[T]  -->  circe Json tree (allocated)  -->  HTTP response bytes
 ```
 
-jsoniter-scala skips the tree entirely:
+The `Json` tree in the middle exists only to satisfy circe's API — the application code on either side works with typed domain objects, not raw JSON. If we can generate codecs that go directly from bytes to domain objects (and back), we skip the tree allocation entirely:
 
 ```
-Encode:  A  -->  bytes   (streaming, zero intermediate allocation)
-Decode:  bytes  -->  A   (streaming, zero intermediate allocation)
+HTTP request bytes  -->  JsonValueCodec[T]  -->  T
+T  -->  JsonValueCodec[T]  -->  HTTP response bytes
 ```
 
-This module generates `JsonValueCodec[A]` instances that produce **identical JSON** to what circe would produce, so they can be used as a drop-in performance upgrade for the serialization hot path while keeping circe for everything else (cursors, tree manipulation, framework integrations).
+This is 3-5x faster because jsoniter-scala streams tokens directly without allocating intermediate `Json` nodes. The key insight: **this only works for the serialization boundary**, not for code that genuinely needs the JSON tree (cursor navigation, merging, programmatic construction). Those parts stay on circe.
+
+## What this module does
+
+Generates `JsonValueCodec[A]` instances (jsoniter-scala's codec type) that produce **identical JSON** to what circe would produce. This means:
+
+- The JSON on the wire is the same — no client-side changes needed
+- circe stays for everything else (cursors, tree manipulation, framework integrations)
+- Only the HTTP encode/decode hot path changes
+- Both circe codecs and jsoniter codecs can coexist — they're different types, no conflicts
 
 ## Usage
 
