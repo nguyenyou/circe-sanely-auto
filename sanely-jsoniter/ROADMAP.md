@@ -8,7 +8,7 @@ Core derivation engine is complete: products, sum types, enums, recursive types,
 
 **What works today**: semi-auto derivation (`deriveJsoniterCodec`, `deriveJsoniterConfiguredCodec`, `deriveJsoniterEnumCodec`) with all configuration options. Auto derivation for standard (non-configured) types.
 
-**What's missing**: Tapir integration guidance, strict decoding runtime, and migration guide for configured codebases.
+**What's missing**: Migration guide for configured codebases.
 
 ## Completed
 
@@ -42,7 +42,7 @@ Real codebases use configured derivation for the vast majority of types (default
 
 ## P1 — Enables smoother adoption
 
-- [ ] **Tapir integration tests** — Add a test module with Tapir as a dependency that proves the HTTP codec swap works end-to-end. Test cases should cover:
+- [x] **Tapir integration tests** — Add a test module with Tapir as a dependency that proves the HTTP codec swap works end-to-end. Test cases should cover:
   - **Direct jsoniter codec**: `sttp.tapir.Codec.json[T]` using `readFromString[T]` / `writeToString[T]` with `JsonValueCodec[T]` — no circe `Json` tree in the pipeline
   - **Standard types**: product types, sum types (external tagging), enums — verify Tapir roundtrip (encode → decode) produces identical results to the circe-based codec
   - **Configured types**: types with defaults (missing fields decoded correctly), discriminator tagging, snake_case field names, drop-null encoding — verify wire format matches circe's configured codec output
