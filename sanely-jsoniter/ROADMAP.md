@@ -63,3 +63,27 @@ Real codebases use configured derivation for the vast majority of types (default
 - [x] **`derives` support** — `JsoniterCodec`, `JsoniterCodec.WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`. Each extends `JsonValueCodec[A]` directly so no import conversions needed.
 
 - [x] **Performance benchmarks vs bridge** — Runtime benchmark with realistic payload (~1.4 KB: nested products, sealed trait sum types, optional fields). sanely-jsoniter: **3.4x read / 4.5x write** vs circe-jawn; bridge: **1.5x read / 0.9x write**; jsoniter-scala native: **5.0x read / 5.8x write**.
+
+## P3 — Performance (closing the gap with native jsoniter-scala)
+
+sanely-jsoniter currently reaches **68-78%** of jsoniter-scala native speed. The gap comes from runtime indirection that jsoniter-scala avoids by generating fully-specialized code at compile time. These items address each bottleneck independently — each delivers measurable improvement and can be landed separately.
+
+### Encoding bottlenecks
+
+- [ ] **P3.1: Inline encode with direct field access** — Currently `encodeProduct` calls `x.productElement(i)` which returns `Any`, boxing every primitive (Int, Long, Double, Boolean). The macro should generate the encode loop body directly: `out.writeNonEscapedAsciiKey("name"); codec_name.encodeValue(x.name, out)` — using direct field accessors (`x.name`, `x.age`) instead of indexed `productElement`. This eliminates boxing for all field types. Applies to both standard and configured product codecs, including `encodeFields` (discriminator inline encoding) and `encodeProductDropNull`.
+
+- [ ] **P3.2: Direct primitive write calls** — Building on P3.1, for primitive-typed fields (String, Int, Long, Double, Float, Boolean, Byte, Short, Char, BigDecimal, BigInt), call `out.writeVal(x.age)` directly instead of going through `JsonValueCodec[Int].encodeValue(x.age, out)`. The macro detects primitive types at compile time and emits the direct call, eliminating both codec array lookup and virtual dispatch for the most common field types. Non-primitive fields still go through their codec.
+
+### Decoding bottlenecks
+
+- [ ] **P3.3: Inline decode with typed locals** — Currently decoded values go into `Array[Any]` (boxing), wrapped in `ArrayProduct`, then passed to `mirror.fromProduct()`. The macro should generate typed local variables: `var _name: String = null; var _age: Int = 0`, assign them during field matching, and construct the result directly (either via `new T(...)` or `mirror.fromProduct` with a typed product). This eliminates boxing on the decode path. Applies to both `decodeProduct` and `decodeProductConfigured`.
+
+- [ ] **P3.4: Hash-based field key dispatch** — Currently field matching does linear scan: `while i < n && !matched do if in.isCharBufEqualsTo(keyLen, names(i))`. For products with many fields, this is O(fields²) per object. Pre-compute field name hashes at compile time and generate a hash-switch: compute hash from `in.charBuf`, match to candidate field(s), verify with `isCharBufEqualsTo` only for hash collisions. jsoniter-scala uses a trie-based approach; a simpler hash dispatch gets most of the benefit.
+
+### Not optimizable (circe format constraints)
+
+These are inherent costs of producing circe-compatible JSON and cannot be optimized without breaking the compatibility contract:
+
+- **External tagging overhead** — Sum types encode as `{"VariantName": {...}}` (one extra object wrapper per variant). jsoniter-scala native uses flat `JsonCodecMaker.make` encoding that avoids this wrapper. Cannot change without breaking circe compatibility.
+
+- **Option null-writing** — `None` encodes as `null` (field present with null value). jsoniter-scala native skips the field entirely. Cannot change without breaking circe compatibility. (Note: `dropNullValues` config already skips nulls, but the default must match circe's default.)
