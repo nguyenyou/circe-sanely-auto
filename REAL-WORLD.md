@@ -229,8 +229,8 @@ The goal is not to replace circe. It's to make circe fast where it matters — c
 
 ## Current status (sanely-jsoniter)
 
-sanely-jsoniter's core derivation engine is complete — products, sum types, enums, recursive types, sub-trait hierarchies, Either, non-string map keys, and all configured derivation options (defaults, discriminator, snake_case, drop-null, arbitrary name transforms).
+sanely-jsoniter's core derivation engine is complete — products, sum types, enums, recursive types, sub-trait hierarchies, Either, non-string map keys, and all configured derivation options (defaults, discriminator, snake_case, drop-null, arbitrary name transforms, strict decoding).
 
-**What's ready today**: semi-auto derivation with all configuration options, auto derivation for standard types, cross-codec tests proving format compatibility with circe for products, sums, enums, either, sub-traits, maps, defaults, and snake_case.
+**What's ready today**: semi-auto and auto derivation (both standard and configured), cross-codec tests proving format compatibility with circe across all configuration variants, and Tapir integration tests proving the HTTP codec swap works end-to-end.
 
-**What's still in progress**: auto-configured derivation (so configured types don't need explicit semi-auto calls), cross-codec tests for discriminator and drop-null, Tapir integration tests, strict decoding, and a migration guide for configured codebases. See the [sanely-jsoniter ROADMAP](sanely-jsoniter/ROADMAP.md) for the full tracker.
+**What's remaining**: migration guide for configured codebases, value enum macro derivation, `derives` support, and formal JMH benchmarks. See the [sanely-jsoniter ROADMAP](sanely-jsoniter/ROADMAP.md) for the full tracker.
