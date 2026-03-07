@@ -56,9 +56,16 @@ val json = writeToString(User("Bob", 25))  // just works
 - **Maps**: `Map[String, V]` (string keys only)
 - **Recursive types**: Self-referential case classes (e.g., tree structures)
 
-## Format compatibility with circe
+## Compatibility promise
 
-The generated codecs produce JSON that is byte-for-byte compatible with circe's default encoding:
+**sanely-jsoniter is compatible with circe's JSON format, not jsoniter-scala's.**
+
+jsoniter-scala is used as the streaming engine, but the generated codecs intentionally match circe's default encoding — not `JsonCodecMaker.make` defaults (which differ in sum type tagging, enum encoding, etc.). The compatibility contract:
+
+- Encode with sanely-jsoniter, decode with circe → identical result
+- Encode with circe, decode with sanely-jsoniter → identical result
+
+This means you can adopt sanely-jsoniter on the hot path and keep circe everywhere else — the JSON on the wire is the same.
 
 | Type | JSON format | Example |
 |------|------------|---------|
@@ -67,8 +74,6 @@ The generated codecs produce JSON that is byte-for-byte compatible with circe's 
 | Option None | `null` | `"age":null` |
 | Collections | JSON array | `[1,2,3]` |
 | Map[String, V] | JSON object | `{"k":"v"}` |
-
-This means you can encode with jsoniter and decode with circe (or vice versa) — useful for gradual migration or mixing both in the same system.
 
 ## Performance
 
