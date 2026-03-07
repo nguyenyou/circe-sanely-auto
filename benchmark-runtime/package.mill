@@ -4,7 +4,7 @@ import mill.*, scalalib.*
 
 object `package` extends ScalaModule {
   def scalaVersion = build.scala3Version
-  def moduleDeps = Seq(build.sanely.jvm)
+  def moduleDeps = Seq(build.sanely.jvm, build.`sanely-jsoniter`.jvm)
   def scalacOptions = Task {
     super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
   }

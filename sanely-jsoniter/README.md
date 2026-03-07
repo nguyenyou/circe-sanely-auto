@@ -214,13 +214,27 @@ Cross-codec tests encode values with sanely-jsoniter and decode with circe (and 
 
 ## Performance
 
-Compared to circe (encoding + decoding combined):
+Realistic payload (~1.4 KB JSON): nested products, sealed trait sum types (`OrderStatus`), optional fields, lists. Run via `bash bench-runtime.sh`.
+
+**Reading** (bytes → case class):
 
 | Approach | Throughput | vs circe |
 |----------|-----------|----------|
-| circe-jawn (pure circe) | ~150K ops/sec | 1.0x |
-| circe + jsoniter parser | ~235K ops/sec | 1.5x |
-| **sanely-jsoniter** | ~800K ops/sec | **5x** |
+| circe-jawn | ~140K ops/sec | 1.0x |
+| circe + jsoniter bridge | ~207K ops/sec | 1.5x |
+| **sanely-jsoniter** | **~476K ops/sec** | **3.4x** |
+| jsoniter-scala native | ~696K ops/sec | 5.0x |
+
+**Writing** (case class → bytes):
+
+| Approach | Throughput | vs circe |
+|----------|-----------|----------|
+| circe-printer | ~128K ops/sec | 1.0x |
+| circe + jsoniter bridge | ~113K ops/sec | 0.9x |
+| **sanely-jsoniter** | **~576K ops/sec** | **4.5x** |
+| jsoniter-scala native | ~738K ops/sec | 5.8x |
+
+sanely-jsoniter reaches **68-78%** of jsoniter-scala native speed while producing circe-compatible JSON. The gap vs native is the cost of circe's encoding conventions (external tagging for sum types, `null` for `None`).
 
 The 5x improvement comes from eliminating the `Json` tree allocation entirely.
 
