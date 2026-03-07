@@ -378,7 +378,8 @@ object JsoniterRuntime:
       case 't' | 'f' =>
         sb.append(in.readBoolean())
       case 'n' =>
-        in.readNullOrError[String](null, "expected null")
+        in.nextToken() // consume 'n' — readNullOrError expects it pre-consumed
+        in.readNullOrError[String]("", "expected null")
         sb.append("null")
       case '{' =>
         in.isNextToken('{')
