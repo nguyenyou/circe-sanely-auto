@@ -23,6 +23,24 @@ circe shows up in nearly every layer of the system:
 
 You cannot remove circe from such a codebase. The `Json` AST is embedded in domain models, API contracts, storage formats, event schemas, and business logic. Any improvement must be incremental.
 
+### What this project addresses — layer by layer
+
+Not every layer benefits equally. Some are hot paths where runtime speed matters. Others are cold paths where only compile time matters. And some genuinely need the `Json` AST and can't be optimized further. Here's the breakdown:
+
+| Layer | Compile time (circe-sanely-auto) | Runtime (sanely-jsoniter) | Impact |
+|---|---|---|---|
+| **HTTP endpoints** | 2x faster derivation for every endpoint codec | **5x throughput** — eliminates `Json` tree on every request/response | **Highest.** This is the hot path. Every API call benefits |
+| **Object storage (S3)** | 2x faster derivation | **5x faster** serialization/deserialization for uploads and downloads | **High.** Large documents (forms, reports) serialized on every read/write |
+| **Structured logging** | 2x faster if log structs use circe derivation | Not applicable — log structs typically use jsoniter-scala directly | **Low runtime, medium compile.** Logging is already optimized |
+| **CDC / event pipelines** | 2x faster derivation | Not applicable — these genuinely need the `Json` AST (`deepMerge`, `Json.obj()`, cursors) | **Compile only.** Tree manipulation has no streaming equivalent |
+| **Caching layers** | 2x faster derivation | **5x faster** if serializing to/from cache as JSON strings | **Medium.** Depends on whether cache stores `Json` objects or serialized strings |
+| **Configuration** | **2x faster** configured derivation (defaults, discriminators, transforms) | Not applicable — config is loaded once at startup, runtime is irrelevant | **Compile only.** But configured derivation is used heavily (~hundreds of call sites) |
+| **Cross-service protocols** | **2x faster** on both JVM and Scala.js (cross-compiled) | Potential for shared codec definitions | **Compile only.** But affects both frontend and backend builds |
+
+The pattern: **circe-sanely-auto helps everywhere** (every derivation call site compiles faster). **sanely-jsoniter helps on the I/O boundaries** — HTTP, storage, caching — where bytes are converted to/from domain objects. The layers that do tree manipulation (CDC, cursors, merging) stay on circe untouched.
+
+In a typical production codebase, HTTP endpoints and storage account for the majority of serialization volume. These are exactly the layers where sanely-jsoniter's 5x improvement applies.
+
 ## Two independent performance problems
 
 ### Problem 1: Compile time
