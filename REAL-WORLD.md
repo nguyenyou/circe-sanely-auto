@@ -233,4 +233,4 @@ sanely-jsoniter's core derivation engine is complete — products, sum types, en
 
 **What's ready today**: semi-auto and auto derivation (both standard and configured), cross-codec tests proving format compatibility with circe across all configuration variants, and Tapir integration tests proving the HTTP codec swap works end-to-end.
 
-**What's remaining**: `derives` support and formal JMH benchmarks. See the [sanely-jsoniter ROADMAP](sanely-jsoniter/ROADMAP.md) for the full tracker.
+**What's remaining**: formal JMH benchmarks. See the [sanely-jsoniter ROADMAP](sanely-jsoniter/ROADMAP.md) for the full tracker.

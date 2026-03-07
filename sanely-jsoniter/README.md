@@ -147,6 +147,38 @@ case class User(name: String, age: Int)
 val json = writeToString(User("Bob", 25))  // just works
 ```
 
+### `derives` syntax
+
+```scala
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+import sanely.jsoniter.JsoniterCodec
+
+// Standard
+case class Point(x: Int, y: Int) derives JsoniterCodec
+
+// With defaults (missing fields use Scala defaults)
+case class Config(host: String, port: Int = 8080) derives JsoniterCodec.WithDefaults
+
+// Snake_case + defaults
+case class Profile(firstName: String, lastName: String) derives JsoniterCodec.WithSnakeCaseAndDefaults
+
+// Defaults + drop null
+case class Event(name: String, detail: Option[String] = None) derives JsoniterCodec.WithDefaultsDropNull
+
+// Enum string codec
+enum Color derives JsoniterCodec.Enum:
+  case Red, Green, Blue
+
+// Value enum
+enum Level(val value: Int) derives JsoniterCodec.ValueEnum:
+  case Low extends Level(1)
+  case High extends Level(3)
+```
+
+Each wrapper extends `JsonValueCodec[A]` directly, so `derives` makes the codec available without any additional imports or conversions.
+
+Available wrappers: `JsoniterCodec`, `WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`.
+
 ## Supported types
 
 - **Products**: Case classes with any number of fields
