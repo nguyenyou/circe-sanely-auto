@@ -66,7 +66,13 @@ Real codebases use configured derivation for the vast majority of types (default
 
 ## P3 — Performance (closing the gap with native jsoniter-scala)
 
-With P3.1–P3.4 complete, sanely-jsoniter reaches **98% of jsoniter-scala native** on decode and **surpasses it by 6%** on encode. The remaining 2% decode gap comes from result construction overhead and sum type allocation.
+With P3.1–P3.4 complete, sanely-jsoniter reaches **98% of jsoniter-scala native** on decode and **surpasses it by 6%** on encode. The remaining decode gap comes from result construction overhead and sum type allocation. The write path is already close to ceiling; remaining headroom is decode-side.
+
+**Priority order** (informed by real-world codebase with ~300 configured types, ~40 discriminator types):
+1. **P3.5** — direct constructor: biggest single win, eliminates 3 allocations + N primitive boxes per product decode, affects every type
+2. **P3.6** — char-buf sum dispatch: eliminates String alloc per sum decode, standalone refactor
+3. **P3.7** — container codec cleanups: small per-call but ubiquitous (every List/Vector/Seq/Set/Map field)
+4. **P3.8** — discriminator slow path: only matters when decoding third-party JSON with random field order; self-produced JSON always hits the fast path
 
 ### Encoding bottlenecks
 
@@ -83,6 +89,10 @@ With P3.1–P3.4 complete, sanely-jsoniter reaches **98% of jsoniter-scala nativ
 - [ ] **P3.5: Direct constructor call** — Currently result construction uses `mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))` which boxes every primitive (`Int` → `Integer`), allocates an `Array[Any]`, allocates an `ArrayProduct` wrapper, then `fromProduct` unboxes via `productElement(i)`. For `User` (9 fields, 5 primitives) that's 5 boxing ops + 2 allocations per decode. Replace with `Apply(Select(New(TypeTree.of[P]), primaryConstructor), varRefs)` — direct `new P(_f0, _f1, ...)` with zero boxing and zero intermediate allocations. This is exactly what jsoniter-scala native does. Expected: largest single improvement, should close most of the 2% decode gap.
 
 - [ ] **P3.6: Char-buf sum type dispatch** — Sum type decode in `JsoniterRuntime.sumCodec.decodeValue` uses `readKeyAsString()` + `String ==` for variant key matching, allocating a `String` per sum value decoded. Replace with macro-generated `readKeyAsCharBuf()` + hash/linear `isCharBufEqualsTo` dispatch (same pattern as product field matching). Requires moving sum decode body from runtime to macro-generated code. Expected: small improvement (~3 sum values per benchmark payload).
+
+- [ ] **P3.7: Container codec cleanups** — `Codecs.seq.decodeValue` allocates a **fresh `list(inner)` codec on every call** (`Codecs.scala:140`). Vector, Set, and Map encoders use `x.foreach(e => ...)` which allocates a closure per encode call — should use `val it = x.iterator; while it.hasNext do ...` like the List encoder already does. Small per-call cost but ubiquitous — every `List`, `Vector`, `Seq`, `Set`, `Map` field in every type hits this on every request.
+
+- [ ] **P3.8: Discriminator slow-path optimization** — When the discriminator field is not the first key in the JSON object, `decodeWithDiscriminator` (`JsoniterRuntime.scala:322-359`) buffers every non-discriminator field as a raw JSON string into an `ArrayList`, reconstructs a full JSON string, then reparses it with `readFromString`. This is a full double-parse of the entire object. The fast path (discriminator first) hides this because our own encoders always emit the discriminator first. But if ingesting third-party JSON where field order varies, this becomes the dominant configured-ADT cost. Fix: buffer raw byte offsets or make `decodeFieldsAfterDiscriminator` accept pre-read field key-value pairs to avoid the reparse entirely. Low priority for self-produced JSON; high priority if decoding external sources.
 
 ### Not optimizable (circe format constraints)
 
