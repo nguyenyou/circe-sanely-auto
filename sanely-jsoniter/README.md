@@ -73,8 +73,9 @@ tapir-json  tapir-jsoniter
 Json tree   direct streaming
 (allocate)  (zero alloc)
     │         │
- ~136K      ~655K ops/sec
+ ~139K      ~661K ops/sec
  ops/sec    (4.8x faster)
+ 28 KB/op    4 KB/op
 ```
 
 Tapir is the **HTTP boundary** — where every request/response passes through. It doesn't serialize anything itself; the integration module (`tapir-json-circe` vs `tapir-jsoniter-scala`) decides how `T` becomes bytes. sanely-jsoniter provides the `JsonValueCodec[T]` that `tapir-jsoniter-scala` needs, producing **circe-compatible JSON** so the wire format stays identical.
@@ -220,23 +221,23 @@ Realistic payload (~1.4 KB JSON): nested products, sealed trait sum types (`Orde
 
 **Reading** (bytes → case class):
 
-| Approach | Throughput | vs circe |
-|----------|-----------|----------|
-| circe-jawn | ~136K ops/sec | 1.0x |
-| circe + jsoniter bridge | ~197K ops/sec | 1.5x |
-| **sanely-jsoniter** | **~655K ops/sec** | **4.8x** |
-| jsoniter-scala native | ~667K ops/sec | 4.9x |
+| Approach | Throughput | vs circe | Alloc/op |
+|----------|-----------|----------|----------|
+| circe-jawn | ~139K ops/sec | 1.0x | 28 KB |
+| circe + jsoniter bridge | ~203K ops/sec | 1.5x | 25 KB |
+| **sanely-jsoniter** | **~661K ops/sec** | **4.8x** | **4 KB** |
+| jsoniter-scala native | ~680K ops/sec | 4.9x | 3 KB |
 
 **Writing** (case class → bytes):
 
-| Approach | Throughput | vs circe |
-|----------|-----------|----------|
-| circe-printer | ~121K ops/sec | 1.0x |
-| circe + jsoniter bridge | ~111K ops/sec | 0.9x |
-| **sanely-jsoniter** | **~732K ops/sec** | **6.0x** |
-| jsoniter-scala native | ~729K ops/sec | 6.0x |
+| Approach | Throughput | vs circe | Alloc/op |
+|----------|-----------|----------|----------|
+| circe-printer | ~125K ops/sec | 1.0x | 27 KB |
+| circe + jsoniter bridge | ~110K ops/sec | 0.9x | 23 KB |
+| **sanely-jsoniter** | **~782K ops/sec** | **6.2x** | **1 KB** |
+| jsoniter-scala native | ~723K ops/sec | 5.8x | 1 KB |
 
-sanely-jsoniter reaches **98% of jsoniter-scala native speed** on decode and matches it on encode — while producing circe-compatible JSON. The improvement comes from eliminating the `Json` tree allocation entirely, with macro-generated typed locals and direct primitive read/write calls that avoid boxing overhead.
+sanely-jsoniter reaches **97% of jsoniter-scala native speed** on decode and **surpasses it by 8%** on encode — while producing circe-compatible JSON. It allocates **85% less per read** and **95% less per write** compared to circe-jawn. The improvement comes from eliminating the `Json` tree allocation entirely, with macro-generated typed locals and direct primitive read/write calls that avoid boxing overhead.
 
 ## Migration guide
 

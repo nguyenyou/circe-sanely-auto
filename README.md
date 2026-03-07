@@ -14,7 +14,7 @@ But circe has two performance problems:
 
 **Slow compilation.** circe-generic's `auto` derivation triggers a new round of implicit resolution for every nested type. For a codebase with hundreds of types, these rounds compound — each type waits for all its fields to be resolved, which wait for their fields, and so on. A clean compile of 300 types takes over 6 seconds just for derivation. In large monorepos with thousands of types, this adds minutes to every build.
 
-**Slow runtime.** circe parses JSON into an intermediate `Json` AST, then traverses that AST to build your domain objects. Every request allocates a full tree of `Json` nodes only to throw them away immediately. This parse-allocate-traverse pipeline caps throughput at ~130K ops/sec for a typical 1.4 KB payload.
+**Slow runtime.** circe parses JSON into an intermediate `Json` AST, then traverses that AST to build your domain objects. Every request allocates a full tree of `Json` nodes only to throw them away immediately. This parse-allocate-traverse pipeline caps throughput at ~130K ops/sec and allocates ~28 KB per decode for a typical 1.4 KB payload.
 
 The catch: you can't just switch libraries. circe is not merely a dependency — it's infrastructure. Production codebases have `io.circe.Json` as field types in domain models, cursor navigation in business logic, tree manipulation in API layers, and framework integrations wired to `Encoder[T]`/`Decoder[T]`. Migrating away from circe is a rewrite, not a refactor.
 
@@ -40,18 +40,18 @@ This contract is enforced by 327 tests — including 192 property-based tests au
 | **Memory allocations** | 8,547 samples | **4,168 samples** | **51% less** |
 | **Peak RSS** | 963 MB | **769 MB** | **20% less** |
 
-### Runtime — 4.8x faster reads, 6.2x faster writes
+### Runtime — 4.8x faster reads, 6.2x faster writes, 85–95% less allocation
 
 ~1.4 KB JSON payload, nested products, sealed traits, optional fields:
 
-| Approach | Reading (ops/sec) | | Writing (ops/sec) | |
-|---|---|---|---|---|
-| **circe + jawn** (baseline) | ~139K | 1.0x | ~126K | 1.0x |
-| **circe + jsoniter bridge** | ~206K | 1.5x | ~112K | 0.9x |
-| **sanely-jsoniter** | **~669K** | **4.8x** | **~783K** | **6.2x** |
-| jsoniter-scala native | ~684K | 4.9x | ~737K | 5.8x |
+| Approach | Reading (ops/sec) | | Alloc/read | Writing (ops/sec) | | Alloc/write |
+|---|---|---|---|---|---|---|
+| **circe + jawn** (baseline) | ~139K | 1.0x | 28 KB | ~125K | 1.0x | 27 KB |
+| **circe + jsoniter bridge** | ~203K | 1.5x | 25 KB | ~110K | 0.9x | 23 KB |
+| **sanely-jsoniter** | **~661K** | **4.8x** | **4 KB** | **~782K** | **6.2x** | **1 KB** |
+| jsoniter-scala native | ~680K | 4.9x | 3 KB | ~723K | 5.8x | 1 KB |
 
-sanely-jsoniter reaches **98% of jsoniter-scala native** on decode and **surpasses it by 6%** on encode — while producing circe-compatible JSON on the wire.
+sanely-jsoniter reaches **97% of jsoniter-scala native** on decode and **surpasses it by 8%** on encode — while producing circe-compatible JSON on the wire. It also allocates **85% less memory per read** and **95% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
 
 <details>
 <summary>Benchmark methodology & cross-session stability</summary>
@@ -60,7 +60,7 @@ sanely-jsoniter reaches **98% of jsoniter-scala native** on decode and **surpass
 
 **Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~300 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 2.88x–3.01x across 25 runs in 3 separate sessions.
 
-**Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Three full benchmark runs were performed to verify consistency. Reading ranged 667K–670K ops/sec across runs; writing ranged 778K–785K ops/sec. Numbers reported are the median run.
+**Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Allocation per operation measured via `ThreadMXBean.getThreadAllocatedBytes` (precise, per-thread, no GC noise). Three full benchmark runs were performed to verify consistency. Reading ranged 653K–665K ops/sec across runs; writing ranged 775K–784K ops/sec. Numbers reported are the median run.
 
 **Fairness**: Both libraries compile the same source files, same Scala version, same JVM, same Mill daemon, in the same hyperfine invocation. The only difference is the derivation import.
 </details>
@@ -153,7 +153,7 @@ The macro generates optimized codec bodies using TASTy API:
 - **Boxing only at the boundary** — primitives stay unboxed through the entire field loop, boxing once at the final `mirror.fromProduct` call
 - **Branchless product encoding** — every field is unconditionally written in a straight-line sequence: write-key, write-value, write-key, write-value. No per-field conditional checks
 
-This brings sanely-jsoniter to 98% of jsoniter-scala native speed on decode, and surpassing it by 6% on encode.
+This brings sanely-jsoniter to 97% of jsoniter-scala native speed on decode, and surpassing it by 8% on encode — with 85–95% less allocation than circe-jawn.
 
 <details>
 <summary>Why writes are faster than jsoniter-scala native</summary>
