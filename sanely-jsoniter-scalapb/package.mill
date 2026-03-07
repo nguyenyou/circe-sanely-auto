@@ -1,0 +1,24 @@
+package build.`sanely-jsoniter-scalapb`
+
+import mill.*, scalalib.*
+
+object `package` extends ScalaModule {
+  def scalaVersion = build.scala3Version
+  def scalacOptions = Task {
+    super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+  }
+  def moduleDeps = Seq(build.`sanely-jsoniter`.jvm)
+  def mvnDeps = Task {
+    super.mvnDeps() ++ Seq(
+      mvn"com.thesamet.scalapb::scalapb-runtime::${build.scalapbVersion}"
+    )
+  }
+
+  object test extends ScalaTests with TestModule.Utest {
+    def mvnDeps = Task {
+      super.mvnDeps() ++ Seq(
+        mvn"com.lihaoyi::utest::${build.utestVersion}",
+      )
+    }
+  }
+}
