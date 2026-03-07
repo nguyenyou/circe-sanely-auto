@@ -27,18 +27,23 @@ object SanelyEncoder:
     private val summonedKeys = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Encoder.AsObject[A]] =
-      // Wrap in lazy val for recursive self-reference support
-      '{
-        lazy val _selfEnc: Encoder.AsObject[A] = ${
-          val selfRef: Expr[Encoder.AsObject[A]] = '{ _selfEnc }
-          mirror match
-            case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-              deriveProduct[A, types, labels](m, selfRef)
-            case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-              deriveSum[A, types, labels](m, selfRef)
+      if MacroUtils.isRecursiveType(selfType) then
+        '{
+          lazy val _selfEnc: Encoder.AsObject[A] = ${
+            val selfRef: Expr[Encoder.AsObject[A]] = '{ _selfEnc }
+            deriveInner(mirror, selfRef)
+          }
+          _selfEnc
         }
-        _selfEnc
-      }
+      else
+        deriveInner(mirror, '{ null.asInstanceOf[Encoder.AsObject[A]] })
+
+    private def deriveInner(mirror: Expr[Mirror.Of[A]], selfRef: Expr[Encoder.AsObject[A]]): Expr[Encoder.AsObject[A]] =
+      mirror match
+        case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+          deriveProduct[A, types, labels](m, selfRef)
+        case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+          deriveSum[A, types, labels](m, selfRef)
 
     private def deriveProduct[P: Type, Types: Type, Labels: Type](
       mirror: Expr[Mirror.ProductOf[P]],
