@@ -22,6 +22,7 @@ Mill 1.1.2. Run from repo root:
 ./mill compat.jvm.test          # circe compat tests - JVM (192 tests, munit + discipline)
 ./mill compat.js.test           # circe compat tests - Scala.js (192 tests, munit + discipline)
 ./mill demo.run                 # run demo
+./mill tapir-test.test          # Tapir integration tests (8 tests, utest)
 ```
 
 **Do NOT run** `./mill __.compile` or bare `./mill` — use targeted module commands to avoid cache invalidation.
@@ -100,6 +101,7 @@ open /tmp/flamegraph.html
 | `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
 | `benchmark-configured/` | Configured derivation benchmark. Three sub-modules: `sanely`, `generic`, `generic-compat` sharing `benchmark-configured/shared/src/` |
 | `benchmark-runtime/` | Runtime performance benchmark. Compares circe-jawn vs circe+jsoniter-parser vs pure jsoniter-scala (reading + writing throughput) |
+| `tapir-test/` | Tapir integration tests. Proves sanely-jsoniter codecs work through Tapir's codec layer and produce wire-compatible output with circe bridge |
 | `zinc-test/` | Zinc incremental compilation tests. Verifies macros re-expand correctly when types change. 5 scenarios, 21 checks |
 
 ## Source Files
