@@ -17,14 +17,29 @@ Mill 1.1.2. Run from repo root:
 ```bash
 ./mill sanely.jvm.compile       # compile (JVM)
 ./mill sanely.js.compile        # compile (Scala.js)
-./mill sanely.jvm.test          # unit tests - JVM (129 tests, utest)
-./mill sanely.js.test           # unit tests - Scala.js (129 tests, utest)
-./mill compat.jvm.test          # circe compat tests - JVM (318 tests, munit + discipline)
-./mill compat.js.test           # circe compat tests - Scala.js (318 tests, munit + discipline)
+./mill sanely.jvm.test          # unit tests - JVM (135 tests, utest)
+./mill sanely.js.test           # unit tests - Scala.js (135 tests, utest)
+./mill compat.jvm.test          # circe compat tests - JVM (192 tests, munit + discipline)
+./mill compat.js.test           # circe compat tests - Scala.js (192 tests, munit + discipline)
 ./mill demo.run                 # run demo
 ```
 
 **Do NOT run** `./mill __.compile` or bare `./mill` — use targeted module commands to avoid cache invalidation.
+
+### Syncing Circe Upstream Tests
+
+Compat tests are auto-generated from circe's upstream test suite via a git submodule + Python script:
+
+```bash
+git submodule update --init      # init upstream/circe/ submodule (pinned to a release tag)
+python3 scripts/sync-circe-tests.py  # transform & write to compat/test/src/io/circe/generic/
+```
+
+Generated files (DO NOT edit manually — regenerate with the script):
+- `AutoDerivedSuite.scala` ← `DerivesSuite.scala`
+- `SemiautoDerivedSuite.scala` ← `SemiautoDerivationSuite.scala`
+- `ConfiguredDerivesSuite.scala` ← `ConfiguredDerivesSuite.scala`
+- `ConfiguredEnumDerivesSuites.scala` ← `ConfiguredEnumDerivesSuites.scala`
 
 ### Zinc Incremental Compilation Tests
 
@@ -201,6 +216,8 @@ See the `runtime-benchmark` skill for detailed instructions on running and inter
 - Configured macro profiling: `topDerive` is a **container category** that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, `resolveDefaults`. Category percentages sum > 100% due to nesting.
 - `Long.MaxValue`/`Long.MinValue` lose precision on Scala.js due to JSON number representation. Skipped via `Platform.isJS` (platform-specific sources in `test/src-jvm/` and `test/src-js/`).
 - `inline def derived` inside utest `test {}` blocks may not expand for generic types. Workaround: derive in a helper object outside the test block.
+- Generated compat tests: `String with Tag` → `String & Tag` fix applied by sync script (Scala 3 intersection type syntax).
+- Sealed trait `given` ordering: `given Codec.AsObject[SealedTrait] = deriveConfiguredCodec` must come AFTER all subtypes are defined (Mirror synthesis constraint). The sync script defers these.
 
 ## Circe Reference
 
@@ -210,6 +227,8 @@ Test sources to match:
 - `circe/modules/tests/shared/src/test/scala-3/io/circe/ConfiguredDerivesSuite.scala`
 - `circe/modules/tests/shared/src/test/scala-3/io/circe/ConfiguredEnumDerivesSuites.scala`
 - `circe/modules/tests/shared/src/main/scala/io/circe/tests/examples/package.scala`
+
+These are now auto-synced via `scripts/sync-circe-tests.py` from the `upstream/circe/` submodule.
 
 ## Mill Notes
 

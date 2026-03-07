@@ -4,7 +4,7 @@
 
 Drop-in replacement for circe's auto/semi-auto/configured derivation for Scala 3. Swap one dependency, change one import, compile faster.
 
-**Scala 3.8.2+ | JVM + Scala.js | ✅ 447 tests passing**
+**Scala 3.8.2+ | JVM + Scala.js | ✅ 327 tests passing**
 
 ## Why
 
@@ -102,7 +102,7 @@ One macro call derives everything. No implicit search chains. No Shapeless.
 
 The goal is full API compatibility with circe's derivation — same JSON format, same behavior, same error messages where possible.
 
-**447 tests total**: 129 unit tests (utest, cross-compiled JVM + Scala.js) covering auto, semiauto, and configured derivation. Plus 318 compatibility tests (munit + discipline) ported directly from circe's own `DerivesSuite`, `SemiautoDerivationSuite`, and `ConfiguredDerivesSuite` — same types, same Arbitrary instances, same property-based checks.
+**327 tests total**: 135 unit tests (utest, cross-compiled JVM + Scala.js) covering auto, semiauto, and configured derivation. Plus 192 compatibility tests (munit + discipline) auto-generated from circe's own `DerivesSuite`, `SemiautoDerivationSuite`, `ConfiguredDerivesSuite`, and `ConfiguredEnumDerivesSuites` via `scripts/sync-circe-tests.py` — same types, same Arbitrary instances, same property-based checks.
 
 ## Features
 
