@@ -1,48 +1,109 @@
+// AUTO-GENERATED from circe v0.14.15 by scripts/sync-circe-tests.py
+// Source: upstream/circe/modules/tests/shared/src/test/scala-3/io/circe/DerivesSuite.scala
+//
+// Transformations applied:
+//   - Package: io.circe -> io.circe.generic
+//   - Renamed: DerivesSuite -> AutoDerivedSuite
+//   - Removed all `derives` clauses (auto-derivation via import)
+//   - Fixed: `String with Tag` -> `String & Tag` (Scala 3 intersection syntax)
+//   - Added: import io.circe.generic.auto._
+//
+// DO NOT EDIT — regenerate with: python3 scripts/sync-circe-tests.py
+
 package io.circe.generic
 
 import cats.kernel.Eq
-import cats.syntax.eq._
+import cats.kernel.instances.all.*
+import cats.syntax.eq.*
 import io.circe.{ Codec, Decoder, Encoder, Json }
-import io.circe.generic.auto._
 import io.circe.testing.CodecTests
 import io.circe.tests.CirceMunitSuite
-import io.circe.tests.examples._
-import io.circe.syntax._
-import org.scalacheck.{ Arbitrary, Gen, Prop }
+import org.scalacheck.{ Arbitrary, Gen }
+import io.circe.generic.auto._
 
 object AutoDerivedSuite {
-  case class InnerCaseClassExample(a: String, b: String, c: String, d: String)
-  case class OuterCaseClassExample(a: String, inner: InnerCaseClassExample)
+  case class Box[A](a: A)
+  object Box {
+    implicit def eqBox[A: Eq]: Eq[Box[A]] = Eq.by(_.a)
+    implicit def arbitraryBox[A](implicit A: Arbitrary[A]): Arbitrary[Box[A]] = Arbitrary(A.arbitrary.map(Box(_)))
+  }
 
-  object InnerCaseClassExample {
-    implicit val arbitraryInnerCaseClassExample: Arbitrary[InnerCaseClassExample] =
+  case class Qux[A](i: Int, a: A, j: Int)
+  object Qux {
+    implicit def eqQux[A: Eq]: Eq[Qux[A]] = Eq.by(q => (q.i, q.a, q.j))
+
+    implicit def arbitraryQux[A](implicit A: Arbitrary[A]): Arbitrary[Qux[A]] =
       Arbitrary(
         for {
-          a <- Arbitrary.arbitrary[String]
-          b <- Arbitrary.arbitrary[String]
-          c <- Arbitrary.arbitrary[String]
-          d <- Arbitrary.arbitrary[String]
-        } yield InnerCaseClassExample(a, b, c, d)
+          i <- Arbitrary.arbitrary[Int]
+          a <- A.arbitrary
+          j <- Arbitrary.arbitrary[Int]
+        } yield Qux(i, a, j)
       )
   }
 
-  object OuterCaseClassExample {
-    implicit val eqOuterCaseClassExample: Eq[OuterCaseClassExample] = Eq.fromUniversalEquals
-
-    implicit val arbitraryOuterCaseClassExample: Arbitrary[OuterCaseClassExample] =
-      Arbitrary(
-        for {
-          a <- Arbitrary.arbitrary[String]
-          i <- Arbitrary.arbitrary[InnerCaseClassExample]
-        } yield OuterCaseClassExample(a, i)
-      )
+  case class Wub(x: Long)
+  object Wub {
+    implicit val eqWub: Eq[Wub] = Eq.by(_.x)
+    implicit val arbitraryWub: Arbitrary[Wub] = Arbitrary(Arbitrary.arbitrary[Long].map(Wub(_)))
   }
 
-  // Recursive ADT — sealed trait hierarchy
+  sealed trait Foo
+  case class Bar(i: Int, s: String) extends Foo
+  case class Baz(xs: List[String]) extends Foo
+  case class Bam(w: Wub, d: Double) extends Foo
+  object Bar {
+    implicit val eqBar: Eq[Bar] = Eq.fromUniversalEquals
+    implicit val arbitraryBar: Arbitrary[Bar] = Arbitrary(
+      for {
+        i <- Arbitrary.arbitrary[Int]
+        s <- Arbitrary.arbitrary[String]
+      } yield Bar(i, s)
+    )
+
+    implicit val decodeBar: Decoder[Bar] = Decoder.forProduct2("i", "s")(Bar.apply)
+    implicit val encodeBar: Encoder[Bar] = Encoder.forProduct2("i", "s") {
+      case Bar(i, s) => (i, s)
+    }
+  }
+
+  object Baz {
+    implicit val eqBaz: Eq[Baz] = Eq.fromUniversalEquals
+    implicit val arbitraryBaz: Arbitrary[Baz] = Arbitrary(
+      Arbitrary.arbitrary[List[String]].map(Baz.apply)
+    )
+
+    implicit val decodeBaz: Decoder[Baz] = Decoder[List[String]].map(Baz(_))
+    implicit val encodeBaz: Encoder[Baz] = Encoder.instance {
+      case Baz(xs) => Json.fromValues(xs.map(Json.fromString))
+    }
+  }
+
+  object Bam {
+    implicit val eqBam: Eq[Bam] = Eq.fromUniversalEquals
+    implicit val arbitraryBam: Arbitrary[Bam] = Arbitrary(
+      for {
+        w <- Arbitrary.arbitrary[Wub]
+        d <- Arbitrary.arbitrary[Double]
+      } yield Bam(w, d)
+    )
+  }
+
+  object Foo {
+    implicit val eqFoo: Eq[Foo] = Eq.fromUniversalEquals
+
+    implicit val arbitraryFoo: Arbitrary[Foo] = Arbitrary(
+      Gen.oneOf(
+        Arbitrary.arbitrary[Bar],
+        Arbitrary.arbitrary[Baz],
+        Arbitrary.arbitrary[Bam]
+      )
+    )
+  }
+
   sealed trait RecursiveAdtExample
   case class BaseAdtExample(a: String) extends RecursiveAdtExample
   case class NestedAdtExample(r: RecursiveAdtExample) extends RecursiveAdtExample
-
   object RecursiveAdtExample {
     implicit val eqRecursiveAdtExample: Eq[RecursiveAdtExample] = Eq.fromUniversalEquals
 
@@ -57,9 +118,7 @@ object AutoDerivedSuite {
       Arbitrary(atDepth(0))
   }
 
-  // Recursive with Option
   case class RecursiveWithOptionExample(o: Option[RecursiveWithOptionExample])
-
   object RecursiveWithOptionExample {
     implicit val eqRecursiveWithOptionExample: Eq[RecursiveWithOptionExample] =
       Eq.fromUniversalEquals
@@ -67,7 +126,7 @@ object AutoDerivedSuite {
     private def atDepth(depth: Int): Gen[RecursiveWithOptionExample] = if (depth < 3)
       Gen.oneOf(
         Gen.const(RecursiveWithOptionExample(None)),
-        atDepth(depth + 1).map(Some(_)).map(RecursiveWithOptionExample(_))
+        atDepth(depth + 1)
       )
     else Gen.const(RecursiveWithOptionExample(None))
 
@@ -75,64 +134,6 @@ object AutoDerivedSuite {
       Arbitrary(atDepth(0))
   }
 
-  // ADT with nested sub-trait
-  sealed trait ADTWithSubTraitExample
-  sealed trait SubTrait extends ADTWithSubTraitExample
-  case class TheClass(a: Int) extends SubTrait
-
-  object ADTWithSubTraitExample {
-    implicit val arbitrary: Arbitrary[ADTWithSubTraitExample] = Arbitrary(Arbitrary.arbitrary[Int].map(TheClass.apply))
-    implicit val eq: Eq[ADTWithSubTraitExample] = Eq.fromUniversalEquals
-  }
-
-  // Nested case class with Option (tests existing instances)
-  case class Inner[A](field: A)
-  case class Outer(a: Option[Inner[String]])
-  object Outer {
-    given Eq[Outer] = Eq.fromUniversalEquals
-    given Arbitrary[Outer] =
-      Arbitrary(Gen.option(Arbitrary.arbitrary[String].map(Inner.apply)).map(Outer.apply))
-  }
-
-  // Large case class (33 fields) — stress test
-  case class LongClass(
-    v1: String, v2: String, v3: String, v4: String, v5: String,
-    v6: String, v7: String, v8: String, v9: String, v10: String,
-    v11: String, v12: String, v13: String, v14: String, v15: String,
-    v16: String, v17: String, v18: String, v19: String, v20: String,
-    v21: String, v22: String, v23: String, v24: String, v25: String,
-    v26: String, v27: String, v28: String, v29: String, v30: String,
-    v31: String, v32: String, v33: String
-  )
-  object LongClass {
-    given Eq[LongClass] = Eq.fromUniversalEquals
-    given Arbitrary[LongClass] = Arbitrary {
-      for
-        s1 <- Arbitrary.arbitrary[String]; s2 <- Arbitrary.arbitrary[String]
-        s3 <- Arbitrary.arbitrary[String]; s4 <- Arbitrary.arbitrary[String]
-        s5 <- Arbitrary.arbitrary[String]; s6 <- Arbitrary.arbitrary[String]
-        s7 <- Arbitrary.arbitrary[String]; s8 <- Arbitrary.arbitrary[String]
-        s9 <- Arbitrary.arbitrary[String]; s10 <- Arbitrary.arbitrary[String]
-        s11 <- Arbitrary.arbitrary[String]; s12 <- Arbitrary.arbitrary[String]
-        s13 <- Arbitrary.arbitrary[String]; s14 <- Arbitrary.arbitrary[String]
-        s15 <- Arbitrary.arbitrary[String]; s16 <- Arbitrary.arbitrary[String]
-        s17 <- Arbitrary.arbitrary[String]; s18 <- Arbitrary.arbitrary[String]
-        s19 <- Arbitrary.arbitrary[String]; s20 <- Arbitrary.arbitrary[String]
-        s21 <- Arbitrary.arbitrary[String]; s22 <- Arbitrary.arbitrary[String]
-        s23 <- Arbitrary.arbitrary[String]; s24 <- Arbitrary.arbitrary[String]
-        s25 <- Arbitrary.arbitrary[String]; s26 <- Arbitrary.arbitrary[String]
-        s27 <- Arbitrary.arbitrary[String]; s28 <- Arbitrary.arbitrary[String]
-        s29 <- Arbitrary.arbitrary[String]; s30 <- Arbitrary.arbitrary[String]
-        s31 <- Arbitrary.arbitrary[String]; s32 <- Arbitrary.arbitrary[String]
-        s33 <- Arbitrary.arbitrary[String]
-      yield LongClass(s1, s2, s3, s4, s5, s6, s7, s8, s9, s10,
-        s11, s12, s13, s14, s15, s16, s17, s18, s19, s20,
-        s21, s22, s23, s24, s25, s26, s27, s28, s29, s30,
-        s31, s32, s33)
-    }
-  }
-
-  // Enum with mixed singleton and data cases (from circe DerivesSuite)
   enum Vegetable:
     case Potato(species: String)
     case Carrot(length: Double)
@@ -159,7 +160,6 @@ object AutoDerivedSuite {
       )
     )
 
-  // Recursive enum ADT (from circe DerivesSuite)
   enum RecursiveEnumAdt:
     case BaseAdtExample(a: String)
     case NestedAdtExample(r: RecursiveEnumAdt)
@@ -175,9 +175,15 @@ object AutoDerivedSuite {
 
     given Arbitrary[RecursiveEnumAdt] = Arbitrary(atDepth(0))
 
-  // Phantom type tagging (from circe DerivesSuite #2135)
-  case class ProductWithTaggedMember(x: ProductWithTaggedMember.TaggedString)
+  sealed trait ADTWithSubTraitExample
+  sealed trait SubTrait extends ADTWithSubTraitExample
+  case class TheClass(a: Int) extends SubTrait
 
+  object ADTWithSubTraitExample:
+    given Arbitrary[ADTWithSubTraitExample] = Arbitrary(Arbitrary.arbitrary[Int].map(TheClass.apply))
+    given Eq[ADTWithSubTraitExample] = Eq.fromUniversalEquals
+
+  case class ProductWithTaggedMember(x: ProductWithTaggedMember.TaggedString)
   object ProductWithTaggedMember:
     sealed trait Tag
 
@@ -201,7 +207,123 @@ object AutoDerivedSuite {
       }
     given Eq[ProductWithTaggedMember] = Eq.fromUniversalEquals
 
-  // 33-variant singleton enum (from circe DerivesSuite)
+  case class Inner[A](field: A)
+  case class Outer(a: Option[Inner[String]])
+  object Outer:
+    given Eq[Outer] = Eq.fromUniversalEquals
+    given Arbitrary[Outer] =
+      Arbitrary(Gen.option(Arbitrary.arbitrary[String].map(Inner.apply)).map(Outer.apply))
+
+  case class LongClass(
+    v1: String,
+    v2: String,
+    v3: String,
+    v4: String,
+    v5: String,
+    v6: String,
+    v7: String,
+    v8: String,
+    v9: String,
+    v10: String,
+    v11: String,
+    v12: String,
+    v13: String,
+    v14: String,
+    v15: String,
+    v16: String,
+    v17: String,
+    v18: String,
+    v19: String,
+    v20: String,
+    v21: String,
+    v22: String,
+    v23: String,
+    v24: String,
+    v25: String,
+    v26: String,
+    v27: String,
+    v28: String,
+    v29: String,
+    v30: String,
+    v31: String,
+    v32: String,
+    v33: String
+  )
+
+  object LongClass:
+    given Eq[LongClass] = Eq.fromUniversalEquals
+    given Arbitrary[LongClass] = Arbitrary {
+      for
+        s1 <- Arbitrary.arbitrary[String]
+        s2 <- Arbitrary.arbitrary[String]
+        s3 <- Arbitrary.arbitrary[String]
+        s4 <- Arbitrary.arbitrary[String]
+        s5 <- Arbitrary.arbitrary[String]
+        s6 <- Arbitrary.arbitrary[String]
+        s7 <- Arbitrary.arbitrary[String]
+        s8 <- Arbitrary.arbitrary[String]
+        s9 <- Arbitrary.arbitrary[String]
+        s10 <- Arbitrary.arbitrary[String]
+        s11 <- Arbitrary.arbitrary[String]
+        s12 <- Arbitrary.arbitrary[String]
+        s13 <- Arbitrary.arbitrary[String]
+        s14 <- Arbitrary.arbitrary[String]
+        s15 <- Arbitrary.arbitrary[String]
+        s16 <- Arbitrary.arbitrary[String]
+        s17 <- Arbitrary.arbitrary[String]
+        s18 <- Arbitrary.arbitrary[String]
+        s19 <- Arbitrary.arbitrary[String]
+        s20 <- Arbitrary.arbitrary[String]
+        s21 <- Arbitrary.arbitrary[String]
+        s22 <- Arbitrary.arbitrary[String]
+        s23 <- Arbitrary.arbitrary[String]
+        s24 <- Arbitrary.arbitrary[String]
+        s25 <- Arbitrary.arbitrary[String]
+        s26 <- Arbitrary.arbitrary[String]
+        s27 <- Arbitrary.arbitrary[String]
+        s28 <- Arbitrary.arbitrary[String]
+        s29 <- Arbitrary.arbitrary[String]
+        s30 <- Arbitrary.arbitrary[String]
+        s31 <- Arbitrary.arbitrary[String]
+        s32 <- Arbitrary.arbitrary[String]
+        s33 <- Arbitrary.arbitrary[String]
+      yield LongClass(
+        s1,
+        s2,
+        s3,
+        s4,
+        s5,
+        s6,
+        s7,
+        s8,
+        s9,
+        s10,
+        s11,
+        s12,
+        s13,
+        s14,
+        s15,
+        s16,
+        s17,
+        s18,
+        s19,
+        s20,
+        s21,
+        s22,
+        s23,
+        s24,
+        s25,
+        s26,
+        s27,
+        s28,
+        s29,
+        s30,
+        s31,
+        s32,
+        s33
+      )
+    }
+
   enum LongEnum:
     case v1, v2, v3, v4, v5, v6, v7, v8, v9, v10,
       v11, v12, v13, v14, v15, v16, v17, v18, v19, v20,
@@ -210,9 +332,8 @@ object AutoDerivedSuite {
 
   object LongEnum:
     given Eq[LongEnum] = Eq.fromUniversalEquals
-    given Arbitrary[LongEnum] = Arbitrary(Gen.oneOf(LongEnum.values.toSeq))
+    given Arbitrary[LongEnum] = Arbitrary(Gen.oneOf(LongEnum.values))
 
-  // 33-variant sum enum with data fields (from circe DerivesSuite)
   enum LongSum:
     case v1(str: String)
     case v2(str: String)
@@ -253,65 +374,67 @@ object AutoDerivedSuite {
     given Arbitrary[LongSum] = Arbitrary(
       for
         v <- Arbitrary.arbitrary[String]
-        res <- Gen.oneOf(Seq(
-          LongSum.v1(v), LongSum.v2(v), LongSum.v3(v), LongSum.v4(v), LongSum.v5(v),
-          LongSum.v6(v), LongSum.v7(v), LongSum.v8(v), LongSum.v9(v), LongSum.v10(v),
-          LongSum.v11(v), LongSum.v12(v), LongSum.v13(v), LongSum.v14(v), LongSum.v15(v),
-          LongSum.v16(v), LongSum.v17(v), LongSum.v18(v), LongSum.v19(v), LongSum.v20(v),
-          LongSum.v21(v), LongSum.v22(v), LongSum.v23(v), LongSum.v24(v), LongSum.v25(v),
-          LongSum.v26(v), LongSum.v27(v), LongSum.v28(v), LongSum.v29(v), LongSum.v30(v),
-          LongSum.v31(v), LongSum.v32(v), LongSum.v33(v)
-        ))
+        res <- Gen.oneOf(
+          Seq(
+            v1(v),
+            v2(v),
+            v3(v),
+            v4(v),
+            v5(v),
+            v6(v),
+            v7(v),
+            v8(v),
+            v9(v),
+            v10(v),
+            v11(v),
+            v12(v),
+            v13(v),
+            v14(v),
+            v15(v),
+            v16(v),
+            v17(v),
+            v18(v),
+            v19(v),
+            v20(v),
+            v21(v),
+            v22(v),
+            v23(v),
+            v24(v),
+            v25(v),
+            v26(v),
+            v27(v),
+            v28(v),
+            v29(v),
+            v30(v),
+            v31(v),
+            v32(v),
+            v33(v)
+          )
+        )
       yield res
     )
 }
 
 class AutoDerivedSuite extends CirceMunitSuite {
-  import AutoDerivedSuite._
+  import AutoDerivedSuite.*
+  import io.circe.syntax.*
 
-  checkAll("Codec[Tuple1[Int]]", CodecTests[Tuple1[Int]].codec)
-  checkAll("Codec[(Int, Int, Foo)]", CodecTests[(Int, Int, Foo)].codec)
   checkAll("Codec[Box[Wub]]", CodecTests[Box[Wub]].codec)
   checkAll("Codec[Box[Long]]", CodecTests[Box[Long]].codec)
-  checkAll("Codec[Qux[Int]]", CodecTests[Qux[Int]].codec)
+  // checkAll("Codec[Qux[Long]]", CodecTests[Qux[Long]].codec) Does not compile because Scala 3 requires a `Codec[Long]` for this when you use `derives Codec`
   checkAll("Codec[Seq[Foo]]", CodecTests[Seq[Foo]].codec)
   checkAll("Codec[Baz]", CodecTests[Baz].codec)
   checkAll("Codec[Foo]", CodecTests[Foo].codec)
-  checkAll("Codec[OuterCaseClassExample]", CodecTests[OuterCaseClassExample].codec)
-  checkAll("Codec[RecursiveAdtExample]", CodecTests[RecursiveAdtExample].unserializableCodec)
-  checkAll("Codec[RecursiveWithOptionExample]", CodecTests[RecursiveWithOptionExample].unserializableCodec)
-  checkAll("Codec[Vegetable]", CodecTests[Vegetable].unserializableCodec)
-  checkAll("Codec[RecursiveEnumAdt]", CodecTests[RecursiveEnumAdt].unserializableCodec)
+  checkAll("Codec[RecursiveAdtExample]", CodecTests[RecursiveAdtExample].codec)
+  checkAll("Codec[RecursiveWithOptionExample]", CodecTests[RecursiveWithOptionExample].codec)
+  checkAll("Codec[Vegetable]", CodecTests[Vegetable].codec)
+  checkAll("Codec[RecursiveEnumAdt]", CodecTests[RecursiveEnumAdt].codec)
   checkAll("Codec[ADTWithSubTraitExample]", CodecTests[ADTWithSubTraitExample].codec)
-  checkAll("Codec[ProductWithTaggedMember]", CodecTests[ProductWithTaggedMember].codec)
+  checkAll("Codec[ProductWithTaggedMember] (#2135)", CodecTests[ProductWithTaggedMember].codec)
   checkAll("Codec[Outer]", CodecTests[Outer].codec)
   checkAll("Codec[LongClass]", CodecTests[LongClass].codec)
-  checkAll("Codec[LongSum]", CodecTests[LongSum].unserializableCodec)
+  checkAll("Codec[LongSum]", CodecTests[LongSum].codec)
   checkAll("Codec[LongEnum]", CodecTests[LongEnum].codec)
-
-  property("A generically derived codec should not interfere with base instances") {
-    Prop.forAll { (is: List[Int]) =>
-      val json = Encoder[List[Int]].apply(is)
-
-      assert(json === Json.fromValues(is.map(Json.fromInt)) && json.as[List[Int]] === Right(is))
-    }
-  }
-
-  property("Generic decoders should not interfere with defined decoders") {
-    Prop.forAll { (xs: List[String]) =>
-      val json = Json.obj("Baz" -> Json.fromValues(xs.map(Json.fromString)))
-
-      assert(Decoder[Foo].apply(json.hcursor) === Right(Baz(xs): Foo))
-    }
-  }
-
-  property("Generic encoders should not interfere with defined encoders") {
-    Prop.forAll { (xs: List[String]) =>
-      val json = Json.obj("Baz" -> Json.fromValues(xs.map(Json.fromString)))
-
-      assert(Encoder[Foo].apply(Baz(xs): Foo) === json)
-    }
-  }
 
   test("Nested sums should not be encoded redundantly") {
     val foo: ADTWithSubTraitExample = TheClass(0)

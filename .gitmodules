@@ -1,0 +1,3 @@
+[submodule "upstream/circe"]
+	path = upstream/circe
+	url = https://github.com/circe/circe.git
