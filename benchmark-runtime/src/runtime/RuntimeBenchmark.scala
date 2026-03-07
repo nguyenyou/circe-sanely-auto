@@ -64,14 +64,24 @@ object SanelyJsoniterCodecs:
 // ═══════════════════════════════════════════════════════════════════════
 object RuntimeBenchmark:
   import scala.compiletime.uninitialized
+  import java.lang.management.ManagementFactory
   @volatile private var sink: Any = uninitialized
 
-  case class Result(name: String, opsPerSec: Array[Double]):
+  private val threadMxBean =
+    ManagementFactory.getThreadMXBean.asInstanceOf[com.sun.management.ThreadMXBean]
+
+  private def threadAllocatedBytes(): Long =
+    threadMxBean.getThreadAllocatedBytes(Thread.currentThread().threadId())
+
+  case class Result(name: String, opsPerSec: Array[Double], bytesPerOp: Array[Double]):
     def median: Double =
       val s = opsPerSec.sorted
       s(s.length / 2)
     def min: Double = opsPerSec.min
     def max: Double = opsPerSec.max
+    def medianAlloc: Double =
+      val s = bytesPerOp.sorted
+      s(s.length / 2)
 
   private def measure(name: String, warmupIters: Int, measureIters: Int)(op: => Any): Result =
     // Warmup
@@ -81,26 +91,37 @@ object RuntimeBenchmark:
 
     // Measure: each iteration runs for 1 second
     val throughputs = new Array[Double](measureIters)
+    val allocations = new Array[Double](measureIters)
     for i <- 0 until measureIters do
       var count = 0L
+      val allocStart = threadAllocatedBytes()
       val start = System.nanoTime()
       val end = start + 1_000_000_000L
       while System.nanoTime() < end do
         sink = op
         count += 1
       val elapsed = (System.nanoTime() - start).toDouble / 1e9
+      val allocEnd = threadAllocatedBytes()
       throughputs(i) = count / elapsed
+      allocations(i) = (allocEnd - allocStart).toDouble / count
 
-    Result(name, throughputs)
+    Result(name, throughputs, allocations)
+
+  private def formatAlloc(bytes: Double): String =
+    if bytes >= 1024 * 1024 then f"${bytes / (1024 * 1024)}%.1f MB/op"
+    else if bytes >= 1024 then f"${bytes / 1024}%.0f KB/op"
+    else f"${bytes}%.0f B/op"
 
   private def printResult(r: Result): Unit =
-    println(f"  ${r.name}%-24s ${r.median}%12.0f ops/sec  (min=${r.min}%.0f, max=${r.max}%.0f)")
+    println(f"  ${r.name}%-24s ${r.median}%12.0f ops/sec  (min=${r.min}%.0f, max=${r.max}%.0f)  ${formatAlloc(r.medianAlloc)}%s")
 
   private def printComparison(baseline: Result, results: Seq[Result]): Unit =
     val baseMedian = baseline.median
+    val baseAlloc = baseline.medianAlloc
     for r <- results do
       val ratio = r.median / baseMedian
-      println(f"  ${r.name}%-24s ${ratio}%6.2fx vs ${baseline.name}")
+      val allocRatio = if baseAlloc > 0 then f"  alloc ${r.medianAlloc / baseAlloc}%.2fx" else ""
+      println(f"  ${r.name}%-24s ${ratio}%6.2fx vs ${baseline.name}$allocRatio")
 
   // ═════════════════════════════════════════════════════════════════════
   // Sample data
