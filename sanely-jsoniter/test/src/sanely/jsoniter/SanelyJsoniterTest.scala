@@ -117,6 +117,13 @@ case class DiamondLeaf(x: Int) extends DiamondA with DiamondB
 case class OnlyA(a: Int) extends DiamondA
 case class OnlyB(b: Int) extends DiamondB
 
+// Wide type (12 fields) — exercises hash-based field dispatch (> 8 fields threshold)
+case class WideRecord(
+  alpha: String, bravo: Int, charlie: Boolean, delta: Double,
+  echo: Long, foxtrot: Float, golf: Option[String], hotel: List[Int],
+  india: String, juliet: Int, kilo: Boolean, lima: Double
+)
+
 object SanelyJsoniterTest extends TestSuite:
   import sanely.jsoniter.semiauto.*
 
@@ -137,6 +144,7 @@ object SanelyJsoniterTest extends TestSuite:
   given JsonValueCodec[WithLongMap] = deriveJsoniterCodec
   given JsonValueCodec[WithEither] = deriveJsoniterCodec
   given JsonValueCodec[WithNestedEither] = deriveJsoniterCodec
+  given JsonValueCodec[WideRecord] = deriveJsoniterCodec
 
   private def roundtrip[A: JsonValueCodec](value: A): A =
     val json = writeToString(value)
@@ -165,6 +173,20 @@ object SanelyJsoniterTest extends TestSuite:
       assert(json == "{}")
       val decoded = readFromString[Empty](json)
       assert(decoded == e)
+    }
+
+    test("product - wide (hash dispatch)") {
+      val w = WideRecord("a", 1, true, 2.5, 100L, 3.14f, Some("opt"), List(1, 2), "i", 42, false, 9.9)
+      val json = writeToString(w)
+      val decoded = readFromString[WideRecord](json)
+      assert(decoded == w)
+      // Verify all fields present in JSON
+      assert(json.contains("\"alpha\":\"a\""))
+      assert(json.contains("\"lima\":9.9"))
+      // Verify decode with fields in different order
+      val reordered = """{"lima":9.9,"kilo":false,"juliet":42,"india":"i","hotel":[1,2],"golf":"opt","foxtrot":3.140000104904175,"echo":100,"delta":2.5,"charlie":true,"bravo":1,"alpha":"a"}"""
+      val decoded2 = readFromString[WideRecord](reordered)
+      assert(decoded2 == w)
     }
 
     test("option - some") {
