@@ -384,6 +384,28 @@ Auto derivation uses **20% less peak memory** thanks to fewer generated classes 
 | compiler.backend | 211 | 216 | -2% |
 | mill / zinc / jvm | 831 | 865 | -4% |
 
+### Bytecode impact
+
+Bytecode size and method count measured with `javap` across all compiled class files. Fewer methods means faster classloading, less JIT work, and smaller vtables. Measured with `python3 .claude/skills/bytecode-impact/scripts/analyze_bytecode.py`.
+
+#### Auto derivation (~300 types)
+
+| Metric | circe-sanely-auto | circe-generic | Delta |
+|---|---|---|---|
+| Total bytecode | 2,377,615 bytes | 2,935,557 bytes | **-19.0%** |
+| Total methods | 11,273 | 12,197 | **-7.6%** |
+| LazyRef/lzyINIT/monitor | 0 | 0 | — |
+
+#### Configured derivation (~230 types)
+
+| Metric | circe-sanely-auto | circe-core | Delta |
+|---|---|---|---|
+| Total bytecode | 2,775,933 bytes | 3,097,489 bytes | **-10.4%** |
+| Total methods | 8,991 | 9,449 | **-4.8%** |
+| lzyINIT patterns | 1,200 | 1,658 | **-27.6%** |
+
+Auto derivation generates **19% less bytecode** and **924 fewer methods** thanks to `SanelyRuntime` factory methods (consolidating encoder/decoder construction into shared templates) and lazy-val elimination for non-recursive types. Configured derivation generates **10% less bytecode** with **27% fewer lazy initialization patterns**.
+
 ### Macro profiling
 
 Built-in compile-time profiling via `SANELY_PROFILE=true` tracks where time is spent inside our macros:

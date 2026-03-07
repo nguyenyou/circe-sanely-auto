@@ -29,18 +29,32 @@ object SanelyConfiguredCodec:
     private val summonedKeys = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Codec.AsObject[A]] =
-      '{
-        lazy val _selfCodec: Codec.AsObject[A] = ${
-          val selfEncRef: Expr[Encoder.AsObject[A]] = '{ _selfCodec }
-          val selfDecRef: Expr[Decoder[A]] = '{ _selfCodec }
-          mirror match
-            case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-              timer.time("topDerive") { deriveProductCodec[A, types, labels](m, selfEncRef, selfDecRef) }
-            case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-              timer.time("topDerive") { deriveSumCodec[A, types, labels](m, selfEncRef, selfDecRef) }
+      if MacroUtils.isRecursiveType(selfType) then
+        '{
+          lazy val _selfCodec: Codec.AsObject[A] = ${
+            val selfEncRef: Expr[Encoder.AsObject[A]] = '{ _selfCodec }
+            val selfDecRef: Expr[Decoder[A]] = '{ _selfCodec }
+            timer.time("topDerive") { deriveInner(mirror, selfEncRef, selfDecRef) }
+          }
+          _selfCodec
         }
-        _selfCodec
-      }
+      else
+        timer.time("topDerive") {
+          deriveInner(mirror,
+            '{ null.asInstanceOf[Encoder.AsObject[A]] },
+            '{ null.asInstanceOf[Decoder[A]] })
+        }
+
+    private def deriveInner(
+      mirror: Expr[Mirror.Of[A]],
+      selfEncRef: Expr[Encoder.AsObject[A]],
+      selfDecRef: Expr[Decoder[A]]
+    ): Expr[Codec.AsObject[A]] =
+      mirror match
+        case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+          deriveProductCodec[A, types, labels](m, selfEncRef, selfDecRef)
+        case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+          deriveSumCodec[A, types, labels](m, selfEncRef, selfDecRef)
 
     private def deriveProductCodec[P: Type, Types: Type, Labels: Type](
       mirror: Expr[Mirror.ProductOf[P]],
