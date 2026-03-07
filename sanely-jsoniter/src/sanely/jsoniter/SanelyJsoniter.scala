@@ -153,10 +153,13 @@ object SanelyJsoniter:
       // var declarations
       val varDefs: List[Statement] = vars.map(v => ValDef(v.sym, Some(v.defaultTerm)))
 
-      // Build if-else chain for field matching, parameterized by keyLen ref
+      // Build field matching dispatch, parameterized by keyLen ref.
+      // <= 8 fields AND total chars <= 64: linear if-else chain (hashing overhead not worth it).
+      // Otherwise: hash-based match on charBufToHashCode with @switch, collisions resolved by isCharBufEqualsTo.
       def buildMatchChain(keyLenRef: Term): Term =
         val skipTerm = '{ $inExpr.skip() }.asTerm
-        vars.foldRight[Term](skipTerm) { case (vi, elseBranch) =>
+
+        def buildReadAssign(vi: VarInfo, elseBranch: Term): Term =
           vi.tpe match
             case '[t] =>
               val cond = '{ $inExpr.isCharBufEqualsTo(${keyLenRef.asExprOf[Int]}, ${Expr(vi.label)}) }.asTerm
@@ -167,7 +170,23 @@ object SanelyJsoniter:
                   '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[t] }.asTerm
               val assign = Assign(Ref(vi.sym), readTerm)
               If(cond, assign, elseBranch)
-        }
+
+        def buildCollisionChain(fields: collection.Seq[VarInfo]): Term =
+          fields.foldRight[Term](skipTerm)(buildReadAssign)
+
+        val totalChars = vars.foldLeft(0)(_ + _.label.length)
+        if vars.size <= 8 && totalChars <= 64 then
+          buildCollisionChain(vars)
+        else
+          val hashOf = (vi: VarInfo) =>
+            JsonReader.toHashCode(vi.label.toCharArray, vi.label.length)
+          val grouped = groupByOrdered(vars)(hashOf)
+          val cases = grouped.map { case (hash, fields) =>
+            CaseDef(Literal(IntConstant(hash)), None, buildCollisionChain(fields))
+          }
+          val defaultCase = CaseDef(Wildcard(), None, skipTerm)
+          val scrutinee = '{ $inExpr.charBufToHashCode(${keyLenRef.asExprOf[Int]}): @scala.annotation.switch }.asTerm
+          Match(scrutinee, (cases :+ defaultCase).toList)
 
       // Build result: mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))
       val varRefExprs: List[Expr[Any]] = vars.map { v =>
@@ -589,6 +608,12 @@ object SanelyJsoniter:
             d.typeSymbol.fullName
           case _ => d.show
       go(tpe)
+
+    private def groupByOrdered[X, K](xs: collection.Seq[X])(f: X => K): collection.Seq[(K, collection.Seq[X])] =
+      xs.foldLeft(new mutable.LinkedHashMap[K, mutable.ArrayBuffer[X]]) { (m, x) =>
+        m.getOrElseUpdate(f(x), new mutable.ArrayBuffer[X]).addOne(x)
+        m
+      }.toSeq
 
     private def nullValueExpr[T: Type]: Expr[Any] =
       val tpe = TypeRepr.of[T].dealias
