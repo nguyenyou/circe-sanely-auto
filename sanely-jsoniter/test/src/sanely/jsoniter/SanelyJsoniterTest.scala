@@ -54,6 +54,29 @@ case class SnakeCaseExample(firstName: String, lastName: String, isActive: Boole
 // Types for drop-null tests
 case class WithNullable(name: String, nickname: Option[String], age: Int)
 
+// Sub-trait hierarchy (ADT with nested sealed traits)
+sealed trait ADTWithSub
+sealed trait SubTraitA extends ADTWithSub
+case class LeafA1(x: Int) extends SubTraitA
+case class LeafA2(y: String) extends SubTraitA
+case class DirectCase(z: Boolean) extends ADTWithSub
+
+// Deep hierarchy (sub-sub-trait)
+sealed trait DeepADT
+sealed trait Mid extends DeepADT
+sealed trait Inner extends Mid
+case class DeepLeaf(v: Int) extends Inner
+case class MidLeaf(w: String) extends Mid
+case class TopLeaf(u: Boolean) extends DeepADT
+
+// Diamond hierarchy
+sealed trait DiamondADT
+sealed trait DiamondA extends DiamondADT
+sealed trait DiamondB extends DiamondADT
+case class DiamondLeaf(x: Int) extends DiamondA with DiamondB
+case class OnlyA(a: Int) extends DiamondA
+case class OnlyB(b: Int) extends DiamondB
+
 object SanelyJsoniterTest extends TestSuite:
   import sanely.jsoniter.semiauto.*
 
@@ -462,6 +485,91 @@ object SanelyJsoniterTest extends TestSuite:
       val circeJson = original.asJson.noSpaces
       val jsoniterResult = readFromString[SnakeCaseExample](circeJson)
       assert(jsoniterResult == original)
+    }
+
+    // === Sub-trait tests ===
+
+    test("sub-trait - encode flattens hierarchy") {
+      given JsonValueCodec[ADTWithSub] = deriveJsoniterCodec
+      val v: ADTWithSub = LeafA1(42)
+      val json = writeToString(v)
+      // Should be flat: {"LeafA1":{"x":42}}, NOT {"SubTraitA":{"LeafA1":{"x":42}}}
+      assert(json == """{"LeafA1":{"x":42}}""")
+    }
+
+    test("sub-trait - decode flattened key") {
+      given JsonValueCodec[ADTWithSub] = deriveJsoniterCodec
+      val json = """{"LeafA1":{"x":42}}"""
+      val decoded = readFromString[ADTWithSub](json)
+      assert(decoded == LeafA1(42))
+    }
+
+    test("sub-trait - all variants round-trip") {
+      given JsonValueCodec[ADTWithSub] = deriveJsoniterCodec
+      val values: List[ADTWithSub] = List(LeafA1(1), LeafA2("hello"), DirectCase(true))
+      for v <- values do
+        val json = writeToString(v)
+        val decoded = readFromString[ADTWithSub](json)
+        assert(decoded == v)
+    }
+
+    test("sub-trait - direct case works") {
+      given JsonValueCodec[ADTWithSub] = deriveJsoniterCodec
+      val v: ADTWithSub = DirectCase(true)
+      val json = writeToString(v)
+      assert(json == """{"DirectCase":{"z":true}}""")
+      val decoded = readFromString[ADTWithSub](json)
+      assert(decoded == v)
+    }
+
+    test("sub-trait - deep hierarchy (sub-sub-trait)") {
+      given JsonValueCodec[DeepADT] = deriveJsoniterCodec
+      val values: List[DeepADT] = List(DeepLeaf(1), MidLeaf("hi"), TopLeaf(false))
+      for v <- values do
+        val json = writeToString(v)
+        val decoded = readFromString[DeepADT](json)
+        assert(decoded == v)
+      // Verify flat encoding
+      assert(writeToString[DeepADT](DeepLeaf(1)) == """{"DeepLeaf":{"v":1}}""")
+    }
+
+    test("sub-trait - diamond inheritance dedup") {
+      given JsonValueCodec[DiamondADT] = deriveJsoniterCodec
+      val values: List[DiamondADT] = List(DiamondLeaf(1), OnlyA(2), OnlyB(3))
+      for v <- values do
+        val json = writeToString(v)
+        val decoded = readFromString[DiamondADT](json)
+        assert(decoded == v)
+    }
+
+    test("sub-trait - circe format compatibility") {
+      import io.circe.generic.auto.given
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+
+      given JsonValueCodec[ADTWithSub] = deriveJsoniterCodec
+
+      val v: ADTWithSub = LeafA1(42)
+
+      // jsoniter -> circe
+      val jsoniterJson = writeToString(v)
+      val circeResult = circeDecode[ADTWithSub](jsoniterJson)
+      assert(circeResult == Right(v))
+
+      // circe -> jsoniter
+      val circeJson = (v: ADTWithSub).asJson.noSpaces
+      val jsoniterResult = readFromString[ADTWithSub](circeJson)
+      assert(jsoniterResult == v)
+    }
+
+    test("sub-trait - configured with external tagging") {
+      given JsoniterConfiguration = JsoniterConfiguration.default
+      given JsonValueCodec[ADTWithSub] = deriveJsoniterConfiguredCodec
+      val v: ADTWithSub = LeafA1(42)
+      val json = writeToString(v)
+      assert(json == """{"LeafA1":{"x":42}}""")
+      val decoded = readFromString[ADTWithSub](json)
+      assert(decoded == v)
     }
 
     test("enum - circe format compatibility") {
