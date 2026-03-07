@@ -36,6 +36,21 @@ val json: String = writeToString(user)    // {"name":"Alice","age":30,"active":t
 val back: User = readFromString[User](json)
 ```
 
+### Enum string codec
+
+```scala
+import sanely.jsoniter.semiauto.*
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+
+enum Color:
+  case Red, Green, Blue
+
+given JsonValueCodec[Color] = deriveJsoniterEnumCodec
+
+val json = writeToString(Color.Red)        // "Red"
+val back = readFromString[Color](json)     // Color.Red
+```
+
 ### Auto derivation
 
 ```scala
@@ -91,35 +106,65 @@ Compared to circe (encoding + decoding combined):
 
 The 5x improvement comes from eliminating the `Json` tree allocation entirely.
 
-## Integration with circe-sanely-auto
+## Migration guide
 
-If you're already using `circe-sanely-auto` for faster compile times, `sanely-jsoniter` adds faster runtime performance. The two modules are independent — use either or both:
+Adopting sanely-jsoniter is straightforward — you keep circe for everything else and only swap the serialization hot path.
+
+### Step 1: Add the dependency
 
 ```scala
-// Compile-time improvement (faster derivation)
-import io.circe.generic.auto.given  // circe-sanely-auto
-val json: io.circe.Json = myValue.asJson
+// Mill
+ivy"io.github.nguyenyou::sanely-jsoniter::0.13.0"
 
-// Runtime improvement (faster serialization)
-import sanely.jsoniter.auto.given   // sanely-jsoniter
-val bytes: String = writeToString(myValue)
+// sbt
+"io.github.nguyenyou" %% "sanely-jsoniter" % "0.13.0"
 ```
 
-For HTTP frameworks (tapir, http4s, etc.), the jsoniter codec can replace the circe-based JSON codec on the hot path:
+No circe dependency is pulled in — sanely-jsoniter is fully independent.
+
+### Step 2: Add the import
+
+If you use auto derivation, just add one import alongside your existing circe import:
 
 ```scala
-// Before: circe pipeline (1.5x with jsoniter parser, tree still allocated)
-{ s => readFromString[Json](s).as[T] }
+import io.circe.generic.auto.given          // existing circe derivation (unchanged)
+import sanely.jsoniter.auto.given            // adds JsonValueCodec for free
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+```
 
-// After: direct jsoniter pipeline (5x, no tree)
+Both imports can coexist — circe codecs and jsoniter codecs are different types, so there's no conflict.
+
+For semi-auto, derive the jsoniter codec next to your circe codec:
+
+```scala
+import sanely.jsoniter.semiauto.*
+
+case class User(name: String, age: Int)
+given Codec.AsObject[User] = deriveCodec          // circe (existing)
+given JsonValueCodec[User] = deriveJsoniterCodec   // jsoniter (new)
+```
+
+### Step 3: Swap the hot path
+
+Replace circe's tree-based encode/decode with direct jsoniter calls wherever performance matters — typically HTTP endpoint serialization:
+
+```scala
+// Before: circe pipeline (tree allocated on every request)
+{ s => io.circe.parser.decode[T](s) }
+{ v => v.asJson.noSpaces }
+
+// After: direct jsoniter pipeline (5x faster, zero intermediate allocation)
 { s => readFromString[T](s) }
+{ v => writeToString(v) }
 ```
+
+That's it. The JSON on the wire is identical, so no client changes are needed.
 
 ## Roadmap
 
 - [ ] **Sub-trait support**: Sealed trait variants that are nested sealed traits (currently must be case classes or case objects)
 - [ ] **Configured derivation**: Field name transforms, discriminators, and strict decoding
-- [ ] **Enum string codec**: Encode enum cases as strings (`"Red"`) instead of empty-object variants (`{"Red":{}}`)
+- [x] **Enum string codec**: Encode enum cases as strings (`"Red"`) instead of empty-object variants (`{"Red":{}}`)
 - [ ] **Non-string map keys**: Support `Map[K, V]` where K is not String
 - [x] **Scala.js support**: Cross-compile for Scala.js
 
