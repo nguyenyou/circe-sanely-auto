@@ -73,6 +73,27 @@ case class SnakeCaseExample(firstName: String, lastName: String, isActive: Boole
 // Types for drop-null tests
 case class WithNullable(name: String, nickname: Option[String], age: Int)
 
+// Discriminator type — sealed trait with variant-specific fields, optional fields, defaults
+sealed trait Activity
+case class Comment(userId: String, text: String, pinned: Boolean = false) extends Activity
+case class StatusChange(fromStatus: String, toStatus: String, reason: Option[String] = None) extends Activity
+case class FileUpload(fileName: String, sizeBytes: Long, tags: List[String] = Nil) extends Activity
+
+// Drop-null type — many optional fields with defaults
+case class SchemaField(
+  `type`: String,
+  description: Option[String] = None,
+  format: Option[String] = None,
+  items: Option[String] = None,
+  minLength: Option[Int] = None,
+  maxLength: Option[Int] = None,
+  required: Option[Boolean] = None,
+  default: Option[String] = None
+)
+
+// Snake_case + drop-null type
+case class ApiResponse(requestId: String, userName: Option[String] = None, errorMessage: Option[String] = None, retryCount: Int = 0)
+
 // Sub-trait hierarchy (ADT with nested sealed traits)
 sealed trait ADTWithSub
 sealed trait SubTraitA extends ADTWithSub
@@ -546,6 +567,175 @@ object SanelyJsoniterTest extends TestSuite:
       val circeJson = original.asJson.noSpaces
       val jsoniterResult = readFromString[SnakeCaseExample](circeJson)
       assert(jsoniterResult == original)
+    }
+
+    // === Cross-codec: discriminator tests ===
+
+    test("configured - cross-codec compatibility with circe (discriminator)") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Encoder, Decoder, Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.{deriveConfiguredEncoder, deriveConfiguredDecoder, deriveConfiguredCodec}
+
+      given Configuration = Configuration.default.withDefaults.withDiscriminator("__typename__")
+      given CirceCodec[Activity] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withDiscriminator("__typename__")
+      given JsonValueCodec[Activity] = deriveJsoniterConfiguredCodec
+
+      val variants: List[Activity] = List(
+        Comment("u1", "hello", true),
+        StatusChange("draft", "active", Some("approved")),
+        FileUpload("doc.pdf", 1024, List("important", "draft"))
+      )
+
+      for v <- variants do
+        // jsoniter -> circe
+        val jJson = writeToString(v)
+        assert(jJson.contains("\"__typename__\""))
+        val cResult = circeDecode[Activity](jJson)
+        assert(cResult == Right(v))
+
+        // circe -> jsoniter
+        val cJson = (v: Activity).asJson.noSpaces
+        val jResult = readFromString[Activity](cJson)
+        assert(jResult == v)
+    }
+
+    test("configured - cross-codec compatibility with circe (discriminator + defaults)") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withDefaults.withDiscriminator("__typename__")
+      given CirceCodec[Activity] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withDiscriminator("__typename__")
+      given JsonValueCodec[Activity] = deriveJsoniterConfiguredCodec
+
+      // Missing "pinned" → default false
+      val commentJson = """{"__typename__":"Comment","userId":"u1","text":"hi"}"""
+      val circeComment = circeDecode[Activity](commentJson)
+      val jsoniterComment = readFromString[Activity](commentJson)
+      assert(circeComment == Right(jsoniterComment))
+      assert(jsoniterComment == Comment("u1", "hi", false))
+
+      // Missing "reason" → default None
+      val statusJson = """{"__typename__":"StatusChange","fromStatus":"draft","toStatus":"active"}"""
+      val circeStatus = circeDecode[Activity](statusJson)
+      val jsoniterStatus = readFromString[Activity](statusJson)
+      assert(circeStatus == Right(jsoniterStatus))
+      assert(jsoniterStatus == StatusChange("draft", "active", None))
+
+      // Missing "tags" → default Nil
+      val uploadJson = """{"__typename__":"FileUpload","fileName":"x.txt","sizeBytes":100}"""
+      val circeUpload = circeDecode[Activity](uploadJson)
+      val jsoniterUpload = readFromString[Activity](uploadJson)
+      assert(circeUpload == Right(jsoniterUpload))
+      assert(jsoniterUpload == FileUpload("x.txt", 100, Nil))
+    }
+
+    // === Cross-codec: drop-null tests ===
+
+    test("configured - cross-codec compatibility with circe (drop-null)") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Encoder, Decoder, Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.{deriveConfiguredEncoder, deriveConfiguredDecoder}
+
+      // circe: withDefaults + manual drop-null on encoder (circe has no withDropNullValues config)
+      given Configuration = Configuration.default.withDefaults
+      val circeEncoder: Encoder.AsObject[SchemaField] =
+        deriveConfiguredEncoder[SchemaField].mapJsonObject(_.filter(!_._2.isNull))
+      val circeDecoder: Decoder[SchemaField] = deriveConfiguredDecoder
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withDropNullValues
+      given JsonValueCodec[SchemaField] = deriveJsoniterConfiguredCodec
+
+      val sparse = SchemaField("string", description = Some("A name"))
+      val full = SchemaField("integer", Some("count"), Some("int32"), None, Some(0), Some(100), Some(true), Some("0"))
+
+      for v <- List(sparse, full) do
+        // jsoniter -> circe
+        val jJson = writeToString(v)
+        assert(!jJson.contains(":null"))
+        val cResult = circeDecoder.decodeJson(io.circe.parser.parse(jJson).toOption.get)
+        assert(cResult == Right(v))
+
+        // circe -> jsoniter
+        val cJson = circeEncoder.encodeObject(v).asJson.noSpaces
+        assert(!cJson.contains(":null"))
+        val jResult = readFromString[SchemaField](cJson)
+        assert(jResult == v)
+
+        // Both produce identical decoded result
+        val fromJ = circeDecoder.decodeJson(io.circe.parser.parse(jJson).toOption.get)
+        val fromC = circeDecoder.decodeJson(io.circe.parser.parse(cJson).toOption.get)
+        assert(fromJ == fromC)
+    }
+
+    test("configured - cross-codec compatibility with circe (drop-null + defaults decode)") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Encoder, Decoder, Codec as CirceCodec, *}
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.{deriveConfiguredEncoder, deriveConfiguredDecoder}
+
+      given Configuration = Configuration.default.withDefaults
+      val circeDecoder: Decoder[SchemaField] = deriveConfiguredDecoder
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withDropNullValues
+      given JsonValueCodec[SchemaField] = deriveJsoniterConfiguredCodec
+
+      // Minimal JSON — all optional fields should default to None
+      val minimal = """{"type":"integer"}"""
+      val circeResult = circeDecoder.decodeJson(io.circe.parser.parse(minimal).toOption.get)
+      val jsoniterResult = readFromString[SchemaField](minimal)
+      assert(circeResult == Right(jsoniterResult))
+      assert(jsoniterResult == SchemaField("integer"))
+    }
+
+    // === Cross-codec: snake_case + drop-null tests ===
+
+    test("configured - cross-codec compatibility with circe (snake_case + drop-null)") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Encoder, Decoder, Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.{deriveConfiguredEncoder, deriveConfiguredDecoder}
+
+      given Configuration = Configuration.default.withDefaults.withSnakeCaseMemberNames
+      val circeEncoder: Encoder.AsObject[ApiResponse] =
+        deriveConfiguredEncoder[ApiResponse].mapJsonObject(_.filter(!_._2.isNull))
+      val circeDecoder: Decoder[ApiResponse] = deriveConfiguredDecoder
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames.withDropNullValues
+      given JsonValueCodec[ApiResponse] = deriveJsoniterConfiguredCodec
+
+      val withSome = ApiResponse("req-1", userName = Some("Alice"))
+      val allDefaults = ApiResponse("req-2")
+
+      for v <- List(withSome, allDefaults) do
+        // jsoniter -> circe
+        val jJson = writeToString(v)
+        assert(jJson.contains("\"request_id\""))
+        assert(!jJson.contains(":null"))
+        val cResult = circeDecoder.decodeJson(io.circe.parser.parse(jJson).toOption.get)
+        assert(cResult == Right(v))
+
+        // circe -> jsoniter
+        val cJson = circeEncoder.encodeObject(v).asJson.noSpaces
+        assert(cJson.contains("\"request_id\""))
+        assert(!cJson.contains(":null"))
+        val jResult = readFromString[ApiResponse](cJson)
+        assert(jResult == v)
+
+      // Verify allDefaults omits optional fields
+      val defaultJson = writeToString(allDefaults)
+      assert(!defaultJson.contains("user_name"))
+      assert(!defaultJson.contains("error_message"))
     }
 
     // === Sub-trait tests ===
