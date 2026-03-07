@@ -73,8 +73,8 @@ tapir-json  tapir-jsoniter
 Json tree   direct streaming
 (allocate)  (zero alloc)
     │         │
- ~150K      ~800K ops/sec
- ops/sec    (5x faster)
+ ~136K      ~655K ops/sec
+ ops/sec    (4.8x faster)
 ```
 
 Tapir is the **HTTP boundary** — where every request/response passes through. It doesn't serialize anything itself; the integration module (`tapir-json-circe` vs `tapir-jsoniter-scala`) decides how `T` becomes bytes. sanely-jsoniter provides the `JsonValueCodec[T]` that `tapir-jsoniter-scala` needs, producing **circe-compatible JSON** so the wire format stays identical.
@@ -222,19 +222,19 @@ Realistic payload (~1.4 KB JSON): nested products, sealed trait sum types (`Orde
 
 | Approach | Throughput | vs circe |
 |----------|-----------|----------|
-| circe-jawn | ~140K ops/sec | 1.0x |
-| circe + jsoniter bridge | ~207K ops/sec | 1.5x |
-| **sanely-jsoniter** | **~476K ops/sec** | **3.4x** |
-| jsoniter-scala native | ~696K ops/sec | 5.0x |
+| circe-jawn | ~136K ops/sec | 1.0x |
+| circe + jsoniter bridge | ~197K ops/sec | 1.5x |
+| **sanely-jsoniter** | **~655K ops/sec** | **4.8x** |
+| jsoniter-scala native | ~667K ops/sec | 4.9x |
 
 **Writing** (case class → bytes):
 
 | Approach | Throughput | vs circe |
 |----------|-----------|----------|
-| circe-printer | ~128K ops/sec | 1.0x |
-| circe + jsoniter bridge | ~113K ops/sec | 0.9x |
-| **sanely-jsoniter** | **~576K ops/sec** | **4.5x** |
-| jsoniter-scala native | ~738K ops/sec | 5.8x |
+| circe-printer | ~121K ops/sec | 1.0x |
+| circe + jsoniter bridge | ~111K ops/sec | 0.9x |
+| **sanely-jsoniter** | **~732K ops/sec** | **6.0x** |
+| jsoniter-scala native | ~729K ops/sec | 6.0x |
 
 sanely-jsoniter reaches **68-78%** of jsoniter-scala native speed while producing circe-compatible JSON. The gap vs native is the cost of circe's encoding conventions (external tagging for sum types, `null` for `None`).
 
