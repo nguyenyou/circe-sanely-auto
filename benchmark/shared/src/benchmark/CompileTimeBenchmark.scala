@@ -175,6 +175,7 @@ object Main:
     benchmark.domain6.Domain6.run()
     benchmark.domain7.Domain7.run()
     benchmark.domain8.Domain8.run()
+    benchmark.domain9.Domain9.run()
     WideTypes.run()
     SumTypes.run()
     FlatProducts.run()
