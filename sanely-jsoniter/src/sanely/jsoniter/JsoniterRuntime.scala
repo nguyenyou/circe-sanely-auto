@@ -21,7 +21,7 @@ object JsoniterRuntime:
     def decodeFieldsAfterDiscriminator(in: JsonReader): P
 
   /** Lightweight Product wrapper over an Array for use with Mirror.fromProduct. */
-  private[jsoniter] final class ArrayProduct(val arr: Array[Any]) extends Product:
+  final class ArrayProduct(val arr: Array[Any]) extends Product:
     def canEqual(that: Any): Boolean = true
     def productArity: Int = arr.length
     def productElement(n: Int): Any = arr(n)
@@ -33,7 +33,8 @@ object JsoniterRuntime:
     names: Array[String],
     initCodecs: () => Array[JsonValueCodec[Any]],
     nullValues: Array[Any],
-    encodeFn: (P, Array[JsonValueCodec[Any]], JsonWriter) => Unit
+    encodeFn: (P, Array[JsonValueCodec[Any]], JsonWriter) => Unit,
+    decodeFn: (JsonReader, Array[JsonValueCodec[Any]], Mirror.ProductOf[P]) => P
   ): JsonValueCodec[P] =
     new JsonValueCodec[P]:
       private lazy val _codecs = initCodecs()
@@ -48,7 +49,7 @@ object JsoniterRuntime:
 
       def decodeValue(in: JsonReader, default: P): P =
         if in.isNextToken('{') then
-          decodeProduct(in, mirror, names, _codecs, nullValues)
+          decodeFn(in, _codecs, mirror)
         else
           in.readNullOrTokenError(default, '{')
 
@@ -194,7 +195,9 @@ object JsoniterRuntime:
     dropNullValues: Boolean,
     strictDecoding: Boolean,
     encodeFn: (P, Array[String], Array[JsonValueCodec[Any]], JsonWriter) => Unit,
-    encodeDropNullFn: (P, Array[String], Array[JsonValueCodec[Any]], JsonWriter) => Unit
+    encodeDropNullFn: (P, Array[String], Array[JsonValueCodec[Any]], JsonWriter) => Unit,
+    decodeFn: (JsonReader, Array[String], Array[JsonValueCodec[Any]], Mirror.ProductOf[P]) => P,
+    decodeAfterDiscFn: (JsonReader, Array[String], Array[JsonValueCodec[Any]], Mirror.ProductOf[P]) => P
   ): JsonValueCodec[P] =
     val names = rawNames.map(transformMemberNames)
     new InlineFieldsCodec[P]:
@@ -211,7 +214,7 @@ object JsoniterRuntime:
 
       def decodeValue(in: JsonReader, default: P): P =
         if in.isNextToken('{') then
-          decodeProductConfigured(in, mirror, names, _codecs, nullValues, hasDefaults, defaults, isOption, useDefaults, strictDecoding)
+          decodeFn(in, names, _codecs, mirror)
         else
           in.readNullOrTokenError(default, '{')
 
@@ -221,37 +224,7 @@ object JsoniterRuntime:
           else encodeFn(x, names, _codecs, out)
 
       def decodeFieldsAfterDiscriminator(in: JsonReader): P =
-        val n = names.length
-        val results = new Array[Any](n)
-        if useDefaults then
-          var i = 0
-          while i < n do
-            if hasDefaults(i) then results(i) = defaults(i)
-            else if isOption(i) then results(i) = None
-            else results(i) = nullValues(i)
-            i += 1
-        else
-          System.arraycopy(nullValues, 0, results, 0, n)
-        if in.isNextToken(',') then
-          var continue = true
-          while continue do
-            val keyLen = in.readKeyAsCharBuf()
-            var matched = false
-            var i = 0
-            while i < n && !matched do
-              if in.isCharBufEqualsTo(keyLen, names(i)) then
-                results(i) = _codecs(i).decodeValue(in, nullValues(i))
-                matched = true
-              i += 1
-            if !matched then
-              if strictDecoding then
-                in.decodeError(s"Strict decoding: unexpected field; valid fields: ${names.mkString(", ")}")
-              else in.skip()
-            continue = in.isNextToken(',')
-          if !in.isCurrentToken('}') then in.objectEndOrCommaError()
-        else if !in.isCurrentToken('}') then
-          in.objectEndOrCommaError()
-        mirror.fromProduct(new ArrayProduct(results))
+        decodeAfterDiscFn(in, names, _codecs, mirror)
 
   // === Configured sum codec ===
 
@@ -455,69 +428,3 @@ object JsoniterRuntime:
         case _ => sb.append(c)
       i += 1
 
-  // === Internal helpers ===
-
-  private def decodeProduct[P](
-    in: JsonReader, mirror: Mirror.ProductOf[P],
-    names: Array[String], codecs: Array[JsonValueCodec[Any]],
-    nullValues: Array[Any]
-  ): P =
-    val n = names.length
-    val results = new Array[Any](n)
-    System.arraycopy(nullValues, 0, results, 0, n)
-    if !in.isNextToken('}') then
-      in.rollbackToken()
-      var continue = true
-      while continue do
-        val keyLen = in.readKeyAsCharBuf()
-        var matched = false
-        var i = 0
-        while i < n && !matched do
-          if in.isCharBufEqualsTo(keyLen, names(i)) then
-            results(i) = codecs(i).decodeValue(in, nullValues(i))
-            matched = true
-          i += 1
-        if !matched then in.skip()
-        continue = in.isNextToken(',')
-      if !in.isCurrentToken('}') then in.objectEndOrCommaError()
-    mirror.fromProduct(new ArrayProduct(results))
-
-  private def decodeProductConfigured[P](
-    in: JsonReader, mirror: Mirror.ProductOf[P],
-    names: Array[String], codecs: Array[JsonValueCodec[Any]],
-    nullValues: Array[Any],
-    hasDefaults: Array[Boolean], defaults: Array[Any],
-    isOption: Array[Boolean], useDefaults: Boolean,
-    strictDecoding: Boolean = false
-  ): P =
-    val n = names.length
-    val results = new Array[Any](n)
-    // Initialize with defaults when useDefaults is enabled
-    if useDefaults then
-      var i = 0
-      while i < n do
-        if hasDefaults(i) then results(i) = defaults(i)
-        else if isOption(i) then results(i) = None
-        else results(i) = nullValues(i)
-        i += 1
-    else
-      System.arraycopy(nullValues, 0, results, 0, n)
-    if !in.isNextToken('}') then
-      in.rollbackToken()
-      var continue = true
-      while continue do
-        val keyLen = in.readKeyAsCharBuf()
-        var matched = false
-        var i = 0
-        while i < n && !matched do
-          if in.isCharBufEqualsTo(keyLen, names(i)) then
-            results(i) = codecs(i).decodeValue(in, nullValues(i))
-            matched = true
-          i += 1
-        if !matched then
-          if strictDecoding then
-            in.decodeError(s"Strict decoding: unexpected field; valid fields: ${names.mkString(", ")}")
-          else in.skip()
-        continue = in.isNextToken(',')
-      if !in.isCurrentToken('}') then in.objectEndOrCommaError()
-    mirror.fromProduct(new ArrayProduct(results))

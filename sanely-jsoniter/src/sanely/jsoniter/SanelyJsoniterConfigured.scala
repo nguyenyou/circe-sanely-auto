@@ -1,6 +1,6 @@
 package sanely.jsoniter
 
-import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, JsonWriter}
+import com.github.plokhotnyuk.jsoniter_scala.core.{JsonReader, JsonValueCodec, JsonWriter}
 import scala.deriving.Mirror
 import scala.collection.mutable
 import scala.compiletime.*
@@ -91,13 +91,23 @@ object SanelyJsoniterConfigured:
         ${ generateConfiguredFieldWritesDropNull[P]('x, 'names, 'codecs, 'out, fields) }
       }
 
+      val useDefaultsE = '{ $conf.useDefaults }
+      val strictDecodingE = '{ $conf.strictDecoding }
+      val decodeFnExpr = '{ (in: JsonReader, names: Array[String], codecs: Array[JsonValueCodec[Any]], m: Mirror.ProductOf[P]) =>
+        ${ generateConfiguredDecodeBody[P]('in, 'names, 'codecs, 'm, fields, fieldsWithDefaults, useDefaultsE, strictDecodingE) }
+      }
+      val decodeAfterDiscFnExpr = '{ (in: JsonReader, names: Array[String], codecs: Array[JsonValueCodec[Any]], m: Mirror.ProductOf[P]) =>
+        ${ generateConfiguredDecodeAfterDiscBody[P]('in, 'names, 'codecs, 'm, fields, fieldsWithDefaults, useDefaultsE, strictDecodingE) }
+      }
+
       '{
         JsoniterRuntime.configuredProductCodec[P](
           $mirror, $namesExpr, $conf.transformMemberNames,
           () => $codecsArrayExpr, $nullValuesExpr,
           $hasDefaultArrayExpr, $defaultsArrayExpr, $isOptionArrayExpr,
           $conf.useDefaults, $conf.dropNullValues, $conf.strictDecoding,
-          $encodeFnExpr, $encodeDropNullFnExpr)
+          $encodeFnExpr, $encodeDropNullFnExpr,
+          $decodeFnExpr, $decodeAfterDiscFnExpr)
       }
 
     private def generateConfiguredFieldWrites[P: Type](
@@ -144,6 +154,276 @@ object SanelyJsoniterConfigured:
       else
         val terms = stmts.map(_.asTerm)
         Block(terms.init.toList, terms.last).asExprOf[Unit]
+
+    private def tryDirectRead[T: Type](in: Expr[JsonReader]): Option[Expr[T]] =
+      val tpe = TypeRepr.of[T].dealias
+      if tpe =:= TypeRepr.of[Int] then Some('{ $in.readInt() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Long] then Some('{ $in.readLong() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Double] then Some('{ $in.readDouble() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Float] then Some('{ $in.readFloat() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $in.readBoolean() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Short] then Some('{ $in.readInt().toShort }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ $in.readInt().toByte }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Char] then
+        Some('{ val _s = $in.readString(null); if _s == null || _s.isEmpty then 0.toChar else _s.charAt(0) }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[String] then Some('{ $in.readString(null) }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ $in.readBigDecimal(null) }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[BigInt] then Some('{ $in.readBigInt(null) }.asExprOf[T])
+      else None
+
+    private def typedDefaultTerm(tpe: TypeRepr): Term =
+      val d = tpe.dealias
+      if d =:= TypeRepr.of[Int] then Literal(IntConstant(0))
+      else if d =:= TypeRepr.of[Long] then Literal(LongConstant(0L))
+      else if d =:= TypeRepr.of[Double] then Literal(DoubleConstant(0.0))
+      else if d =:= TypeRepr.of[Float] then Literal(FloatConstant(0.0f))
+      else if d =:= TypeRepr.of[Boolean] then Literal(BooleanConstant(false))
+      else if d =:= TypeRepr.of[Short] then '{ (0: Short) }.asTerm
+      else if d =:= TypeRepr.of[Byte] then '{ (0: Byte) }.asTerm
+      else if d =:= TypeRepr.of[Char] then '{ (0: Char) }.asTerm
+      else if d <:< TypeRepr.of[Option[?]] then '{ None }.asTerm
+      else Literal(NullConstant())
+
+    /** Generate decode body with typed locals for configured product.
+      * Similar to SanelyJsoniter.generateDecodeBody but handles:
+      * - useDefaults: initialize vars with defaults when available
+      * - strictDecoding: error on unmatched fields
+      * - Names are runtime-transformed (passed as array)
+      */
+    private def generateConfiguredDecodeBody[P: Type](
+      inExpr: Expr[JsonReader],
+      namesExpr: Expr[Array[String]],
+      codecsExpr: Expr[Array[JsonValueCodec[Any]]],
+      mirrorExpr: Expr[Mirror.ProductOf[P]],
+      fields: List[(String, Type[?], Expr[JsonValueCodec[?]])],
+      fieldsWithDefaults: List[(String, Type[?], Expr[JsonValueCodec[?]], Option[Expr[Any]])],
+      useDefaultsExpr: Expr[Boolean],
+      strictDecodingExpr: Expr[Boolean]
+    ): Expr[P] =
+      val n = fields.length
+      if n == 0 then
+        return '{
+          if !$inExpr.isNextToken('}') then
+            $inExpr.rollbackToken()
+            var _c = true
+            while _c do
+              $inExpr.readKeyAsCharBuf()
+              if $strictDecodingExpr then
+                $inExpr.decodeError(s"Strict decoding: unexpected field; valid fields: ${$namesExpr.mkString(", ")}")
+              else $inExpr.skip()
+              _c = $inExpr.isNextToken(',')
+            if !$inExpr.isCurrentToken('}') then $inExpr.objectEndOrCommaError()
+          $mirrorExpr.fromProduct(new JsoniterRuntime.ArrayProduct(Array.empty[Any]))
+        }
+
+      val owner = Symbol.spliceOwner
+
+      case class VarInfo(sym: Symbol, label: String, tpe: Type[?], idx: Int,
+                         defaultTerm: Term, hasDefault: Boolean, defaultExpr: Option[Expr[Any]], isOption: Boolean)
+      val vars: List[VarInfo] = fieldsWithDefaults.zipWithIndex.map { case ((label, tpe, _, defaultOpt), idx) =>
+        tpe match
+          case '[t] =>
+            val sym = Symbol.newVal(owner, s"_f$idx", TypeRepr.of[t], Flags.Mutable, Symbol.noSymbol)
+            val nullDefault = typedDefaultTerm(TypeRepr.of[t])
+            val isOpt = TypeRepr.of[t].dealias match
+              case AppliedType(tycon, _) => tycon.typeSymbol.fullName == "scala.Option"
+              case _ => false
+            VarInfo(sym, label, Type.of[t], idx, nullDefault, defaultOpt.isDefined, defaultOpt, isOpt)
+      }
+
+      // var declarations with useDefaults-aware initialization
+      val varDefs: List[Statement] = vars.map { v =>
+        v.tpe match
+          case '[t] =>
+            if v.hasDefault then
+              val defExpr = v.defaultExpr.get
+              // if useDefaults then default else nullDefault
+              val rhs = '{ if $useDefaultsExpr then $defExpr.asInstanceOf[t] else ${v.defaultTerm.asExprOf[t]} }.asTerm
+              ValDef(v.sym, Some(rhs))
+            else if v.isOption then
+              // Options always start as None (same with or without useDefaults)
+              ValDef(v.sym, Some('{ None }.asTerm))
+            else
+              ValDef(v.sym, Some(v.defaultTerm))
+      }
+
+      // Build if-else chain for field matching (names are runtime-transformed)
+      def buildMatchChain(keyLenRef: Term): Term =
+        val unmatchedBranch = '{
+          if $strictDecodingExpr then
+            $inExpr.decodeError(s"Strict decoding: unexpected field; valid fields: ${$namesExpr.mkString(", ")}")
+          else $inExpr.skip()
+        }.asTerm
+        vars.foldRight[Term](unmatchedBranch) { case (vi, elseBranch) =>
+          vi.tpe match
+            case '[t] =>
+              val idxE = Expr(vi.idx)
+              val cond = '{ $inExpr.isCharBufEqualsTo(${keyLenRef.asExprOf[Int]}, $namesExpr($idxE)) }.asTerm
+              val readTerm: Term = tryDirectRead[t](inExpr) match
+                case Some(expr) => expr.asTerm
+                case None =>
+                  '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[t] }.asTerm
+              val assign = Assign(Ref(vi.sym), readTerm)
+              If(cond, assign, elseBranch)
+        }
+
+      // Build result
+      val varRefExprs: List[Expr[Any]] = vars.map { v =>
+        v.tpe match
+          case '[t] => '{ ${Ref(v.sym).asExprOf[t]}: Any }
+      }
+      val resultTerm = '{ $mirrorExpr.fromProduct(
+        new JsoniterRuntime.ArrayProduct(Array(${Varargs(varRefExprs)}*))
+      ) }.asTerm
+
+      // While loop
+      val contSym = Symbol.newVal(owner, "_c", TypeRepr.of[Boolean], Flags.Mutable, Symbol.noSymbol)
+      val contDef = ValDef(contSym, Some(Literal(BooleanConstant(true))))
+      val klSym = Symbol.newVal(owner, "_kl", TypeRepr.of[Int], Flags.EmptyFlags, Symbol.noSymbol)
+      val klDef = ValDef(klSym, Some('{ $inExpr.readKeyAsCharBuf() }.asTerm))
+      val whileBody = Block(
+        List(klDef, buildMatchChain(Ref(klSym))),
+        Assign(Ref(contSym), '{ $inExpr.isNextToken(',') }.asTerm)
+      )
+      val whileLoop = While(Ref(contSym), whileBody)
+      val checkEnd = If(
+        '{ !$inExpr.isCurrentToken('}') }.asTerm,
+        '{ $inExpr.objectEndOrCommaError() }.asTerm,
+        Literal(UnitConstant())
+      )
+      val loopBlock = Block(
+        List('{ $inExpr.rollbackToken() }.asTerm, contDef, whileLoop, checkEnd),
+        Literal(UnitConstant())
+      )
+      val outerIf = If(
+        '{ !$inExpr.isNextToken('}') }.asTerm,
+        loopBlock,
+        Literal(UnitConstant())
+      )
+
+      Block(varDefs :+ outerIf, resultTerm).asExprOf[P]
+
+    /** Generate decode body for after-discriminator path (no opening `{`).
+      * Reads remaining fields after discriminator was consumed.
+      */
+    private def generateConfiguredDecodeAfterDiscBody[P: Type](
+      inExpr: Expr[JsonReader],
+      namesExpr: Expr[Array[String]],
+      codecsExpr: Expr[Array[JsonValueCodec[Any]]],
+      mirrorExpr: Expr[Mirror.ProductOf[P]],
+      fields: List[(String, Type[?], Expr[JsonValueCodec[?]])],
+      fieldsWithDefaults: List[(String, Type[?], Expr[JsonValueCodec[?]], Option[Expr[Any]])],
+      useDefaultsExpr: Expr[Boolean],
+      strictDecodingExpr: Expr[Boolean]
+    ): Expr[P] =
+      val n = fields.length
+      if n == 0 then
+        return '{
+          if $inExpr.isNextToken(',') then
+            var _c = true
+            while _c do
+              $inExpr.readKeyAsCharBuf()
+              if $strictDecodingExpr then
+                $inExpr.decodeError(s"Strict decoding: unexpected field; valid fields: ${$namesExpr.mkString(", ")}")
+              else $inExpr.skip()
+              _c = $inExpr.isNextToken(',')
+            if !$inExpr.isCurrentToken('}') then $inExpr.objectEndOrCommaError()
+          else if !$inExpr.isCurrentToken('}') then
+            $inExpr.objectEndOrCommaError()
+          $mirrorExpr.fromProduct(new JsoniterRuntime.ArrayProduct(Array.empty[Any]))
+        }
+
+      val owner = Symbol.spliceOwner
+
+      case class VarInfo(sym: Symbol, label: String, tpe: Type[?], idx: Int,
+                         defaultTerm: Term, hasDefault: Boolean, defaultExpr: Option[Expr[Any]], isOption: Boolean)
+      val vars: List[VarInfo] = fieldsWithDefaults.zipWithIndex.map { case ((label, tpe, _, defaultOpt), idx) =>
+        tpe match
+          case '[t] =>
+            val sym = Symbol.newVal(owner, s"_f$idx", TypeRepr.of[t], Flags.Mutable, Symbol.noSymbol)
+            val nullDefault = typedDefaultTerm(TypeRepr.of[t])
+            val isOpt = TypeRepr.of[t].dealias match
+              case AppliedType(tycon, _) => tycon.typeSymbol.fullName == "scala.Option"
+              case _ => false
+            VarInfo(sym, label, Type.of[t], idx, nullDefault, defaultOpt.isDefined, defaultOpt, isOpt)
+      }
+
+      // var declarations (same as decode body)
+      val varDefs: List[Statement] = vars.map { v =>
+        v.tpe match
+          case '[t] =>
+            if v.hasDefault then
+              val defExpr = v.defaultExpr.get
+              val rhs = '{ if $useDefaultsExpr then $defExpr.asInstanceOf[t] else ${v.defaultTerm.asExprOf[t]} }.asTerm
+              ValDef(v.sym, Some(rhs))
+            else if v.isOption then
+              ValDef(v.sym, Some('{ None }.asTerm))
+            else
+              ValDef(v.sym, Some(v.defaultTerm))
+      }
+
+      // Build if-else chain (same as decode body)
+      def buildMatchChain(keyLenRef: Term): Term =
+        val unmatchedBranch = '{
+          if $strictDecodingExpr then
+            $inExpr.decodeError(s"Strict decoding: unexpected field; valid fields: ${$namesExpr.mkString(", ")}")
+          else $inExpr.skip()
+        }.asTerm
+        vars.foldRight[Term](unmatchedBranch) { case (vi, elseBranch) =>
+          vi.tpe match
+            case '[t] =>
+              val idxE = Expr(vi.idx)
+              val cond = '{ $inExpr.isCharBufEqualsTo(${keyLenRef.asExprOf[Int]}, $namesExpr($idxE)) }.asTerm
+              val readTerm: Term = tryDirectRead[t](inExpr) match
+                case Some(expr) => expr.asTerm
+                case None =>
+                  '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[t] }.asTerm
+              val assign = Assign(Ref(vi.sym), readTerm)
+              If(cond, assign, elseBranch)
+        }
+
+      // Build result
+      val varRefExprs: List[Expr[Any]] = vars.map { v =>
+        v.tpe match
+          case '[t] => '{ ${Ref(v.sym).asExprOf[t]}: Any }
+      }
+      val resultTerm = '{ $mirrorExpr.fromProduct(
+        new JsoniterRuntime.ArrayProduct(Array(${Varargs(varRefExprs)}*))
+      ) }.asTerm
+
+      // After-discriminator: check for comma, then field loop, then check end
+      val contSym = Symbol.newVal(owner, "_c", TypeRepr.of[Boolean], Flags.Mutable, Symbol.noSymbol)
+      val contDef = ValDef(contSym, Some(Literal(BooleanConstant(true))))
+      val klSym = Symbol.newVal(owner, "_kl", TypeRepr.of[Int], Flags.EmptyFlags, Symbol.noSymbol)
+      val klDef = ValDef(klSym, Some('{ $inExpr.readKeyAsCharBuf() }.asTerm))
+      val whileBody = Block(
+        List(klDef, buildMatchChain(Ref(klSym))),
+        Assign(Ref(contSym), '{ $inExpr.isNextToken(',') }.asTerm)
+      )
+      val whileLoop = While(Ref(contSym), whileBody)
+      val checkEnd = If(
+        '{ !$inExpr.isCurrentToken('}') }.asTerm,
+        '{ $inExpr.objectEndOrCommaError() }.asTerm,
+        Literal(UnitConstant())
+      )
+
+      // if comma then loop else check end
+      val commaBlock = Block(
+        List(contDef, whileLoop, checkEnd),
+        Literal(UnitConstant())
+      )
+      val endCheck2 = If(
+        '{ !$inExpr.isCurrentToken('}') }.asTerm,
+        '{ $inExpr.objectEndOrCommaError() }.asTerm,
+        Literal(UnitConstant())
+      )
+      val afterDiscIf = If(
+        '{ $inExpr.isNextToken(',') }.asTerm,
+        commaBlock,
+        endCheck2
+      )
+
+      Block(varDefs :+ afterDiscIf, resultTerm).asExprOf[P]
 
     private def tryDirectWrite[T: Type](fa: Expr[T], out: Expr[JsonWriter]): Option[Expr[Unit]] =
       val tpe = TypeRepr.of[T].dealias

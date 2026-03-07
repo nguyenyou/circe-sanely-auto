@@ -1,6 +1,6 @@
 package sanely.jsoniter
 
-import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, JsonWriter}
+import com.github.plokhotnyuk.jsoniter_scala.core.{JsonReader, JsonValueCodec, JsonWriter}
 import scala.deriving.Mirror
 import scala.collection.mutable
 import scala.compiletime.*
@@ -63,7 +63,11 @@ object SanelyJsoniter:
         ${ generateFieldWrites[P]('x, 'codecs, 'out, fields) }
       }
 
-      '{ JsoniterRuntime.productCodec[P]($mirror, $namesExpr, () => $codecsArrayExpr, $nullValuesExpr, $encodeFnExpr) }
+      val decodeFnExpr = '{ (in: JsonReader, codecs: Array[JsonValueCodec[Any]], m: Mirror.ProductOf[P]) =>
+        ${ generateDecodeBody[P]('in, 'codecs, 'm, fields) }
+      }
+
+      '{ JsoniterRuntime.productCodec[P]($mirror, $namesExpr, () => $codecsArrayExpr, $nullValuesExpr, $encodeFnExpr, $decodeFnExpr) }
 
     private def generateFieldWrites[P: Type](
       x: Expr[P], codecs: Expr[Array[JsonValueCodec[Any]]], out: Expr[JsonWriter],
@@ -85,6 +89,131 @@ object SanelyJsoniter:
       else
         val terms = stmts.map(_.asTerm)
         Block(terms.init.toList, terms.last).asExprOf[Unit]
+
+    private def tryDirectRead[T: Type](in: Expr[JsonReader]): Option[Expr[T]] =
+      val tpe = TypeRepr.of[T].dealias
+      if tpe =:= TypeRepr.of[Int] then Some('{ $in.readInt() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Long] then Some('{ $in.readLong() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Double] then Some('{ $in.readDouble() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Float] then Some('{ $in.readFloat() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $in.readBoolean() }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Short] then Some('{ $in.readInt().toShort }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ $in.readInt().toByte }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[Char] then
+        Some('{ val _s = $in.readString(null); if _s == null || _s.isEmpty then 0.toChar else _s.charAt(0) }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[String] then Some('{ $in.readString(null) }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ $in.readBigDecimal(null) }.asExprOf[T])
+      else if tpe =:= TypeRepr.of[BigInt] then Some('{ $in.readBigInt(null) }.asExprOf[T])
+      else None
+
+    private def typedDefaultTerm(tpe: TypeRepr): Term =
+      val d = tpe.dealias
+      if d =:= TypeRepr.of[Int] then Literal(IntConstant(0))
+      else if d =:= TypeRepr.of[Long] then Literal(LongConstant(0L))
+      else if d =:= TypeRepr.of[Double] then Literal(DoubleConstant(0.0))
+      else if d =:= TypeRepr.of[Float] then Literal(FloatConstant(0.0f))
+      else if d =:= TypeRepr.of[Boolean] then Literal(BooleanConstant(false))
+      else if d =:= TypeRepr.of[Short] then '{ (0: Short) }.asTerm
+      else if d =:= TypeRepr.of[Byte] then '{ (0: Byte) }.asTerm
+      else if d =:= TypeRepr.of[Char] then '{ (0: Char) }.asTerm
+      else if d <:< TypeRepr.of[Option[?]] then '{ None }.asTerm
+      else Literal(NullConstant())
+
+    private def generateDecodeBody[P: Type](
+      inExpr: Expr[JsonReader],
+      codecsExpr: Expr[Array[JsonValueCodec[Any]]],
+      mirrorExpr: Expr[Mirror.ProductOf[P]],
+      fields: List[(String, Type[?], Expr[JsonValueCodec[?]])]
+    ): Expr[P] =
+      val n = fields.length
+      if n == 0 then
+        return '{
+          if !$inExpr.isNextToken('}') then
+            $inExpr.rollbackToken()
+            var _c = true
+            while _c do
+              $inExpr.readKeyAsCharBuf(); $inExpr.skip()
+              _c = $inExpr.isNextToken(',')
+            if !$inExpr.isCurrentToken('}') then $inExpr.objectEndOrCommaError()
+          $mirrorExpr.fromProduct(new JsoniterRuntime.ArrayProduct(Array.empty[Any]))
+        }
+
+      val owner = Symbol.spliceOwner
+
+      // Create typed mutable var symbols for each field
+      case class VarInfo(sym: Symbol, label: String, tpe: Type[?], idx: Int, defaultTerm: Term)
+      val vars: List[VarInfo] = fields.zipWithIndex.map { case ((label, tpe, _), idx) =>
+        tpe match
+          case '[t] =>
+            val sym = Symbol.newVal(owner, s"_f$idx", TypeRepr.of[t], Flags.Mutable, Symbol.noSymbol)
+            val default = typedDefaultTerm(TypeRepr.of[t])
+            VarInfo(sym, label, Type.of[t], idx, default)
+      }
+
+      // var declarations
+      val varDefs: List[Statement] = vars.map(v => ValDef(v.sym, Some(v.defaultTerm)))
+
+      // Build if-else chain for field matching, parameterized by keyLen ref
+      def buildMatchChain(keyLenRef: Term): Term =
+        val skipTerm = '{ $inExpr.skip() }.asTerm
+        vars.foldRight[Term](skipTerm) { case (vi, elseBranch) =>
+          vi.tpe match
+            case '[t] =>
+              val cond = '{ $inExpr.isCharBufEqualsTo(${keyLenRef.asExprOf[Int]}, ${Expr(vi.label)}) }.asTerm
+              val readTerm: Term = tryDirectRead[t](inExpr) match
+                case Some(expr) => expr.asTerm
+                case None =>
+                  val idxE = Expr(vi.idx)
+                  '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[t] }.asTerm
+              val assign = Assign(Ref(vi.sym), readTerm)
+              If(cond, assign, elseBranch)
+        }
+
+      // Build result: mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))
+      val varRefExprs: List[Expr[Any]] = vars.map { v =>
+        v.tpe match
+          case '[t] => '{ ${Ref(v.sym).asExprOf[t]}: Any }
+      }
+      val resultTerm = '{ $mirrorExpr.fromProduct(
+        new JsoniterRuntime.ArrayProduct(Array(${Varargs(varRefExprs)}*))
+      ) }.asTerm
+
+      // Build while loop: var _c = true; while(_c) { val _kl = ...; matchChain; _c = ... }
+      val contSym = Symbol.newVal(owner, "_c", TypeRepr.of[Boolean], Flags.Mutable, Symbol.noSymbol)
+      val contDef = ValDef(contSym, Some(Literal(BooleanConstant(true))))
+
+      val klSym = Symbol.newVal(owner, "_kl", TypeRepr.of[Int], Flags.EmptyFlags, Symbol.noSymbol)
+      val klDef = ValDef(klSym, Some('{ $inExpr.readKeyAsCharBuf() }.asTerm))
+
+      val whileBody = Block(
+        List(klDef, buildMatchChain(Ref(klSym))),
+        Assign(Ref(contSym), '{ $inExpr.isNextToken(',') }.asTerm)
+      )
+      val whileLoop = While(Ref(contSym), whileBody)
+
+      val checkEnd = If(
+        '{ !$inExpr.isCurrentToken('}') }.asTerm,
+        '{ $inExpr.objectEndOrCommaError() }.asTerm,
+        Literal(UnitConstant())
+      )
+
+      val loopBlock = Block(
+        List(
+          '{ $inExpr.rollbackToken() }.asTerm,
+          contDef,
+          whileLoop,
+          checkEnd
+        ),
+        Literal(UnitConstant())
+      )
+
+      val outerIf = If(
+        '{ !$inExpr.isNextToken('}') }.asTerm,
+        loopBlock,
+        Literal(UnitConstant())
+      )
+
+      Block(varDefs :+ outerIf, resultTerm).asExprOf[P]
 
     private def tryDirectWrite[T: Type](fa: Expr[T], out: Expr[JsonWriter]): Option[Expr[Unit]] =
       val tpe = TypeRepr.of[T].dealias

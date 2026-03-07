@@ -58,10 +58,10 @@ circe-sanely-auto fixes compile time. For **runtime** performance, there are two
 
 | Approach | Reading (ops/sec) | | Writing (ops/sec) | |
 |---|---|---|---|---|
-| **circe + jawn** (baseline) | ~131K | 1.0x | ~115K | 1.0x |
-| **circe + jsoniter bridge** | ~190K | **1.5x** | ~110K | 1.0x |
-| **sanely-jsoniter** (experimental) | **~431K** | **3.3x** | **~630K** | **5.5x** |
-| jsoniter-scala native | ~646K | 4.9x | ~682K | 5.9x |
+| **circe + jawn** (baseline) | ~136K | 1.0x | ~121K | 1.0x |
+| **circe + jsoniter bridge** | ~197K | **1.5x** | ~111K | 0.9x |
+| **sanely-jsoniter** (experimental) | **~655K** | **4.8x** | **~732K** | **6.0x** |
+| jsoniter-scala native | ~667K | 4.9x | ~729K | 6.0x |
 
 #### Option 1: jsoniter-scala-circe bridge (1.5x read, drop-in)
 
