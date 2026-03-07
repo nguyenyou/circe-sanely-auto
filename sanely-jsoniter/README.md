@@ -75,6 +75,10 @@ This means you can adopt sanely-jsoniter on the hot path and keep circe everywhe
 | Collections | JSON array | `[1,2,3]` |
 | Map[String, V] | JSON object | `{"k":"v"}` |
 
+### How the promise is enforced
+
+Cross-codec tests encode values with sanely-jsoniter and decode with circe (and vice versa), asserting identical results for products, sum types, options, and all primitive types. There are no upstream tests from jsoniter-scala — since we intentionally diverge from jsoniter-scala's format, their tests don't apply.
+
 ## Performance
 
 Compared to circe (encoding + decoding combined):
