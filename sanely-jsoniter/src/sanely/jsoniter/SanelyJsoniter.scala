@@ -73,15 +73,39 @@ object SanelyJsoniter:
         tpe match
           case '[t] =>
             val fieldAccess = Select.unique(x.asTerm, name).asExprOf[t]
+            val writeValue = tryDirectWrite[t](fieldAccess, out).getOrElse(
+              '{ $codecs(${Expr(idx)}).encodeValue($fieldAccess.asInstanceOf[Any], $out) }
+            )
             '{
               $out.writeNonEscapedAsciiKey(${Expr(name)})
-              $codecs(${Expr(idx)}).encodeValue($fieldAccess.asInstanceOf[Any], $out)
+              $writeValue
             }
       }
       if stmts.isEmpty then '{ () }
       else
         val terms = stmts.map(_.asTerm)
         Block(terms.init.toList, terms.last).asExprOf[Unit]
+
+    private def tryDirectWrite[T: Type](fa: Expr[T], out: Expr[JsonWriter]): Option[Expr[Unit]] =
+      val tpe = TypeRepr.of[T].dealias
+      if tpe =:= TypeRepr.of[Int] then Some('{ $out.writeVal(${fa.asExprOf[Int]}) })
+      else if tpe =:= TypeRepr.of[Long] then Some('{ $out.writeVal(${fa.asExprOf[Long]}) })
+      else if tpe =:= TypeRepr.of[Float] then Some('{ $out.writeVal(${fa.asExprOf[Float]}) })
+      else if tpe =:= TypeRepr.of[Double] then Some('{ $out.writeVal(${fa.asExprOf[Double]}) })
+      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $out.writeVal(${fa.asExprOf[Boolean]}) })
+      else if tpe =:= TypeRepr.of[Short] then Some('{ $out.writeVal(${fa.asExprOf[Short]}.toInt) })
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ $out.writeVal(${fa.asExprOf[Byte]}.toInt) })
+      else if tpe =:= TypeRepr.of[Char] then Some('{ $out.writeVal(${fa.asExprOf[Char]}.toString) })
+      else if tpe =:= TypeRepr.of[String] then
+        val s = fa.asExprOf[String]
+        Some('{ val _v = $s; if _v == null then $out.writeNull() else $out.writeVal(_v) })
+      else if tpe =:= TypeRepr.of[BigDecimal] then
+        val bd = fa.asExprOf[BigDecimal]
+        Some('{ val _v = $bd; if _v == null then $out.writeNull() else $out.writeVal(_v) })
+      else if tpe =:= TypeRepr.of[BigInt] then
+        val bi = fa.asExprOf[BigInt]
+        Some('{ val _v = $bi; if _v == null then $out.writeNull() else $out.writeVal(_v) })
+      else None
 
     // === Sum derivation ===
 
