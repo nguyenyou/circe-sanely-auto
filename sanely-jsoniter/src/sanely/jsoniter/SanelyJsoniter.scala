@@ -1,6 +1,6 @@
 package sanely.jsoniter
 
-import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
+import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, JsonWriter}
 import scala.deriving.Mirror
 import scala.collection.mutable
 import scala.compiletime.*
@@ -59,7 +59,29 @@ object SanelyJsoniter:
       }
       val nullValuesExpr = '{ Array(${Varargs(nullValueExprs)}*) }
 
-      '{ JsoniterRuntime.productCodec[P]($mirror, $namesExpr, () => $codecsArrayExpr, $nullValuesExpr) }
+      val encodeFnExpr = '{ (x: P, codecs: Array[JsonValueCodec[Any]], out: JsonWriter) =>
+        ${ generateFieldWrites[P]('x, 'codecs, 'out, fields) }
+      }
+
+      '{ JsoniterRuntime.productCodec[P]($mirror, $namesExpr, () => $codecsArrayExpr, $nullValuesExpr, $encodeFnExpr) }
+
+    private def generateFieldWrites[P: Type](
+      x: Expr[P], codecs: Expr[Array[JsonValueCodec[Any]]], out: Expr[JsonWriter],
+      fields: List[(String, Type[?], Expr[JsonValueCodec[?]])]
+    ): Expr[Unit] =
+      val stmts = fields.zipWithIndex.map { case ((name, tpe, _), idx) =>
+        tpe match
+          case '[t] =>
+            val fieldAccess = Select.unique(x.asTerm, name).asExprOf[t]
+            '{
+              $out.writeNonEscapedAsciiKey(${Expr(name)})
+              $codecs(${Expr(idx)}).encodeValue($fieldAccess.asInstanceOf[Any], $out)
+            }
+      }
+      if stmts.isEmpty then '{ () }
+      else
+        val terms = stmts.map(_.asTerm)
+        Block(terms.init.toList, terms.last).asExprOf[Unit]
 
     // === Sum derivation ===
 
