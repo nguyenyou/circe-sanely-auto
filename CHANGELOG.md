@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.15.0] - 2026-03-07
+
+### sanely-jsoniter — new module
+
+**`sanely-jsoniter`** generates `JsonValueCodec[T]` instances that skip circe's `Json` AST entirely, streaming bytes directly to/from domain objects via jsoniter-scala. Produces circe-compatible JSON on the wire.
+
+#### Features
+- Product types, sum types (external tagging), enums, recursive types, sub-trait hierarchies (diamond dedup)
+- Either codec (`{"Left": v}` / `{"Right": v}`)
+- Non-string map keys via `KeyCodec[K]`
+- Value enum codecs — macro-derived (`deriveJsoniterValueEnumCodec`) and manual (`Codecs.stringValueEnum` / `Codecs.intValueEnum`)
+- Configured derivation: `withDefaults`, `withDiscriminator`, `withSnakeCaseMemberNames`, `withDropNullValues`, `withTransformMemberNames` / `withTransformConstructorNames`, `withStrictDecoding`
+- Auto-configured derivation: `import sanely.jsoniter.configured.auto.given` with a `given JsoniterConfiguration` in scope
+- `derives` syntax: `JsoniterCodec`, `JsoniterCodec.WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`
+- Scala.js cross-platform support
+
+#### Performance (P3.1–P3.4)
+- **P3.1: Inline encode with direct field access** — `x.name` instead of `x.productElement(i)`, eliminating boxing
+- **P3.2: Direct primitive write calls** — `out.writeVal(x.age)` instead of `codec.encodeValue(x.age, out)` for primitives
+- **P3.3: Inline decode with typed locals** — `var _name: String = null; var _age: Int = 0` instead of `Array[Any]` boxing
+- **P3.4: Hash-based field key dispatch** — `(in.charBufToHashCode(l): @switch) match { ... }` with compile-time pre-computed hashes for types with > 8 fields; small types keep linear if-else chain
+- **Branchless product encoding** — unconditional write-key/write-value sequence with no per-field conditional checks
+
+#### Benchmark results
+- **4.8x** faster reads, **6.2x** faster writes vs circe-jawn (~1.4 KB payload)
+- **98%** of jsoniter-scala native on decode, **surpasses it by 6%** on encode
+- Write advantage: branchless field writing beats jsoniter-scala's per-field conditional branches (`transientNone`, `transientEmpty`, `transientDefault`)
+
+#### Tests
+- 80 unit tests (JVM), 91 unit tests (Scala.js)
+- 8 Tapir integration tests proving HTTP codec swap works end-to-end
+
+### Fixed
+- **Respect custom instances inside containers** — `List[T]`, `Option[T]`, `Map[K, T]` now correctly use user-provided `Encoder[T]`/`Decoder[T]` instances instead of re-deriving
+
+### Changed
+- Compat tests auto-generated from circe upstream via git submodule + sync script
+- Tapir integration test module added (`tapir-test/`)
+- Runtime benchmark module added (`benchmark-runtime/`)
+- README rewritten with compile + runtime performance story
+
 ## [0.14.0] - 2026-03-06
 
 ### Performance
