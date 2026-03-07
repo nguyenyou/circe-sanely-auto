@@ -18,6 +18,7 @@ object `package` extends ScalaModule {
     def mvnDeps = Task {
       super.mvnDeps() ++ Seq(
         mvn"com.lihaoyi::utest::${build.utestVersion}",
+        mvn"io.github.scalapb-json::scalapb-circe::${build.scalapbCirceVersion}",
       )
     }
   }
