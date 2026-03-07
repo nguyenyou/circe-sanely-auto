@@ -26,6 +26,7 @@ object SanelyCodec:
     private val exprCache = mutable.Map.empty[String, (Expr[?], Expr[?])]
     private val negativeBuiltinCache = mutable.Set.empty[String]
     private val summonedKeys = mutable.Set.empty[String]
+    private val constructorNegCache = mutable.Set.empty[String]
 
     def derive(mirror: Expr[Mirror.Of[A]]): Expr[Codec.AsObject[A]] =
       if MacroUtils.isRecursiveType(selfType) then
@@ -226,10 +227,20 @@ object SanelyCodec:
         val dec = constructRecursiveDecoder[T](tpe, selfDecRef)
         return (enc, dec)
 
-      // Try summon both — two summonIgnoring calls but shared everything else
-      val summonedEnc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
-      val summonedDec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
-      if summonedEnc.isDefined || summonedDec.isDefined then summonedKeys += cacheKey
+      val constructorKey = dealiased match
+        case AppliedType(tycon, _) => Some(tycon.typeSymbol.fullName)
+        case _ => None
+
+      val (summonedEnc, summonedDec) =
+        if constructorKey.exists(constructorNegCache.contains) then
+          timer.count("constructorNegHit")
+          (None, None)
+        else
+          val enc = timer.time("summonIgnoring")(Expr.summonIgnoring[Encoder[T]](cachedEncIgnoreSymbols*))
+          val dec = timer.time("summonIgnoring")(Expr.summonIgnoring[Decoder[T]](cachedDecIgnoreSymbols*))
+          if enc.isDefined || dec.isDefined then summonedKeys += cacheKey
+          else constructorKey.foreach(constructorNegCache += _)
+          (enc, dec)
 
       val resolved: (Expr[Encoder[T]], Expr[Decoder[T]]) = (summonedEnc, summonedDec) match
         case (Some(enc), Some(dec)) => (enc, dec)
