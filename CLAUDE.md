@@ -3,6 +3,7 @@
 ## Important Rules
 
 - **This is a purely open source project.** Never mention any company names, internal projects, proprietary codebases, or employer-related information anywhere — not in code, commit messages, PR descriptions, comments, changelogs, or documentation. All references must remain generic and public.
+- **No dead code.** When replacing an implementation, delete the old one entirely. No deprecation, no keeping old code "for backwards compatibility." The only contract that matters is 100% circe compatibility — internal APIs can change freely. Keep the codebase clean and current.
 
 ## Project
 

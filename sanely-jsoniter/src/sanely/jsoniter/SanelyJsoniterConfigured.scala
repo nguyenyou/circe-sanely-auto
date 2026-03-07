@@ -1,6 +1,6 @@
 package sanely.jsoniter
 
-import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
+import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, JsonWriter}
 import scala.deriving.Mirror
 import scala.collection.mutable
 import scala.compiletime.*
@@ -84,13 +84,60 @@ object SanelyJsoniterConfigured:
       }
       val isOptionArrayExpr = '{ Array(${Varargs(isOptionExprs)}*) }
 
+      val encodeFnExpr = '{ (x: P, names: Array[String], codecs: Array[JsonValueCodec[Any]], out: JsonWriter) =>
+        ${ generateConfiguredFieldWrites[P]('x, 'names, 'codecs, 'out, fields) }
+      }
+      val encodeDropNullFnExpr = '{ (x: P, names: Array[String], codecs: Array[JsonValueCodec[Any]], out: JsonWriter) =>
+        ${ generateConfiguredFieldWritesDropNull[P]('x, 'names, 'codecs, 'out, fields) }
+      }
+
       '{
         JsoniterRuntime.configuredProductCodec[P](
           $mirror, $namesExpr, $conf.transformMemberNames,
           () => $codecsArrayExpr, $nullValuesExpr,
           $hasDefaultArrayExpr, $defaultsArrayExpr, $isOptionArrayExpr,
-          $conf.useDefaults, $conf.dropNullValues, $conf.strictDecoding)
+          $conf.useDefaults, $conf.dropNullValues, $conf.strictDecoding,
+          $encodeFnExpr, $encodeDropNullFnExpr)
       }
+
+    private def generateConfiguredFieldWrites[P: Type](
+      x: Expr[P], names: Expr[Array[String]], codecs: Expr[Array[JsonValueCodec[Any]]], out: Expr[JsonWriter],
+      fields: List[(String, Type[?], Expr[JsonValueCodec[?]])]
+    ): Expr[Unit] =
+      val stmts = fields.zipWithIndex.map { case ((name, tpe, _), idx) =>
+        tpe match
+          case '[t] =>
+            val fieldAccess = Select.unique(x.asTerm, name).asExprOf[t]
+            '{
+              $out.writeNonEscapedAsciiKey($names(${Expr(idx)}))
+              $codecs(${Expr(idx)}).encodeValue($fieldAccess.asInstanceOf[Any], $out)
+            }
+      }
+      if stmts.isEmpty then '{ () }
+      else
+        val terms = stmts.map(_.asTerm)
+        Block(terms.init.toList, terms.last).asExprOf[Unit]
+
+    private def generateConfiguredFieldWritesDropNull[P: Type](
+      x: Expr[P], names: Expr[Array[String]], codecs: Expr[Array[JsonValueCodec[Any]]], out: Expr[JsonWriter],
+      fields: List[(String, Type[?], Expr[JsonValueCodec[?]])]
+    ): Expr[Unit] =
+      val stmts = fields.zipWithIndex.map { case ((name, tpe, _), idx) =>
+        tpe match
+          case '[t] =>
+            val fieldAccess = Select.unique(x.asTerm, name).asExprOf[t]
+            '{
+              val v: Any = $fieldAccess.asInstanceOf[Any]
+              val isNull = v == null || (v.isInstanceOf[Option[?]] && v.asInstanceOf[Option[?]].isEmpty)
+              if !isNull then
+                $out.writeNonEscapedAsciiKey($names(${Expr(idx)}))
+                $codecs(${Expr(idx)}).encodeValue(v, $out)
+            }
+      }
+      if stmts.isEmpty then '{ () }
+      else
+        val terms = stmts.map(_.asTerm)
+        Block(terms.init.toList, terms.last).asExprOf[Unit]
 
     // === Sum derivation (configured) ===
 

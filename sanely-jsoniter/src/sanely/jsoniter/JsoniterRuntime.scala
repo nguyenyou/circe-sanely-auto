@@ -32,7 +32,8 @@ object JsoniterRuntime:
     mirror: => Mirror.ProductOf[P],
     names: Array[String],
     initCodecs: () => Array[JsonValueCodec[Any]],
-    nullValues: Array[Any]
+    nullValues: Array[Any],
+    encodeFn: (P, Array[JsonValueCodec[Any]], JsonWriter) => Unit
   ): JsonValueCodec[P] =
     new JsonValueCodec[P]:
       private lazy val _codecs = initCodecs()
@@ -40,7 +41,10 @@ object JsoniterRuntime:
 
       def encodeValue(x: P, out: JsonWriter): Unit =
         if (x: Any) == null then out.writeNull()
-        else encodeProduct(x.asInstanceOf[Product], names, _codecs, out)
+        else
+          out.writeObjectStart()
+          encodeFn(x, _codecs, out)
+          out.writeObjectEnd()
 
       def decodeValue(in: JsonReader, default: P): P =
         if in.isNextToken('{') then
@@ -188,7 +192,9 @@ object JsoniterRuntime:
     isOption: Array[Boolean],
     useDefaults: Boolean,
     dropNullValues: Boolean,
-    strictDecoding: Boolean = false
+    strictDecoding: Boolean,
+    encodeFn: (P, Array[String], Array[JsonValueCodec[Any]], JsonWriter) => Unit,
+    encodeDropNullFn: (P, Array[String], Array[JsonValueCodec[Any]], JsonWriter) => Unit
   ): JsonValueCodec[P] =
     val names = rawNames.map(transformMemberNames)
     new InlineFieldsCodec[P]:
@@ -197,8 +203,11 @@ object JsoniterRuntime:
 
       def encodeValue(x: P, out: JsonWriter): Unit =
         if (x: Any) == null then out.writeNull()
-        else if dropNullValues then encodeProductDropNull(x.asInstanceOf[Product], names, _codecs, out)
-        else encodeProduct(x.asInstanceOf[Product], names, _codecs, out)
+        else
+          out.writeObjectStart()
+          if dropNullValues then encodeDropNullFn(x, names, _codecs, out)
+          else encodeFn(x, names, _codecs, out)
+          out.writeObjectEnd()
 
       def decodeValue(in: JsonReader, default: P): P =
         if in.isNextToken('{') then
@@ -208,20 +217,8 @@ object JsoniterRuntime:
 
       def encodeFields(x: P, out: JsonWriter): Unit =
         if (x: Any) != null then
-          val product = x.asInstanceOf[Product]
-          val n = names.length
-          var i = 0
-          while i < n do
-            val v = product.productElement(i)
-            if dropNullValues then
-              val isNull = v == null || (v.isInstanceOf[Option[?]] && v.asInstanceOf[Option[?]].isEmpty)
-              if !isNull then
-                out.writeNonEscapedAsciiKey(names(i))
-                _codecs(i).encodeValue(v, out)
-            else
-              out.writeNonEscapedAsciiKey(names(i))
-              _codecs(i).encodeValue(v, out)
-            i += 1
+          if dropNullValues then encodeDropNullFn(x, names, _codecs, out)
+          else encodeFn(x, names, _codecs, out)
 
       def decodeFieldsAfterDiscriminator(in: JsonReader): P =
         val n = names.length
@@ -235,7 +232,6 @@ object JsoniterRuntime:
             i += 1
         else
           System.arraycopy(nullValues, 0, results, 0, n)
-        // After discriminator value, next token is ',' (more fields) or '}' (done)
         if in.isNextToken(',') then
           var continue = true
           while continue do
@@ -460,33 +456,6 @@ object JsoniterRuntime:
       i += 1
 
   // === Internal helpers ===
-
-  private def encodeProduct(
-    x: Product, names: Array[String],
-    codecs: Array[JsonValueCodec[Any]], out: JsonWriter
-  ): Unit =
-    out.writeObjectStart()
-    var i = 0
-    while i < names.length do
-      out.writeNonEscapedAsciiKey(names(i))
-      codecs(i).encodeValue(x.productElement(i), out)
-      i += 1
-    out.writeObjectEnd()
-
-  private def encodeProductDropNull(
-    x: Product, names: Array[String],
-    codecs: Array[JsonValueCodec[Any]], out: JsonWriter
-  ): Unit =
-    out.writeObjectStart()
-    var i = 0
-    while i < names.length do
-      val v = x.productElement(i)
-      val isNull = v == null || (v.isInstanceOf[Option[?]] && v.asInstanceOf[Option[?]].isEmpty)
-      if !isNull then
-        out.writeNonEscapedAsciiKey(names(i))
-        codecs(i).encodeValue(v, out)
-      i += 1
-    out.writeObjectEnd()
 
   private def decodeProduct[P](
     in: JsonReader, mirror: Mirror.ProductOf[P],
