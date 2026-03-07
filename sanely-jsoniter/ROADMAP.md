@@ -38,20 +38,21 @@ Real codebases use configured derivation for the vast majority of types (default
 
 - [ ] **Cross-codec test: combined configs** — Test the real-world combos: defaults+discriminator, defaults+snake_case+drop-null. These are the actual configuration patterns used in production wrappers.
 
-- [ ] **Fix REAL-WORLD.md migration path** — The current Step 2 says "one import, one file change" with `auto.given`, which only works for standard types. Update to show two paths: (a) auto for standard types, (b) configured semi-auto or auto-configured for types with custom encoding. Be honest about what "one file change" actually requires.
+- [x] **Fix REAL-WORLD.md migration path** — Updated Step 2 to show three paths: (a) auto for standard types, (b) semi-auto with matching config for configured types, (c) extend centralized wrapper for codebases with one. Honest about what the hot path swap requires.
 
 ## P1 — Enables smoother adoption
 
-- [ ] **Strict decoding** — `JsoniterConfiguration.withStrictDecoding` config option exists but is not wired into the runtime. Implement: reject unknown fields during decoding. ~18 call sites in typical codebases use strict decoding via direct `ConfiguredCodec.derived`.
+- [ ] **Tapir integration tests** — Add a test module with Tapir as a dependency that proves the HTTP codec swap works end-to-end. Test cases should cover:
+  - **Direct jsoniter codec**: `sttp.tapir.Codec.json[T]` using `readFromString[T]` / `writeToString[T]` with `JsonValueCodec[T]` — no circe `Json` tree in the pipeline
+  - **Standard types**: product types, sum types (external tagging), enums — verify Tapir roundtrip (encode → decode) produces identical results to the circe-based codec
+  - **Configured types**: types with defaults (missing fields decoded correctly), discriminator tagging, snake_case field names, drop-null encoding — verify wire format matches circe's configured codec output
+  - **Error handling**: malformed JSON, type mismatches, missing required fields — verify Tapir `DecodeResult.Error` is produced (not an unhandled exception)
+  - **Fallback pattern**: a codec that uses `JsonValueCodec[T]` when available, falls back to circe `Json` tree otherwise — for incremental migration where not all types have jsoniter codecs yet
+  - **Circe coexistence**: same type has both `Encoder[T]`/`Decoder[T]` and `JsonValueCodec[T]` in scope — verify no implicit conflicts and both can be used independently
 
-- [ ] **Tapir integration example** — Working example of a Tapir `JsonCodec[T]` that uses `JsonValueCodec[T]` directly (no circe `Json` tree). Show the central endpoint codec pattern:
-  ```scala
-  // Before: jsoniter parses to circe.Json, then circe decodes (1.5x)
-  val json = readFromString[io.circe.Json](s); json.as[T]
-  // After: jsoniter decodes directly (5x)
-  readFromString[T](s)
-  ```
-  Include a fallback pattern for incremental migration (use jsoniter when `JsonValueCodec[T]` is available, fall back to circe otherwise).
+  This is the strongest proof that the REAL-WORLD.md migration path actually works. Without it, the HTTP hot path swap is a theoretical claim.
+
+- [ ] **Strict decoding** — `JsoniterConfiguration.withStrictDecoding` config option exists but is not wired into the runtime. Implement: reject unknown fields during decoding. ~18 call sites in typical codebases use strict decoding via direct `ConfiguredCodec.derived`.
 
 - [ ] **Migration guide for configured codebases** — Document the pattern for codebases with centralized configuration wrappers: extend the wrapper to derive both circe and jsoniter codecs side by side. Show how `deriveCodecWithDefaults` gets a parallel `deriveJsoniterCodecWithDefaults`. One-time wrapper change, not per-type.
 
