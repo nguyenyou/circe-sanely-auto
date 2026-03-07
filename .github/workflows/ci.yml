@@ -22,6 +22,10 @@ jobs:
             command: ./mill compat.jvm.test
           - name: Compat tests (Scala.js)
             command: ./mill compat.js.test
+          - name: sanely-jsoniter (JVM)
+            command: ./mill sanely-jsoniter.jvm.test
+          - name: sanely-jsoniter (Scala.js)
+            command: ./mill sanely-jsoniter.js.test
           - name: Zinc incremental compilation
             command: bash test-zinc.sh
     name: ${{ matrix.name }}

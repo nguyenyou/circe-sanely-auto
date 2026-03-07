@@ -20,6 +20,10 @@ jobs:
             cmd: compat.jvm.test
           - name: compat (Scala.js)
             cmd: compat.js.test
+          - name: sanely-jsoniter (JVM)
+            cmd: sanely-jsoniter.jvm.test
+          - name: sanely-jsoniter (Scala.js)
+            cmd: sanely-jsoniter.js.test
     name: Test ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v6
@@ -51,6 +55,22 @@ jobs:
 
       - name: Publish Scala.js
         run: ./mill sanely.js.publishSonatypeCentral
+        env:
+          MILL_SONATYPE_USERNAME: ${{ secrets.MILL_SONATYPE_USERNAME }}
+          MILL_SONATYPE_PASSWORD: ${{ secrets.MILL_SONATYPE_PASSWORD }}
+          MILL_PGP_PASSPHRASE: ${{ secrets.MILL_PGP_PASSPHRASE }}
+          MILL_PGP_SECRET_BASE64: ${{ secrets.MILL_PGP_SECRET_BASE64 }}
+
+      - name: Publish sanely-jsoniter JVM
+        run: ./mill sanely-jsoniter.jvm.publishSonatypeCentral
+        env:
+          MILL_SONATYPE_USERNAME: ${{ secrets.MILL_SONATYPE_USERNAME }}
+          MILL_SONATYPE_PASSWORD: ${{ secrets.MILL_SONATYPE_PASSWORD }}
+          MILL_PGP_PASSPHRASE: ${{ secrets.MILL_PGP_PASSPHRASE }}
+          MILL_PGP_SECRET_BASE64: ${{ secrets.MILL_PGP_SECRET_BASE64 }}
+
+      - name: Publish sanely-jsoniter Scala.js
+        run: ./mill sanely-jsoniter.js.publishSonatypeCentral
         env:
           MILL_SONATYPE_USERNAME: ${{ secrets.MILL_SONATYPE_USERNAME }}
           MILL_SONATYPE_PASSWORD: ${{ secrets.MILL_SONATYPE_PASSWORD }}
