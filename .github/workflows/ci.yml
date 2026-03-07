@@ -26,6 +26,8 @@ jobs:
             command: ./mill sanely-jsoniter.jvm.test
           - name: sanely-jsoniter (Scala.js)
             command: ./mill sanely-jsoniter.js.test
+          - name: Tapir integration tests
+            command: ./mill tapir-test.test
           - name: Zinc incremental compilation
             command: bash test-zinc.sh
     name: ${{ matrix.name }}
