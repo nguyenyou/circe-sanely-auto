@@ -1,52 +1,55 @@
-package build.sanely
+package build.`sanely-jsoniter`
 
 import mill.*, scalalib.*, scalajslib.*, publish.*
 
 object `package` extends mill.Module {
 
   object jvm extends SharedModule {
-    object test extends ScalaTests with SharedTests
+    object test extends ScalaTests with SharedTests {
+      def moduleDeps = super.moduleDeps ++ Seq(build.sanely.jvm)
+    }
   }
 
   object js extends ScalaJSModule with SharedModule {
     override def scalaJSVersion = "1.20.2"
-    object test extends ScalaJSTests with SharedTests
+    object test extends ScalaJSTests with SharedTests {
+      def moduleDeps = super.moduleDeps ++ Seq(build.sanely.js)
+    }
   }
 
   trait SharedModule extends PlatformScalaModule with SonatypeCentralPublishModule {
-    def artifactName = "circe-sanely-auto"
+    def artifactName = "sanely-jsoniter"
     def scalaVersion = build.scala3Version
     def publishVersion = build.publishVersion
 
     def pomSettings = PomSettings(
-      description = "Drop-in replacement for circe's auto-derivation using sanely-automatic Scala 3 macros",
+      description = "Fast JsonValueCodec derivation for Scala 3 — circe-format-compatible, powered by jsoniter-scala",
       organization = "io.github.nguyenyou",
       url = "https://github.com/nguyenyou/circe-sanely-auto",
       licenses = Seq(License.MIT),
       versionControl = VersionControl.github("nguyenyou", "circe-sanely-auto"),
       developers = Seq(Developer("nguyenyou", "Tu Nguyen", "https://github.com/nguyenyou")),
     )
-
+    def scalacOptions = Task {
+      super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+    }
     def mvnDeps = Task {
       super.mvnDeps() ++ Seq(
-        mvn"io.circe::circe-core::${build.circeVersion}"
+        mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::${build.jsoniterScalaVersion}"
       )
-    }
-
-    def scalacOptions = Task {
-      super.scalacOptions() ++ Seq("-Xmax-inlines", "64", "-Werror")
     }
 
     trait SharedTests extends ScalaTests with TestModule.Utest {
       def mvnDeps = Task {
         super.mvnDeps() ++ Seq(
+          mvn"com.lihaoyi::utest::${build.utestVersion}",
           mvn"io.circe::circe-core::${build.circeVersion}",
           mvn"io.circe::circe-parser::${build.circeVersion}",
-          mvn"com.lihaoyi::utest::${build.utestVersion}"
+          mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-circe::${build.jsoniterScalaVersion}",
         )
       }
       def scalacOptions = Task {
-        super.scalacOptions() ++ Seq("-Xmax-inlines", "64", "-Werror")
+        super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
       }
     }
   }

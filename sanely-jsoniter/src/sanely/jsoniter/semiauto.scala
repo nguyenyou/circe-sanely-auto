@@ -1,0 +1,17 @@
+package sanely.jsoniter
+
+import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
+import scala.deriving.Mirror
+
+/** Semi-auto derivation of JsonValueCodec instances.
+  *
+  * Usage:
+  * {{{
+  *   import sanely.jsoniter.semiauto.*
+  *   case class User(name: String, age: Int)
+  *   given JsonValueCodec[User] = deriveJsoniterCodec[User]
+  * }}}
+  */
+object semiauto:
+  inline def deriveJsoniterCodec[A](using inline m: Mirror.Of[A]): JsonValueCodec[A] =
+    SanelyJsoniter.derived[A]
