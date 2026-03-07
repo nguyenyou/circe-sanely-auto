@@ -213,6 +213,33 @@ object Codecs:
           if !in.isCurrentToken('}') then in.objectEndOrCommaError()
         buf.result()
 
+  // === Value enums ===
+
+  def stringValueEnum[E](values: Array[E], toValue: E => String): JsonValueCodec[E] =
+    val valueToEnum = values.map(e => toValue(e) -> e).toMap
+    val typeName = values.headOption.map(_.getClass.getSimpleName.stripSuffix("$")).getOrElse("?")
+    new JsonValueCodec[E]:
+      val nullValue: E = null.asInstanceOf[E]
+      def encodeValue(x: E, out: JsonWriter): Unit =
+        if (x: Any) == null then out.writeNull() else out.writeVal(toValue(x))
+      def decodeValue(in: JsonReader, default: E): E =
+        val s = in.readString(null)
+        if s == null then in.decodeError(s"expected string for $typeName")
+        valueToEnum.getOrElse(s, in.decodeError(s"$typeName does not contain value: $s"))
+
+  def intValueEnum[E](values: Array[E], toValue: E => Int): JsonValueCodec[E] =
+    val valueToEnum = values.map(e => toValue(e) -> e).toMap
+    val typeName = values.headOption.map(_.getClass.getSimpleName.stripSuffix("$")).getOrElse("?")
+    new JsonValueCodec[E]:
+      val nullValue: E = null.asInstanceOf[E]
+      def encodeValue(x: E, out: JsonWriter): Unit =
+        if (x: Any) == null then out.writeNull() else out.writeVal(toValue(x))
+      def decodeValue(in: JsonReader, default: E): E =
+        val v = in.readInt()
+        valueToEnum.getOrElse(v, in.decodeError(s"$typeName does not contain value: $v"))
+
+  // === Maps ===
+
   def stringMap[V](inner: JsonValueCodec[V]): JsonValueCodec[Map[String, V]] = new JsonValueCodec[Map[String, V]]:
     val nullValue: Map[String, V] = null
     def encodeValue(x: Map[String, V], out: JsonWriter): Unit =

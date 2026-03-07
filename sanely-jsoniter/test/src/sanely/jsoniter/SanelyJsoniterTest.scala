@@ -37,6 +37,17 @@ case object Chicken extends Farm
 // Recursive type
 case class Tree(value: String, children: List[Tree])
 
+// Value enum types
+enum Status(val value: String):
+  case Active extends Status("active")
+  case Inactive extends Status("inactive")
+  case Pending extends Status("pending")
+
+enum Priority(val value: Int):
+  case Low extends Priority(1)
+  case Medium extends Priority(2)
+  case High extends Priority(3)
+
 // Non-string map key types
 case class WithIntMap(scores: Map[Int, String])
 case class WithLongMap(ids: Map[Long, Boolean])
@@ -679,6 +690,64 @@ object SanelyJsoniterTest extends TestSuite:
       // circe -> jsoniter (Left)
       val cLeft = (left: WithEither).asJson.noSpaces
       assert(readFromString[WithEither](cLeft) == left)
+    }
+
+    // === Value enum tests ===
+
+    test("value enum - string value round-trip") {
+      given JsonValueCodec[Status] = Codecs.stringValueEnum(Status.values, _.value)
+      val json = writeToString(Status.Active)
+      assert(json == "\"active\"")
+      val decoded = readFromString[Status](json)
+      assert(decoded == Status.Active)
+    }
+
+    test("value enum - all string variants") {
+      given JsonValueCodec[Status] = Codecs.stringValueEnum(Status.values, _.value)
+      for s <- Status.values do
+        val json = writeToString(s)
+        assert(json == s"\"${s.value}\"")
+        val decoded = readFromString[Status](json)
+        assert(decoded == s)
+    }
+
+    test("value enum - int value round-trip") {
+      given JsonValueCodec[Priority] = Codecs.intValueEnum(Priority.values, _.value)
+      val json = writeToString(Priority.High)
+      assert(json == "3")
+      val decoded = readFromString[Priority](json)
+      assert(decoded == Priority.High)
+    }
+
+    test("value enum - all int variants") {
+      given JsonValueCodec[Priority] = Codecs.intValueEnum(Priority.values, _.value)
+      for p <- Priority.values do
+        val json = writeToString(p)
+        assert(json == p.value.toString)
+        val decoded = readFromString[Priority](json)
+        assert(decoded == p)
+    }
+
+    test("value enum - unknown string value decode error") {
+      given JsonValueCodec[Status] = Codecs.stringValueEnum(Status.values, _.value)
+      val caught =
+        try
+          readFromString[Status]("\"unknown\"")
+          throw new RuntimeException("expected exception")
+        catch
+          case e: com.github.plokhotnyuk.jsoniter_scala.core.JsonReaderException => e
+      assert(caught.getMessage.contains("does not contain value"))
+    }
+
+    test("value enum - unknown int value decode error") {
+      given JsonValueCodec[Priority] = Codecs.intValueEnum(Priority.values, _.value)
+      val caught =
+        try
+          readFromString[Priority]("99")
+          throw new RuntimeException("expected exception")
+        catch
+          case e: com.github.plokhotnyuk.jsoniter_scala.core.JsonReaderException => e
+      assert(caught.getMessage.contains("does not contain value"))
     }
 
     test("enum - circe format compatibility") {
