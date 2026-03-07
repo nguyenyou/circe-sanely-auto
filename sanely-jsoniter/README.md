@@ -106,13 +106,13 @@ For HTTP frameworks (tapir, http4s, etc.), the jsoniter codec can replace the ci
 { s => readFromString[T](s) }
 ```
 
-## Limitations (v1)
+## Roadmap
 
-- **No sub-trait support**: Sealed trait variants must be case classes or case objects (not nested sealed traits)
-- **No configured derivation**: Field name transforms, discriminators, and strict decoding not yet supported
-- **No enum string codec**: Enum cases encoded as empty-object variants (`{"Red":{}}` not `"Red"`)
-- **String map keys only**: `Map[K, V]` only supported where K = String
-- **JVM only**: Scala.js support planned
+- [ ] **Sub-trait support**: Sealed trait variants that are nested sealed traits (currently must be case classes or case objects)
+- [ ] **Configured derivation**: Field name transforms, discriminators, and strict decoding
+- [ ] **Enum string codec**: Encode enum cases as strings (`"Red"`) instead of empty-object variants (`{"Red":{}}`)
+- [ ] **Non-string map keys**: Support `Map[K, V]` where K is not String
+- [x] **Scala.js support**: Cross-compile for Scala.js
 
 ## Dependencies
 
