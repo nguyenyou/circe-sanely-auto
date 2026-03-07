@@ -2,6 +2,8 @@
 
 > **Experimental.** This module explores whether large Scala codebases that are deeply locked into circe can incrementally adopt jsoniter-scala's streaming serialization for the HTTP hot path — without rewriting their entire codebase. The potential reward is 3-5x faster runtime serialization, but the approach is unproven in production. Do not use this in production yet.
 
+> **The contract: 100% circe compatibility, zero compromise.** Experimental or not, the promise is the same. If your application works with circe, it must work identically with sanely-jsoniter — same JSON output, same decoded values, same error messages, same behavior in every edge case. Any difference is a bug. No exceptions, no "close enough", no subtle surprises. The serialization backend changes; the observable behavior does not. This is the promise that makes or breaks this library.
+
 ## Why large codebases are stuck with circe
 
 In mature Scala codebases, circe is not just a serialization library — it becomes infrastructure. A typical large codebase may have:
