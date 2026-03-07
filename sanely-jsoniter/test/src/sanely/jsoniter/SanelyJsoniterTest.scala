@@ -940,6 +940,110 @@ object SanelyJsoniterTest extends TestSuite:
       assert(caught.getMessage.contains("does not contain value"))
     }
 
+    // === Auto-configured derivation tests ===
+
+    test("auto-configured - withDefaults: missing fields use defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      import sanely.jsoniter.configured.auto.given
+      case class AutoCfgDefaults(name: String, age: Int = 25, active: Boolean = true)
+      val json = """{"name":"Alice"}"""
+      val decoded = readFromString[AutoCfgDefaults](json)
+      assert(decoded == AutoCfgDefaults("Alice", 25, true))
+    }
+
+    test("auto-configured - nested types auto-derived") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      import sanely.jsoniter.configured.auto.given
+      case class Inner(x: Int, y: String = "default")
+      case class Outer(inner: Inner, label: String)
+      val json = """{"inner":{"x":42},"label":"test"}"""
+      val decoded = readFromString[Outer](json)
+      assert(decoded == Outer(Inner(42, "default"), "test"))
+    }
+
+    test("auto-configured - snake_case member names") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      import sanely.jsoniter.configured.auto.given
+      case class AutoSnake(firstName: String, lastName: String, isActive: Boolean = true)
+      val original = AutoSnake("Alice", "Smith", true)
+      val json = writeToString(original)
+      assert(json.contains("\"first_name\""))
+      assert(json.contains("\"last_name\""))
+      assert(json.contains("\"is_active\""))
+      val decoded = readFromString[AutoSnake](json)
+      assert(decoded == original)
+    }
+
+    test("auto-configured - drop-null values") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDropNullValues
+      import sanely.jsoniter.configured.auto.given
+      case class AutoDropNull(name: String, nickname: Option[String], age: Int)
+      val original = AutoDropNull("Alice", None, 30)
+      val json = writeToString(original)
+      assert(!json.contains("nickname"))
+      assert(json.contains("\"name\":\"Alice\""))
+      assert(json.contains("\"age\":30"))
+    }
+
+    test("auto-configured - discriminator tagging") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDiscriminator("type")
+      import sanely.jsoniter.configured.auto.given
+      sealed trait AutoVehicle
+      case class AutoCar(make: String, year: Int) extends AutoVehicle
+      case class AutoBike(brand: String) extends AutoVehicle
+      val car: AutoVehicle = AutoCar("Toyota", 2024)
+      val json = writeToString(car)
+      assert(json.contains("\"type\":\"AutoCar\""))
+      assert(json.contains("\"make\":\"Toyota\""))
+      val decoded = readFromString[AutoVehicle](json)
+      assert(decoded == car)
+    }
+
+    test("auto-configured - round-trip encode then decode") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      import sanely.jsoniter.configured.auto.given
+      case class AutoRoundTrip(firstName: String, age: Int = 25, tags: List[String] = Nil)
+      val original = AutoRoundTrip("Bob", 30, List("admin", "user"))
+      val json = writeToString(original)
+      val decoded = readFromString[AutoRoundTrip](json)
+      assert(decoded == original)
+    }
+
+    test("auto-configured - cross-codec with circe") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      case class AutoCrossCodec(firstName: String, lastName: String, age: Int = 25)
+
+      given Configuration = Configuration.default.withDefaults.withSnakeCaseMemberNames
+      given CirceCodec[AutoCrossCodec] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      import sanely.jsoniter.configured.auto.given
+
+      val original = AutoCrossCodec("Alice", "Smith", 30)
+
+      // jsoniter -> circe
+      val jJson = writeToString(original)
+      val cResult = circeDecode[AutoCrossCodec](jJson)
+      assert(cResult == Right(original))
+
+      // circe -> jsoniter
+      val cJson = original.asJson.noSpaces
+      val jResult = readFromString[AutoCrossCodec](cJson)
+      assert(jResult == original)
+
+      // Partial (missing defaults): both decode identically
+      val partial = """{"first_name":"Bob","last_name":"Jones"}"""
+      val cPartial = circeDecode[AutoCrossCodec](partial)
+      val jPartial = readFromString[AutoCrossCodec](partial)
+      assert(cPartial == Right(jPartial))
+      assert(jPartial == AutoCrossCodec("Bob", "Jones", 25))
+    }
+
     test("enum - circe format compatibility") {
       import io.circe.derivation.Configuration
       import io.circe.{Codec as CirceCodec, *}

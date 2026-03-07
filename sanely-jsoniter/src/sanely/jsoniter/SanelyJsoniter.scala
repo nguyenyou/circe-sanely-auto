@@ -396,6 +396,9 @@ object SanelyJsoniter:
       try
         buf += Symbol.requiredModule("sanely.jsoniter.auto").methodMember("autoCodec").head
       catch case _: Exception => ()
+      try
+        buf += Symbol.requiredModule("sanely.jsoniter.configured.auto").methodMember("autoConfiguredCodec").head
+      catch case _: Exception => ()
       buf.result()
 
     // === Utilities ===
