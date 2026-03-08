@@ -1,6 +1,8 @@
 # circe-sanely-auto
 
 [![CI](https://github.com/nguyenyou/circe-sanely-auto/actions/workflows/ci.yml/badge.svg)](https://github.com/nguyenyou/circe-sanely-auto/actions/workflows/ci.yml)
+[![Maven Central Version](https://img.shields.io/maven-central/v/io.github.nguyenyou/circe-sanely-auto_3)](https://central.sonatype.com/artifact/io.github.nguyenyou/circe-sanely-auto_3)
+![Scala3](https://img.shields.io/badge/Scala%203-%23de3423.svg?logo=scala&logoColor=white)
 
 Drop-in replacement for circe's derivation on Scala 3. Compile faster, run faster, change nothing else.
 
