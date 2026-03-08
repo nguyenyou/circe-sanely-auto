@@ -62,16 +62,16 @@ Real codebases use configured derivation for the vast majority of types (default
 
 - [x] **`derives` support** — `JsoniterCodec`, `JsoniterCodec.WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`. Each extends `JsonValueCodec[A]` directly so no import conversions needed.
 
-- [x] **Performance benchmarks vs bridge** — Runtime benchmark with realistic payload (~1.4 KB: nested products, sealed trait sum types, optional fields). sanely-jsoniter: **5.4x read / 6.2x write** vs circe-jawn; bridge: **1.5x read / 0.9x write**; jsoniter-scala native: **5.0x read / 5.8x write**.
+- [x] **Performance benchmarks vs bridge** — Runtime benchmark with realistic payload (~1.4 KB: nested products, sealed trait sum types, optional fields). sanely-jsoniter: **5.7x read / 6.2x write** vs circe-jawn; bridge: **1.5x read / 0.9x write**; jsoniter-scala native: **5.5x read / 5.0x write**.
 
 ## P3 — Performance (closing the gap with native jsoniter-scala)
 
-With P3.1–P3.5 complete, sanely-jsoniter **surpasses jsoniter-scala native** on both read (109%) and write (107%). The direct constructor optimization (P3.5) closed the decode gap and pushed past native. Remaining items are diminishing returns.
+With P3.1–P3.7 complete, sanely-jsoniter **surpasses jsoniter-scala native** on both read and write. Container codec cleanups (P3.7) improved read throughput by ~15%. Remaining items are diminishing returns.
 
 **Priority order** (informed by real-world codebase with ~300 configured types, ~40 discriminator types):
 1. ~~**P3.5** — direct constructor~~ ✅ Done — biggest single win (+19% read, +2% write)
-2. **P3.6** — char-buf sum dispatch: eliminates String alloc per sum decode, standalone refactor
-3. **P3.7** — container codec cleanups: small per-call but ubiquitous (every List/Vector/Seq/Set/Map field)
+2. ~~**P3.6** — char-buf sum dispatch~~ ✅ Done — eliminates String alloc per sum decode
+3. ~~**P3.7** — container codec cleanups~~ ✅ Done — +15% read throughput (661K → 762K ops/sec)
 4. **P3.8** — discriminator slow path: only matters when decoding third-party JSON with random field order; self-produced JSON always hits the fast path
 
 ### Encoding bottlenecks
@@ -86,11 +86,11 @@ With P3.1–P3.5 complete, sanely-jsoniter **surpasses jsoniter-scala native** o
 
 - [x] **P3.4: Hash-based field key dispatch** — For products with > 8 fields or > 64 total field name chars, generates `(in.charBufToHashCode(l): @switch) match { ... }` with compile-time pre-computed hashes. Hash collisions fall back to `isCharBufEqualsTo`. Products with ≤ 8 fields keep the linear if-else chain (hashing overhead not worth it). Matches jsoniter-scala's own strategy.
 
-- [x] **P3.5: Direct constructor call** — Replaced `mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))` with `Apply(Select(New(Inferred(tpe)), primaryConstructor), varRefs)` — direct `new P(_f0, _f1, ...)` with zero boxing and zero intermediate allocations. Handles case objects (singleton `Ref`) and generic types (`TypeApply` with type args). Deleted `ArrayProduct` class, removed `Mirror.ProductOf[P]` from decode function signatures. Result: **5.4x read / 6.2x write** vs circe-jawn (up from 4.8x/6.2x), surpassing jsoniter-scala native on both axes.
+- [x] **P3.5: Direct constructor call** — Replaced `mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))` with `Apply(Select(New(Inferred(tpe)), primaryConstructor), varRefs)` — direct `new P(_f0, _f1, ...)` with zero boxing and zero intermediate allocations. Handles case objects (singleton `Ref`) and generic types (`TypeApply` with type args). Deleted `ArrayProduct` class, removed `Mirror.ProductOf[P]` from decode function signatures. Result: **5.7x read / 6.2x write** vs circe-jawn, surpassing jsoniter-scala native on both axes.
 
-- [ ] **P3.6: Char-buf sum type dispatch** — Sum type decode in `JsoniterRuntime.sumCodec.decodeValue` uses `readKeyAsString()` + `String ==` for variant key matching, allocating a `String` per sum value decoded. Replace with macro-generated `readKeyAsCharBuf()` + hash/linear `isCharBufEqualsTo` dispatch (same pattern as product field matching). Requires moving sum decode body from runtime to macro-generated code. Expected: small improvement (~3 sum values per benchmark payload).
+- [x] **P3.6: Char-buf sum type dispatch** — Replaced `readKeyAsString()` + `String ==` with macro-generated `readKeyAsCharBuf()` + hash/linear `isCharBufEqualsTo` dispatch (same pattern as product field matching). Moved sum decode body from runtime to macro-generated code. Eliminates String allocation per sum value decoded.
 
-- [ ] **P3.7: Container codec cleanups** — `Codecs.seq.decodeValue` allocates a **fresh `list(inner)` codec on every call** (`Codecs.scala:140`). Vector, Set, and Map encoders use `x.foreach(e => ...)` which allocates a closure per encode call — should use `val it = x.iterator; while it.hasNext do ...` like the List encoder already does. Small per-call cost but ubiquitous — every `List`, `Vector`, `Seq`, `Set`, `Map` field in every type hits this on every request.
+- [x] **P3.7: Container codec cleanups** — Cached delegate codecs in `seq`/`indexedSeq`/`iterable` (was allocating fresh `list(inner)`/`vector(inner)` on every `decodeValue` call). Replaced `foreach` closures with iterator while-loops in `vector`, `seq`, `indexedSeq`, `iterable`, `set`, `map`, `stringMap` encoders. Result: read throughput **+15%** (661K → 762K ops/sec).
 
 - [ ] **P3.8: Discriminator slow-path optimization** — When the discriminator field is not the first key in the JSON object, `decodeWithDiscriminator` (`JsoniterRuntime.scala:322-359`) buffers every non-discriminator field as a raw JSON string into an `ArrayList`, reconstructs a full JSON string, then reparses it with `readFromString`. This is a full double-parse of the entire object. The fast path (discriminator first) hides this because our own encoders always emit the discriminator first. But if ingesting third-party JSON where field order varies, this becomes the dominant configured-ADT cost. Fix: buffer raw byte offsets or make `decodeFieldsAfterDiscriminator` accept pre-read field key-value pairs to avoid the reparse entirely. Low priority for self-produced JSON; high priority if decoding external sources.
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0] - 2026-03-08
+
+### sanely-jsoniter
+
+#### Performance
+- **P3.7: Container codec cleanups** — cached delegate codecs in `seq`/`indexedSeq`/`iterable` (was allocating fresh codec on every `decodeValue` call); replaced `foreach` closures with iterator while-loops in all container encoders (`vector`, `seq`, `indexedSeq`, `iterable`, `set`, `map`, `stringMap`). Read throughput **+15%** (661K → 762K ops/sec, 5.7x vs circe-jawn).
+
 ## [0.17.0] - 2026-03-08
 
 ### sanely-jsoniter

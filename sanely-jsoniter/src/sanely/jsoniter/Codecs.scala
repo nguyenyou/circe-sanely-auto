@@ -114,7 +114,8 @@ object Codecs:
       if x == null then out.writeNull()
       else
         out.writeArrayStart()
-        x.foreach(e => inner.encodeValue(e, out))
+        val it = x.iterator
+        while it.hasNext do inner.encodeValue(it.next(), out)
         out.writeArrayEnd()
     def decodeValue(in: JsonReader, default: Vector[T]): Vector[T] =
       if !in.isNextToken('[') then
@@ -131,36 +132,42 @@ object Codecs:
 
   def seq[T](inner: JsonValueCodec[T]): JsonValueCodec[Seq[T]] = new JsonValueCodec[Seq[T]]:
     val nullValue: Seq[T] = null
+    private val listCodec = list(inner)
     def encodeValue(x: Seq[T], out: JsonWriter): Unit =
       if x == null then out.writeNull()
       else
         out.writeArrayStart()
-        x.foreach(e => inner.encodeValue(e, out))
+        val it = x.iterator
+        while it.hasNext do inner.encodeValue(it.next(), out)
         out.writeArrayEnd()
     def decodeValue(in: JsonReader, default: Seq[T]): Seq[T] =
-      list(inner).decodeValue(in, if default == null then null else default.toList)
+      listCodec.decodeValue(in, if default == null then null else default.toList)
 
   def indexedSeq[T](inner: JsonValueCodec[T]): JsonValueCodec[IndexedSeq[T]] = new JsonValueCodec[IndexedSeq[T]]:
     val nullValue: IndexedSeq[T] = null
+    private val vectorCodec = vector(inner)
     def encodeValue(x: IndexedSeq[T], out: JsonWriter): Unit =
       if x == null then out.writeNull()
       else
         out.writeArrayStart()
-        x.foreach(e => inner.encodeValue(e, out))
+        val it = x.iterator
+        while it.hasNext do inner.encodeValue(it.next(), out)
         out.writeArrayEnd()
     def decodeValue(in: JsonReader, default: IndexedSeq[T]): IndexedSeq[T] =
-      vector(inner).decodeValue(in, if default == null then null else default.toVector)
+      vectorCodec.decodeValue(in, if default == null then null else default.toVector)
 
   def iterable[T](inner: JsonValueCodec[T]): JsonValueCodec[Iterable[T]] = new JsonValueCodec[Iterable[T]]:
     val nullValue: Iterable[T] = null
+    private val listCodec = list(inner)
     def encodeValue(x: Iterable[T], out: JsonWriter): Unit =
       if x == null then out.writeNull()
       else
         out.writeArrayStart()
-        x.foreach(e => inner.encodeValue(e, out))
+        val it = x.iterator
+        while it.hasNext do inner.encodeValue(it.next(), out)
         out.writeArrayEnd()
     def decodeValue(in: JsonReader, default: Iterable[T]): Iterable[T] =
-      list(inner).decodeValue(in, if default == null then null else default.toList)
+      listCodec.decodeValue(in, if default == null then null else default.toList)
 
   def array[T](inner: JsonValueCodec[T])(using ct: ClassTag[T]): JsonValueCodec[Array[T]] = new JsonValueCodec[Array[T]]:
     val nullValue: Array[T] = null
@@ -192,7 +199,8 @@ object Codecs:
       if x == null then out.writeNull()
       else
         out.writeArrayStart()
-        x.foreach(e => inner.encodeValue(e, out))
+        val it = x.iterator
+        while it.hasNext do inner.encodeValue(it.next(), out)
         out.writeArrayEnd()
     def decodeValue(in: JsonReader, default: Set[T]): Set[T] =
       if !in.isNextToken('[') then
@@ -242,10 +250,11 @@ object Codecs:
       if x == null then out.writeNull()
       else
         out.writeObjectStart()
-        x.foreach { (k, v) =>
+        val it = x.iterator
+        while it.hasNext do
+          val (k, v) = it.next()
           out.writeKey(keyCodec.encode(k))
           valueCodec.encodeValue(v, out)
-        }
         out.writeObjectEnd()
     def decodeValue(in: JsonReader, default: Map[K, V]): Map[K, V] =
       if !in.isNextToken('{') then
@@ -293,10 +302,11 @@ object Codecs:
       if x == null then out.writeNull()
       else
         out.writeObjectStart()
-        x.foreach { (k, v) =>
+        val it = x.iterator
+        while it.hasNext do
+          val (k, v) = it.next()
           out.writeKey(k)
           inner.encodeValue(v, out)
-        }
         out.writeObjectEnd()
     def decodeValue(in: JsonReader, default: Map[String, V]): Map[String, V] =
       if !in.isNextToken('{') then
