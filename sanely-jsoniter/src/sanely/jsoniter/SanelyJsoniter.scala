@@ -72,37 +72,60 @@ object SanelyJsoniter:
       x: Expr[P], codecs: Expr[Array[JsonValueCodec[Any]]], out: Expr[JsonWriter],
       fields: List[(String, Type[?], Expr[JsonValueCodec[?]])]
     ): Expr[Unit] =
-      val stmts = fields.zipWithIndex.map { case ((name, tpe, _), idx) =>
+      val xTerm = x.asTerm
+      val codecsTerm = codecs.asTerm
+      val outTerm = out.asTerm
+      val stmts = fields.zipWithIndex.flatMap { case ((name, tpe, _), idx) =>
         tpe match
           case '[t] =>
-            val fieldAccess = Select.unique(x.asTerm, name).asExprOf[t]
-            val writeValue = tryDirectWrite[t](fieldAccess, out).getOrElse(
-              '{ $codecs(${Expr(idx)}).encodeValue($fieldAccess.asInstanceOf[Any], $out) }
-            )
-            '{
-              $out.writeNonEscapedAsciiKey(${Expr(name)})
-              $writeValue
+            val fieldAccess = Select.unique(xTerm, name)
+            val writeKey = callMethod(outTerm, "writeNonEscapedAsciiKey", List(Literal(StringConstant(name))))
+            val writeValue = tryDirectWriteTerm[t](fieldAccess, outTerm).getOrElse {
+              // codecs(idx).encodeValue(fieldAccess.asInstanceOf[Any], out)
+              val codecAtIdx = Apply(Select.unique(codecsTerm, "apply"), List(Literal(IntConstant(idx))))
+              callMethod(codecAtIdx, "encodeValue", List(
+                TypeApply(Select.unique(fieldAccess, "asInstanceOf"), List(Inferred(TypeRepr.of[Any]))),
+                outTerm
+              ))
             }
+            List(writeKey, writeValue)
       }
       if stmts.isEmpty then '{ () }
       else
-        val terms = stmts.map(_.asTerm)
-        Block(terms.init.toList, terms.last).asExprOf[Unit]
+        Block(stmts.init.toList, stmts.last).asExprOf[Unit]
 
-    private def tryDirectRead[T: Type](in: Expr[JsonReader]): Option[Expr[T]] =
+    private def callMethod(receiver: Term, name: String, args: List[Term]): Term =
+      Select.overloaded(receiver, name, Nil, args)
+
+    private def tryDirectReadTerm[T: Type](inTerm: Term): Option[Term] =
       val tpe = TypeRepr.of[T].dealias
-      if tpe =:= TypeRepr.of[Int] then Some('{ $in.readInt() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Long] then Some('{ $in.readLong() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Double] then Some('{ $in.readDouble() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Float] then Some('{ $in.readFloat() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $in.readBoolean() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Short] then Some('{ $in.readInt().toShort }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Byte] then Some('{ $in.readInt().toByte }.asExprOf[T])
+      if tpe =:= TypeRepr.of[Int] then Some(callMethod(inTerm, "readInt", Nil))
+      else if tpe =:= TypeRepr.of[Long] then Some(callMethod(inTerm, "readLong", Nil))
+      else if tpe =:= TypeRepr.of[Double] then Some(callMethod(inTerm, "readDouble", Nil))
+      else if tpe =:= TypeRepr.of[Float] then Some(callMethod(inTerm, "readFloat", Nil))
+      else if tpe =:= TypeRepr.of[Boolean] then Some(callMethod(inTerm, "readBoolean", Nil))
+      else if tpe =:= TypeRepr.of[Short] then
+        Some(Select.unique(callMethod(inTerm, "readInt", Nil), "toShort"))
+      else if tpe =:= TypeRepr.of[Byte] then
+        Some(Select.unique(callMethod(inTerm, "readInt", Nil), "toByte"))
       else if tpe =:= TypeRepr.of[Char] then
-        Some('{ val _s = $in.readString(null); if _s == null || _s.isEmpty then 0.toChar else _s.charAt(0) }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[String] then Some('{ $in.readString(null) }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ $in.readBigDecimal(null) }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[BigInt] then Some('{ $in.readBigInt(null) }.asExprOf[T])
+        // val _s = in.readString(null); if _s == null || _s.isEmpty then 0.toChar else _s.charAt(0)
+        val owner = Symbol.spliceOwner
+        val sSym = Symbol.newVal(owner, "_s", TypeRepr.of[String], Flags.EmptyFlags, Symbol.noSymbol)
+        val sDef = ValDef(sSym, Some(callMethod(inTerm, "readString", List(Literal(NullConstant())))))
+        val sRef = Ref(sSym)
+        val isNull = Apply(Select.unique(sRef, "=="), List(Literal(NullConstant())))
+        val isEmpty = callMethod(sRef, "isEmpty", Nil)
+        val cond = Apply(Select.unique(isNull, "||"), List(isEmpty))
+        val thenBr = Select.unique(Literal(IntConstant(0)), "toChar")
+        val elseBr = callMethod(sRef, "charAt", List(Literal(IntConstant(0))))
+        Some(Block(List(sDef), If(cond, thenBr, elseBr)))
+      else if tpe =:= TypeRepr.of[String] then
+        Some(callMethod(inTerm, "readString", List(Literal(NullConstant()))))
+      else if tpe =:= TypeRepr.of[BigDecimal] then
+        Some(callMethod(inTerm, "readBigDecimal", List(Literal(NullConstant()))))
+      else if tpe =:= TypeRepr.of[BigInt] then
+        Some(callMethod(inTerm, "readBigInt", List(Literal(NullConstant()))))
       else None
 
     private def typedDefaultTerm(tpe: TypeRepr): Term =
@@ -139,19 +162,31 @@ object SanelyJsoniter:
       codecsExpr: Expr[Array[JsonValueCodec[Any]]],
       fields: List[(String, Type[?], Expr[JsonValueCodec[?]])]
     ): Expr[P] =
+      // Convert to Terms to avoid ScopeException when macro is expanded from JAR
+      val inTerm = inExpr.asTerm
+      val codecsTerm = codecsExpr.asTerm
       val n = fields.length
+      val byteCloseBrace = Literal(ByteConstant('}' .toByte))
+      val byteComma = Literal(ByteConstant(',' .toByte))
+      def inIsNextToken(b: Term): Term = callMethod(inTerm, "isNextToken", List(b))
+      def inIsCurrentToken(b: Term): Term = callMethod(inTerm, "isCurrentToken", List(b))
+      def notTerm(t: Term): Term = Select.unique(t, "unary_!")
+      def inSkip(): Term = callMethod(inTerm, "skip", Nil)
+      def inRollbackToken(): Term = callMethod(inTerm, "rollbackToken", Nil)
+      def inReadKeyAsCharBuf(): Term = callMethod(inTerm, "readKeyAsCharBuf", Nil)
+      def inObjectEndOrCommaError(): Term = callMethod(inTerm, "objectEndOrCommaError", Nil)
+
       if n == 0 then
-        val constructExpr = buildDirectConstruct[P](Nil).asExprOf[P]
-        return '{
-          if !$inExpr.isNextToken('}') then
-            $inExpr.rollbackToken()
-            var _c = true
-            while _c do
-              $inExpr.readKeyAsCharBuf(); $inExpr.skip()
-              _c = $inExpr.isNextToken(',')
-            if !$inExpr.isCurrentToken('}') then $inExpr.objectEndOrCommaError()
-          $constructExpr
-        }
+        val constructTerm = buildDirectConstruct[P](Nil)
+        val owner = Symbol.spliceOwner
+        val cSym = Symbol.newVal(owner, "_c", TypeRepr.of[Boolean], Flags.Mutable, Symbol.noSymbol)
+        val cDef = ValDef(cSym, Some(Literal(BooleanConstant(true))))
+        val whileBody = Block(List(inReadKeyAsCharBuf(), inSkip()), Assign(Ref(cSym), inIsNextToken(byteComma)))
+        val whileLoop = While(Ref(cSym), whileBody)
+        val checkEnd = If(notTerm(inIsCurrentToken(byteCloseBrace)), inObjectEndOrCommaError(), Literal(UnitConstant()))
+        val thenBranch = Block(List(inRollbackToken(), cDef, whileLoop, checkEnd), Literal(UnitConstant()))
+        val outerIf = If(notTerm(inIsNextToken(byteCloseBrace)), thenBranch, Literal(UnitConstant()))
+        return Block(List(outerIf), constructTerm).asExprOf[P]
 
       val owner = Symbol.spliceOwner
 
@@ -170,19 +205,21 @@ object SanelyJsoniter:
 
       // Build field matching dispatch, parameterized by keyLen ref.
       // <= 8 fields AND total chars <= 64: linear if-else chain (hashing overhead not worth it).
-      // Otherwise: hash-based match on charBufToHashCode with @switch, collisions resolved by isCharBufEqualsTo.
+      // Otherwise: hash-based match on charBufToHashCode, collisions resolved by isCharBufEqualsTo.
       def buildMatchChain(keyLenRef: Term): Term =
-        val skipTerm = '{ $inExpr.skip() }.asTerm
+        val skipTerm = inSkip()
 
         def buildReadAssign(vi: VarInfo, elseBranch: Term): Term =
           vi.tpe match
             case '[t] =>
-              val cond = '{ $inExpr.isCharBufEqualsTo(${keyLenRef.asExprOf[Int]}, ${Expr(vi.label)}) }.asTerm
-              val readTerm: Term = tryDirectRead[t](inExpr) match
-                case Some(expr) => expr.asTerm
-                case None =>
-                  val idxE = Expr(vi.idx)
-                  '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[t] }.asTerm
+              val cond = callMethod(inTerm, "isCharBufEqualsTo", List(keyLenRef, Literal(StringConstant(vi.label))))
+              val readTerm: Term = tryDirectReadTerm[t](inTerm).getOrElse {
+                val codecAtIdx = Apply(Select.unique(codecsTerm, "apply"), List(Literal(IntConstant(vi.idx))))
+                val codecAtIdx2 = Apply(Select.unique(codecsTerm, "apply"), List(Literal(IntConstant(vi.idx))))
+                val nullValue = Select.unique(codecAtIdx2, "nullValue") // parameterless def, no Apply
+                val decoded = callMethod(codecAtIdx, "decodeValue", List(inTerm, nullValue))
+                TypeApply(Select.unique(decoded, "asInstanceOf"), List(Inferred(TypeRepr.of[t])))
+              }
               val assign = Assign(Ref(vi.sym), readTerm)
               If(cond, assign, elseBranch)
 
@@ -200,8 +237,8 @@ object SanelyJsoniter:
             CaseDef(Literal(IntConstant(hash)), None, buildCollisionChain(fields))
           }
           val defaultCase = CaseDef(Wildcard(), None, skipTerm)
-          val scrutinee = '{ $inExpr.charBufToHashCode(${keyLenRef.asExprOf[Int]}): @scala.annotation.switch }.asTerm
-          Match(scrutinee, (cases :+ defaultCase).toList)
+          val hashCall = callMethod(inTerm, "charBufToHashCode", List(keyLenRef))
+          Match(hashCall, (cases :+ defaultCase).toList)
 
       // Build result: direct constructor call (no boxing, no intermediate allocations)
       val resultTerm = buildDirectConstruct[P](vars.map(v => Ref(v.sym)))
@@ -211,57 +248,52 @@ object SanelyJsoniter:
       val contDef = ValDef(contSym, Some(Literal(BooleanConstant(true))))
 
       val klSym = Symbol.newVal(owner, "_kl", TypeRepr.of[Int], Flags.EmptyFlags, Symbol.noSymbol)
-      val klDef = ValDef(klSym, Some('{ $inExpr.readKeyAsCharBuf() }.asTerm))
+      val klDef = ValDef(klSym, Some(inReadKeyAsCharBuf()))
 
       val whileBody = Block(
         List(klDef, buildMatchChain(Ref(klSym))),
-        Assign(Ref(contSym), '{ $inExpr.isNextToken(',') }.asTerm)
+        Assign(Ref(contSym), inIsNextToken(byteComma))
       )
       val whileLoop = While(Ref(contSym), whileBody)
 
       val checkEnd = If(
-        '{ !$inExpr.isCurrentToken('}') }.asTerm,
-        '{ $inExpr.objectEndOrCommaError() }.asTerm,
+        notTerm(inIsCurrentToken(byteCloseBrace)),
+        inObjectEndOrCommaError(),
         Literal(UnitConstant())
       )
 
       val loopBlock = Block(
-        List(
-          '{ $inExpr.rollbackToken() }.asTerm,
-          contDef,
-          whileLoop,
-          checkEnd
-        ),
+        List(inRollbackToken(), contDef, whileLoop, checkEnd),
         Literal(UnitConstant())
       )
 
-      val outerIf = If(
-        '{ !$inExpr.isNextToken('}') }.asTerm,
-        loopBlock,
-        Literal(UnitConstant())
-      )
+      val outerIf = If(notTerm(inIsNextToken(byteCloseBrace)), loopBlock, Literal(UnitConstant()))
 
       Block(varDefs :+ outerIf, resultTerm).asExprOf[P]
 
-    private def tryDirectWrite[T: Type](fa: Expr[T], out: Expr[JsonWriter]): Option[Expr[Unit]] =
+    private def tryDirectWriteTerm[T: Type](fa: Term, outTerm: Term): Option[Term] =
       val tpe = TypeRepr.of[T].dealias
-      if tpe =:= TypeRepr.of[Int] then Some('{ $out.writeVal(${fa.asExprOf[Int]}) })
-      else if tpe =:= TypeRepr.of[Long] then Some('{ $out.writeVal(${fa.asExprOf[Long]}) })
-      else if tpe =:= TypeRepr.of[Float] then Some('{ $out.writeVal(${fa.asExprOf[Float]}) })
-      else if tpe =:= TypeRepr.of[Double] then Some('{ $out.writeVal(${fa.asExprOf[Double]}) })
-      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $out.writeVal(${fa.asExprOf[Boolean]}) })
-      else if tpe =:= TypeRepr.of[Short] then Some('{ $out.writeVal(${fa.asExprOf[Short]}.toInt) })
-      else if tpe =:= TypeRepr.of[Byte] then Some('{ $out.writeVal(${fa.asExprOf[Byte]}.toInt) })
-      else if tpe =:= TypeRepr.of[Char] then Some('{ $out.writeVal(${fa.asExprOf[Char]}.toString) })
-      else if tpe =:= TypeRepr.of[String] then
-        val s = fa.asExprOf[String]
-        Some('{ val _v = $s; if _v == null then $out.writeNull() else $out.writeVal(_v) })
-      else if tpe =:= TypeRepr.of[BigDecimal] then
-        val bd = fa.asExprOf[BigDecimal]
-        Some('{ val _v = $bd; if _v == null then $out.writeNull() else $out.writeVal(_v) })
-      else if tpe =:= TypeRepr.of[BigInt] then
-        val bi = fa.asExprOf[BigInt]
-        Some('{ val _v = $bi; if _v == null then $out.writeNull() else $out.writeVal(_v) })
+      def writeVal(arg: Term): Term = Select.overloaded(outTerm, "writeVal", Nil, List(arg))
+      def writeNull(): Term = callMethod(outTerm, "writeNull", Nil)
+      def nullGuardWrite(valTerm: Term): Term =
+        val owner = Symbol.spliceOwner
+        val vSym = Symbol.newVal(owner, "_v", tpe, Flags.EmptyFlags, Symbol.noSymbol)
+        val vDef = ValDef(vSym, Some(valTerm))
+        val vRef = Ref(vSym)
+        val cond = Apply(Select.unique(vRef, "=="), List(Literal(NullConstant())))
+        Block(List(vDef), If(cond, writeNull(), writeVal(vRef)))
+
+      if tpe =:= TypeRepr.of[Int] then Some(writeVal(fa))
+      else if tpe =:= TypeRepr.of[Long] then Some(writeVal(fa))
+      else if tpe =:= TypeRepr.of[Float] then Some(writeVal(fa))
+      else if tpe =:= TypeRepr.of[Double] then Some(writeVal(fa))
+      else if tpe =:= TypeRepr.of[Boolean] then Some(writeVal(fa))
+      else if tpe =:= TypeRepr.of[Short] then Some(writeVal(Select.unique(fa, "toInt")))
+      else if tpe =:= TypeRepr.of[Byte] then Some(writeVal(Select.unique(fa, "toInt")))
+      else if tpe =:= TypeRepr.of[Char] then Some(writeVal(callMethod(fa, "toString", Nil)))
+      else if tpe =:= TypeRepr.of[String] then Some(nullGuardWrite(fa))
+      else if tpe =:= TypeRepr.of[BigDecimal] then Some(nullGuardWrite(fa))
+      else if tpe =:= TypeRepr.of[BigInt] then Some(nullGuardWrite(fa))
       else None
 
     // === Sum derivation ===
