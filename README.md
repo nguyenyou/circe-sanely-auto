@@ -112,7 +112,7 @@ Swap one dependency, change one import:
 
 ```diff
 - mvn"io.circe::circe-generic:0.14.x"
-+ mvn"io.github.nguyenyou::circe-sanely-auto:0.17.0"
++ mvn"io.github.nguyenyou::circe-sanely-auto:0.18.0"
 ```
 
 ```diff
@@ -127,7 +127,7 @@ That's it. Same JSON format, same API, same behavior. Everything else stays the 
 For HTTP hot paths where runtime throughput matters, [sanely-jsoniter](sanely-jsoniter/) generates `JsonValueCodec[T]` instances that skip the `Json` tree entirely — bytes go directly to domain objects:
 
 ```scala
-mvn"io.github.nguyenyou::sanely-jsoniter:0.17.0"
+mvn"io.github.nguyenyou::sanely-jsoniter:0.18.0"
 ```
 
 ```scala
@@ -208,7 +208,7 @@ circe-sanely-auto provides the same packages and APIs as circe-generic:
 
 | Before | After |
 |---|---|
-| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.17.0"` |
+| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.18.0"` |
 | `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` |
 | `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto.*` (unchanged) |
 
