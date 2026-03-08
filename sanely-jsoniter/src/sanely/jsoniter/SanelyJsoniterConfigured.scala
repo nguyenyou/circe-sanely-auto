@@ -474,6 +474,31 @@ object SanelyJsoniterConfigured:
 
     // === Sum derivation (configured) ===
 
+    /** Generate charBuf-based dispatch for configured sum type decode (external tagging).
+      * Labels are runtime-transformed, so uses linear chain comparing against labels array elements.
+      */
+    private def generateConfiguredSumDecodeBody[S: Type](
+      inExpr: Expr[JsonReader],
+      labelsExpr: Expr[Array[String]],
+      codecsExpr: Expr[Array[JsonValueCodec[Any]]],
+      numVariants: Int
+    ): Expr[S] =
+      val errorExpr = '{ $inExpr.decodeError(s"expected one of: ${$labelsExpr.mkString(", ")}") }
+
+      val owner = Symbol.spliceOwner
+      val klSym = Symbol.newVal(owner, "_kl", TypeRepr.of[Int], Flags.EmptyFlags, Symbol.noSymbol)
+      val klDef = ValDef(klSym, Some('{ $inExpr.readKeyAsCharBuf() }.asTerm))
+
+      // Linear chain (labels are runtime, can't hash at compile time)
+      val dispatchTerm = (0 until numVariants).foldRight[Term](errorExpr.asTerm) { case (idx, elseBranch) =>
+        val idxE = Expr(idx)
+        val cond = '{ $inExpr.isCharBufEqualsTo(${Ref(klSym).asExprOf[Int]}, $labelsExpr($idxE)) }.asTerm
+        val decode = '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[S] }.asTerm
+        If(cond, decode, elseBranch)
+      }
+
+      Block(List(klDef), dispatchTerm).asExprOf[S]
+
     private def deriveSum[S: Type, Types: Type, Labels: Type](
       mirror: Expr[Mirror.SumOf[S]],
       selfRef: Expr[JsonValueCodec[A]]
@@ -498,7 +523,11 @@ object SanelyJsoniterConfigured:
             case '[t] => '{ ${codec.asInstanceOf[Expr[JsonValueCodec[t]]]}.asInstanceOf[JsonValueCodec[Any]] }
         }
         val codecsArrayExpr = '{ Array(${Varargs(codecExprs)}*) }
-        '{ JsoniterRuntime.configuredSumCodec[S]($mirror, $labelsExpr, $conf.transformConstructorNames, $conf.discriminator, () => $codecsArrayExpr, $conf.strictDecoding) }
+        val n = cases.length
+        val extTagDecodeFnExpr = '{ (in: JsonReader, labels: Array[String], codecs: Array[JsonValueCodec[Any]]) =>
+          ${ generateConfiguredSumDecodeBody[S]('in, 'labels, 'codecs, n) }
+        }
+        '{ JsoniterRuntime.configuredSumCodec[S]($mirror, $labelsExpr, $conf.transformConstructorNames, $conf.discriminator, () => $codecsArrayExpr, $conf.strictDecoding, $extTagDecodeFnExpr) }
       else
         val directLabelsExpr = Expr(cases.map(_._1).toArray)
         val isSubTraitExpr = Expr(casesWithSubTrait.map(_._4).toArray)
@@ -523,11 +552,16 @@ object SanelyJsoniterConfigured:
         }
         val allLeafCodecsArrayExpr = '{ Array(${Varargs(allLeafCodecExprs)}*) }
 
+        val nLeaves = allLeaves.length
+        val extTagDecodeFnExpr = '{ (in: JsonReader, labels: Array[String], codecs: Array[JsonValueCodec[Any]]) =>
+          ${ generateConfiguredSumDecodeBody[S]('in, 'labels, 'codecs, nLeaves) }
+        }
+
         '{ JsoniterRuntime.configuredSumCodecWithSubTraits[S](
           $mirror, $directLabelsExpr, $isSubTraitExpr,
           $conf.transformConstructorNames, $conf.discriminator,
           () => $directCodecsArrayExpr,
-          $allLeafLabelsExpr, () => $allLeafCodecsArrayExpr, $conf.strictDecoding) }
+          $allLeafLabelsExpr, () => $allLeafCodecsArrayExpr, $conf.strictDecoding, $extTagDecodeFnExpr) }
 
     // === Sub-trait leaf collection ===
 

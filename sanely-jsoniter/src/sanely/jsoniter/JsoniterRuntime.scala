@@ -51,7 +51,8 @@ object JsoniterRuntime:
   def sumCodec[S](
     mirror: => Mirror.SumOf[S],
     labels: Array[String],
-    initCodecs: () => Array[JsonValueCodec[Any]]
+    initCodecs: () => Array[JsonValueCodec[Any]],
+    decodeFn: (JsonReader, Array[JsonValueCodec[Any]]) => S
   ): JsonValueCodec[S] =
     new JsonValueCodec[S]:
       private lazy val _codecs = initCodecs()
@@ -70,19 +71,9 @@ object JsoniterRuntime:
         if !in.isNextToken('{') then
           in.readNullOrTokenError(default, '{')
         else
-          val key = in.readKeyAsString()
-          var idx = -1
-          var i = 0
-          while i < labels.length && idx < 0 do
-            if key == labels(i) then idx = i
-            i += 1
-          if idx < 0 then
-            in.decodeError(s"Unknown variant: $key")
-            default
-          else
-            val result = _codecs(idx).decodeValue(in, _codecs(idx).nullValue)
-            if !in.isNextToken('}') then in.objectEndOrCommaError()
-            result.asInstanceOf[S]
+          val result = decodeFn(in, _codecs)
+          if !in.isNextToken('}') then in.objectEndOrCommaError()
+          result
 
   // === Sum codec with sub-trait support (external tagging) ===
 
@@ -92,7 +83,8 @@ object JsoniterRuntime:
     isSubTrait: Array[Boolean],
     initDirectCodecs: () => Array[JsonValueCodec[Any]],
     allLeafLabels: Array[String],
-    initAllLeafCodecs: () => Array[JsonValueCodec[Any]]
+    initAllLeafCodecs: () => Array[JsonValueCodec[Any]],
+    decodeFn: (JsonReader, Array[JsonValueCodec[Any]]) => S
   ): JsonValueCodec[S] =
     new JsonValueCodec[S]:
       private lazy val _directCodecs = initDirectCodecs()
@@ -104,7 +96,6 @@ object JsoniterRuntime:
         else
           val ord = mirror.ordinal(x)
           if isSubTrait(ord) then
-            // Sub-trait codec handles its own external tagging
             _directCodecs(ord).encodeValue(x, out)
           else
             out.writeObjectStart()
@@ -116,19 +107,9 @@ object JsoniterRuntime:
         if !in.isNextToken('{') then
           in.readNullOrTokenError(default, '{')
         else
-          val key = in.readKeyAsString()
-          var idx = -1
-          var i = 0
-          while i < allLeafLabels.length && idx < 0 do
-            if key == allLeafLabels(i) then idx = i
-            i += 1
-          if idx < 0 then
-            in.decodeError(s"Unknown variant: $key")
-            default
-          else
-            val result = _allLeafCodecs(idx).decodeValue(in, _allLeafCodecs(idx).nullValue)
-            if !in.isNextToken('}') then in.objectEndOrCommaError()
-            result.asInstanceOf[S]
+          val result = decodeFn(in, _allLeafCodecs)
+          if !in.isNextToken('}') then in.objectEndOrCommaError()
+          result
 
   // === Configured sum codec with sub-trait support ===
 
@@ -141,15 +122,18 @@ object JsoniterRuntime:
     initDirectCodecs: () => Array[JsonValueCodec[Any]],
     rawAllLeafLabels: Array[String],
     initAllLeafCodecs: () => Array[JsonValueCodec[Any]],
-    strictDecoding: Boolean = false
+    strictDecoding: Boolean = false,
+    extTagDecodeFn: (JsonReader, Array[String], Array[JsonValueCodec[Any]]) => S
   ): JsonValueCodec[S] =
     val directLabels = rawDirectLabels.map(transformConstructorNames)
     val allLeafLabels = rawAllLeafLabels.map(transformConstructorNames)
     discriminator match
       case None =>
+        val wrappedDecodeFn: (JsonReader, Array[JsonValueCodec[Any]]) => S =
+          (in, codecs) => extTagDecodeFn(in, allLeafLabels, codecs)
         sumCodecWithSubTraits[S](
           mirror, directLabels, isSubTrait, initDirectCodecs,
-          allLeafLabels, initAllLeafCodecs)
+          allLeafLabels, initAllLeafCodecs, wrappedDecodeFn)
       case Some(disc) =>
         // Discriminator with sub-traits: flat encoding with inline fields
         new JsonValueCodec[S]:
@@ -226,7 +210,8 @@ object JsoniterRuntime:
     transformConstructorNames: String => String,
     discriminator: Option[String],
     initCodecs: () => Array[JsonValueCodec[Any]],
-    strictDecoding: Boolean = false
+    strictDecoding: Boolean = false,
+    extTagDecodeFn: (JsonReader, Array[String], Array[JsonValueCodec[Any]]) => S
   ): JsonValueCodec[S] =
     val labels = rawLabels.map(transformConstructorNames)
     discriminator match
@@ -248,23 +233,13 @@ object JsoniterRuntime:
             if !in.isNextToken('{') then
               in.readNullOrTokenError(default, '{')
             else
-              val key = in.readKeyAsString()
-              var idx = -1
-              var i = 0
-              while i < labels.length && idx < 0 do
-                if key == labels(i) then idx = i
-                i += 1
-              if idx < 0 then
-                in.decodeError(s"Unknown variant: $key")
-                default
+              val result = extTagDecodeFn(in, labels, _codecs)
+              if strictDecoding then
+                if !in.isNextToken('}') then
+                  in.decodeError(s"Strict decoding: expected a single key object with one of: ${labels.mkString(", ")}")
               else
-                val result = _codecs(idx).decodeValue(in, _codecs(idx).nullValue)
-                if strictDecoding then
-                  if !in.isNextToken('}') then
-                    in.decodeError(s"Strict decoding: expected a single key object with one of: ${labels.mkString(", ")}")
-                else
-                  if !in.isNextToken('}') then in.objectEndOrCommaError()
-                result.asInstanceOf[S]
+                if !in.isNextToken('}') then in.objectEndOrCommaError()
+              result
 
       case Some(disc) => // discriminator tagging (flat: fields inline with discriminator)
         new JsonValueCodec[S]:

@@ -705,7 +705,7 @@ object CompatEdgeCaseTest extends TestSuite:
           throw new RuntimeException("expected exception")
         catch
           case e: JsonReaderException => e
-      assert(caught.getMessage.contains("Unknown variant"))
+      assert(caught.getMessage.contains("expected one of:"))
     }
 
     test("error - unknown variant in configured sum type") {
