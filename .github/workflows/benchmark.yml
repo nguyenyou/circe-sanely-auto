@@ -11,13 +11,13 @@ on:
         default: ""
       compile_runs:
         description: "Number of compile-time benchmark runs"
-        default: "5"
+        default: "10"
       runtime_warmup:
         description: "Runtime benchmark warmup iterations"
-        default: "5"
+        default: "10"
       runtime_iterations:
         description: "Runtime benchmark measurement iterations"
-        default: "5"
+        default: "10"
   issue_comment:
     types: [created]
 
@@ -26,9 +26,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  COMPILE_RUNS: ${{ inputs.compile_runs || '5' }}
-  RUNTIME_WARMUP: ${{ inputs.runtime_warmup || '5' }}
-  RUNTIME_ITERATIONS: ${{ inputs.runtime_iterations || '5' }}
+  COMPILE_RUNS: ${{ inputs.compile_runs || '10' }}
+  RUNTIME_WARMUP: ${{ inputs.runtime_warmup || '10' }}
+  RUNTIME_ITERATIONS: ${{ inputs.runtime_iterations || '10' }}
 
 jobs:
   setup:
@@ -145,6 +145,14 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - name: Reduce CI noise
+        run: |
+          # Disable CPU frequency scaling (use performance governor)
+          for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+            echo performance | sudo tee "$cpu" 2>/dev/null || true
+          done
+          # Disable turbo boost to reduce variance
+          echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null || true
       - name: Run benchmark
         run: bash bench-runtime.sh "$RUNTIME_WARMUP" "$RUNTIME_ITERATIONS" 2>&1 | tee runtime.txt
       - uses: actions/upload-artifact@v4
