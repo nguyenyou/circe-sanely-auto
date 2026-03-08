@@ -844,6 +844,8 @@ object SanelyJsoniterConfigured:
           Some('{ Codecs.set[A]($innerCodec) }.asInstanceOf[Expr[JsonValueCodec[T]]])
         case s if s.endsWith(".Seq") =>
           Some('{ Codecs.seq[A]($innerCodec) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+        case s if s.endsWith(".IndexedSeq") =>
+          Some('{ Codecs.indexedSeq[A]($innerCodec) }.asInstanceOf[Expr[JsonValueCodec[T]]])
         case _ => None
 
     // === Recursive types ===

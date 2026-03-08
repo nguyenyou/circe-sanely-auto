@@ -139,6 +139,17 @@ object Codecs:
     def decodeValue(in: JsonReader, default: Seq[T]): Seq[T] =
       list(inner).decodeValue(in, if default == null then null else default.toList)
 
+  def indexedSeq[T](inner: JsonValueCodec[T]): JsonValueCodec[IndexedSeq[T]] = new JsonValueCodec[IndexedSeq[T]]:
+    val nullValue: IndexedSeq[T] = null
+    def encodeValue(x: IndexedSeq[T], out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeArrayStart()
+        x.foreach(e => inner.encodeValue(e, out))
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: IndexedSeq[T]): IndexedSeq[T] =
+      vector(inner).decodeValue(in, if default == null then null else default.toVector)
+
   def set[T](inner: JsonValueCodec[T]): JsonValueCodec[Set[T]] = new JsonValueCodec[Set[T]]:
     val nullValue: Set[T] = null
     def encodeValue(x: Set[T], out: JsonWriter): Unit =
