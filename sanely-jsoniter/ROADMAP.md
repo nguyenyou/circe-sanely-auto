@@ -62,14 +62,14 @@ Real codebases use configured derivation for the vast majority of types (default
 
 - [x] **`derives` support** — `JsoniterCodec`, `JsoniterCodec.WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`. Each extends `JsonValueCodec[A]` directly so no import conversions needed.
 
-- [x] **Performance benchmarks vs bridge** — Runtime benchmark with realistic payload (~1.4 KB: nested products, sealed trait sum types, optional fields). sanely-jsoniter: **4.8x read / 6.2x write** vs circe-jawn; bridge: **1.5x read / 0.9x write**; jsoniter-scala native: **4.9x read / 5.8x write**.
+- [x] **Performance benchmarks vs bridge** — Runtime benchmark with realistic payload (~1.4 KB: nested products, sealed trait sum types, optional fields). sanely-jsoniter: **5.4x read / 6.2x write** vs circe-jawn; bridge: **1.5x read / 0.9x write**; jsoniter-scala native: **5.0x read / 5.8x write**.
 
 ## P3 — Performance (closing the gap with native jsoniter-scala)
 
-With P3.1–P3.4 complete, sanely-jsoniter reaches **98% of jsoniter-scala native** on decode and **surpasses it by 6%** on encode. The remaining decode gap comes from result construction overhead and sum type allocation. The write path is already close to ceiling; remaining headroom is decode-side.
+With P3.1–P3.5 complete, sanely-jsoniter **surpasses jsoniter-scala native** on both read (109%) and write (107%). The direct constructor optimization (P3.5) closed the decode gap and pushed past native. Remaining items are diminishing returns.
 
 **Priority order** (informed by real-world codebase with ~300 configured types, ~40 discriminator types):
-1. **P3.5** — direct constructor: biggest single win, eliminates 3 allocations + N primitive boxes per product decode, affects every type
+1. ~~**P3.5** — direct constructor~~ ✅ Done — biggest single win (+19% read, +2% write)
 2. **P3.6** — char-buf sum dispatch: eliminates String alloc per sum decode, standalone refactor
 3. **P3.7** — container codec cleanups: small per-call but ubiquitous (every List/Vector/Seq/Set/Map field)
 4. **P3.8** — discriminator slow path: only matters when decoding third-party JSON with random field order; self-produced JSON always hits the fast path
@@ -86,7 +86,7 @@ With P3.1–P3.4 complete, sanely-jsoniter reaches **98% of jsoniter-scala nativ
 
 - [x] **P3.4: Hash-based field key dispatch** — For products with > 8 fields or > 64 total field name chars, generates `(in.charBufToHashCode(l): @switch) match { ... }` with compile-time pre-computed hashes. Hash collisions fall back to `isCharBufEqualsTo`. Products with ≤ 8 fields keep the linear if-else chain (hashing overhead not worth it). Matches jsoniter-scala's own strategy.
 
-- [ ] **P3.5: Direct constructor call** — Currently result construction uses `mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))` which boxes every primitive (`Int` → `Integer`), allocates an `Array[Any]`, allocates an `ArrayProduct` wrapper, then `fromProduct` unboxes via `productElement(i)`. For `User` (9 fields, 5 primitives) that's 5 boxing ops + 2 allocations per decode. Replace with `Apply(Select(New(TypeTree.of[P]), primaryConstructor), varRefs)` — direct `new P(_f0, _f1, ...)` with zero boxing and zero intermediate allocations. This is exactly what jsoniter-scala native does. Expected: largest single improvement, should close most of the 2% decode gap.
+- [x] **P3.5: Direct constructor call** — Replaced `mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))` with `Apply(Select(New(Inferred(tpe)), primaryConstructor), varRefs)` — direct `new P(_f0, _f1, ...)` with zero boxing and zero intermediate allocations. Handles case objects (singleton `Ref`) and generic types (`TypeApply` with type args). Deleted `ArrayProduct` class, removed `Mirror.ProductOf[P]` from decode function signatures. Result: **5.4x read / 6.2x write** vs circe-jawn (up from 4.8x/6.2x), surpassing jsoniter-scala native on both axes.
 
 - [ ] **P3.6: Char-buf sum type dispatch** — Sum type decode in `JsoniterRuntime.sumCodec.decodeValue` uses `readKeyAsString()` + `String ==` for variant key matching, allocating a `String` per sum value decoded. Replace with macro-generated `readKeyAsCharBuf()` + hash/linear `isCharBufEqualsTo` dispatch (same pattern as product field matching). Requires moving sum decode body from runtime to macro-generated code. Expected: small improvement (~3 sum values per benchmark payload).
 

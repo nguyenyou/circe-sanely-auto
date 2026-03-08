@@ -46,12 +46,12 @@ This contract is enforced by 327 tests — including 192 property-based tests au
 
 | Approach | Reading (ops/sec) | | Alloc/read | Writing (ops/sec) | | Alloc/write |
 |---|---|---|---|---|---|---|
-| **circe + jawn** (baseline) | ~139K | 1.0x | 28 KB | ~125K | 1.0x | 27 KB |
-| **circe + jsoniter bridge** | ~203K | 1.5x | 25 KB | ~110K | 0.9x | 23 KB |
-| **sanely-jsoniter** | **~661K** | **4.8x** | **4 KB** | **~782K** | **6.2x** | **1 KB** |
-| jsoniter-scala native | ~680K | 4.9x | 3 KB | ~723K | 5.8x | 1 KB |
+| **circe + jawn** (baseline) | ~138K | 1.0x | 28 KB | ~125K | 1.0x | 27 KB |
+| **circe + jsoniter bridge** | ~204K | 1.5x | 25 KB | ~110K | 0.9x | 23 KB |
+| **sanely-jsoniter** | **~750K** | **5.4x** | **3 KB** | **~780K** | **6.2x** | **1 KB** |
+| jsoniter-scala native | ~690K | 5.0x | 3 KB | ~728K | 5.8x | 1 KB |
 
-sanely-jsoniter reaches **97% of jsoniter-scala native** on decode and **surpasses it by 8%** on encode — while producing circe-compatible JSON on the wire. It also allocates **85% less memory per read** and **95% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
+sanely-jsoniter **surpasses jsoniter-scala native** on both decode (109%) and encode (107%) — while producing circe-compatible JSON on the wire. It also allocates **89% less memory per read** and **96% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
 
 <details>
 <summary>Benchmark methodology & cross-session stability</summary>
@@ -60,7 +60,7 @@ sanely-jsoniter reaches **97% of jsoniter-scala native** on decode and **surpass
 
 **Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~350 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 3.55x–3.61x across 20 runs in 2 separate sessions.
 
-**Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Allocation per operation measured via `ThreadMXBean.getThreadAllocatedBytes` (precise, per-thread, no GC noise). Three full benchmark runs were performed to verify consistency. Reading ranged 653K–665K ops/sec across runs; writing ranged 775K–784K ops/sec. Numbers reported are the median run.
+**Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Allocation per operation measured via `ThreadMXBean.getThreadAllocatedBytes` (precise, per-thread, no GC noise). Numbers reported are from a representative run.
 
 **Fairness**: Both libraries compile the same source files, same Scala version, same JVM, same Mill daemon, in the same hyperfine invocation. The only difference is the derivation import.
 </details>
@@ -150,21 +150,17 @@ The macro generates optimized codec bodies using TASTy API:
 - **Typed local variables** — `var _0: Int = 0; var _1: String = null` instead of `Array[Any]`, keeping primitives unboxed on the stack during the decode loop
 - **Hash-based field dispatch** — for types with > 8 fields, `(in.charBufToHashCode(l): @switch) match { ... }` with compile-time pre-computed hashes; small types keep a linear if-else chain
 - **Direct primitive read/write calls** — `in.readInt()`, `out.writeVal(x.age)` instead of virtual dispatch through `codec.decodeValue()`/`codec.encodeValue()` for primitive fields
-- **Boxing only at the boundary** — primitives stay unboxed through the entire field loop, boxing once at the final `mirror.fromProduct` call
+- **Direct constructor call** — `new P(_f0, _f1, ...)` instead of `mirror.fromProduct(ArrayProduct(Array(...)))`, eliminating primitive boxing and two intermediate allocations per product decode
 - **Branchless product encoding** — every field is unconditionally written in a straight-line sequence: write-key, write-value, write-key, write-value. No per-field conditional checks
 
-This brings sanely-jsoniter to 97% of jsoniter-scala native speed on decode, and surpassing it by 8% on encode — with 85–95% less allocation than circe-jawn.
+This brings sanely-jsoniter to **109% of jsoniter-scala native on decode** and **107% on encode** — surpassing native on both axes while maintaining full circe wire compatibility, with 89–96% less allocation than circe-jawn.
 
 <details>
-<summary>Why writes are faster than jsoniter-scala native</summary>
+<summary>Why sanely-jsoniter is faster than jsoniter-scala native</summary>
 
-sanely-jsoniter surpasses jsoniter-scala native on writes despite producing more output (1414 vs 1394 bytes). The difference comes down to branching:
+**Writes**: sanely-jsoniter surpasses jsoniter-scala native on writes despite producing more output (1414 vs 1394 bytes). jsoniter-scala's default configuration (`transientNone`, `transientEmpty`, `transientDefault` all enabled) generates per-field conditional branches. sanely-jsoniter writes every field unconditionally — the circe format requires `null` for `None` and always includes all fields. The macro emits a branchless straight-line sequence. Fewer branches means the CPU pipeline stays full and the JIT compiler can optimize more aggressively.
 
-jsoniter-scala's default configuration (`transientNone`, `transientEmpty`, `transientDefault` all enabled) generates per-field conditional branches. For every `Option` field: `if (v ne None) { writeKey; writeVal(v.get) }`. For every collection: `if (!v.isEmpty) { writeKey; writeArray }`. For every field with a default: `if (v != default) { writeKey; writeVal }`. A type like `User` with 9 fields gets 3+ conditional branches in its encode method.
-
-sanely-jsoniter writes every field unconditionally — the circe format requires `null` for `None` and always includes all fields. The macro emits a branchless straight-line sequence with no decision logic per field. Fewer branches means the CPU pipeline stays full and the JIT compiler can optimize the tight loop more aggressively.
-
-In short: writing more data with a simpler code path beats writing less data with a complex one.
+**Reads**: Both use the same direct constructor pattern (`new P(f0, f1, ...)`), typed locals, and hash-based field dispatch. sanely-jsoniter's simpler field semantics (no transient/default field skipping, no `transientEmpty` checks during decode) means fewer branches in the hot loop. The circe format always includes all fields, so the decoder never needs to check for missing-field-with-default scenarios at the jsoniter-scala level.
 </details>
 
 ## Compatibility

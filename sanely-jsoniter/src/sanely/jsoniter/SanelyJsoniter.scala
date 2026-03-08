@@ -33,7 +33,7 @@ object SanelyJsoniter:
               val selfRef: Expr[JsonValueCodec[A]] = '{ _selfCodec }
               mirror match
                 case '{ $m: Mirror.ProductOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                  deriveProduct[A, types, labels](m, selfRef)
+                  deriveProduct[A, types, labels](selfRef)
                 case '{ $m: Mirror.SumOf[A] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
                   deriveSum[A, types, labels](m, selfRef)
             }
@@ -43,7 +43,6 @@ object SanelyJsoniter:
     // === Product derivation ===
 
     private def deriveProduct[P: Type, Types: Type, Labels: Type](
-      mirror: Expr[Mirror.ProductOf[P]],
       selfRef: Expr[JsonValueCodec[A]]
     ): Expr[JsonValueCodec[P]] =
       val fields = resolveFields[Types, Labels](selfRef)
@@ -63,11 +62,11 @@ object SanelyJsoniter:
         ${ generateFieldWrites[P]('x, 'codecs, 'out, fields) }
       }
 
-      val decodeFnExpr = '{ (in: JsonReader, codecs: Array[JsonValueCodec[Any]], m: Mirror.ProductOf[P]) =>
-        ${ generateDecodeBody[P]('in, 'codecs, 'm, fields) }
+      val decodeFnExpr = '{ (in: JsonReader, codecs: Array[JsonValueCodec[Any]]) =>
+        ${ generateDecodeBody[P]('in, 'codecs, fields) }
       }
 
-      '{ JsoniterRuntime.productCodec[P]($mirror, $namesExpr, () => $codecsArrayExpr, $nullValuesExpr, $encodeFnExpr, $decodeFnExpr) }
+      '{ JsoniterRuntime.productCodec[P]($namesExpr, () => $codecsArrayExpr, $nullValuesExpr, $encodeFnExpr, $decodeFnExpr) }
 
     private def generateFieldWrites[P: Type](
       x: Expr[P], codecs: Expr[Array[JsonValueCodec[Any]]], out: Expr[JsonWriter],
@@ -119,14 +118,30 @@ object SanelyJsoniter:
       else if d <:< TypeRepr.of[Option[?]] then '{ None }.asTerm
       else Literal(NullConstant())
 
+    private def buildDirectConstruct[P: Type](varRefs: List[Term]): Term =
+      val tpe = TypeRepr.of[P]
+      val sym = tpe.typeSymbol
+      if sym.flags.is(Flags.Module) then
+        Ref(tpe.termSymbol)
+      else
+        val ctor = sym.primaryConstructor
+        val ctorSelect = Select(New(Inferred(tpe)), ctor)
+        val tpeTypeArgs = tpe match
+          case AppliedType(_, args) => args
+          case _ => Nil
+        val ctorWithTypes =
+          if tpeTypeArgs.isEmpty then ctorSelect
+          else TypeApply(ctorSelect, tpeTypeArgs.map(Inferred(_)))
+        Apply(ctorWithTypes, varRefs)
+
     private def generateDecodeBody[P: Type](
       inExpr: Expr[JsonReader],
       codecsExpr: Expr[Array[JsonValueCodec[Any]]],
-      mirrorExpr: Expr[Mirror.ProductOf[P]],
       fields: List[(String, Type[?], Expr[JsonValueCodec[?]])]
     ): Expr[P] =
       val n = fields.length
       if n == 0 then
+        val constructExpr = buildDirectConstruct[P](Nil).asExprOf[P]
         return '{
           if !$inExpr.isNextToken('}') then
             $inExpr.rollbackToken()
@@ -135,7 +150,7 @@ object SanelyJsoniter:
               $inExpr.readKeyAsCharBuf(); $inExpr.skip()
               _c = $inExpr.isNextToken(',')
             if !$inExpr.isCurrentToken('}') then $inExpr.objectEndOrCommaError()
-          $mirrorExpr.fromProduct(new JsoniterRuntime.ArrayProduct(Array.empty[Any]))
+          $constructExpr
         }
 
       val owner = Symbol.spliceOwner
@@ -188,14 +203,8 @@ object SanelyJsoniter:
           val scrutinee = '{ $inExpr.charBufToHashCode(${keyLenRef.asExprOf[Int]}): @scala.annotation.switch }.asTerm
           Match(scrutinee, (cases :+ defaultCase).toList)
 
-      // Build result: mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))
-      val varRefExprs: List[Expr[Any]] = vars.map { v =>
-        v.tpe match
-          case '[t] => '{ ${Ref(v.sym).asExprOf[t]}: Any }
-      }
-      val resultTerm = '{ $mirrorExpr.fromProduct(
-        new JsoniterRuntime.ArrayProduct(Array(${Varargs(varRefExprs)}*))
-      ) }.asTerm
+      // Build result: direct constructor call (no boxing, no intermediate allocations)
+      val resultTerm = buildDirectConstruct[P](vars.map(v => Ref(v.sym)))
 
       // Build while loop: var _c = true; while(_c) { val _kl = ...; matchChain; _c = ... }
       val contSym = Symbol.newVal(owner, "_c", TypeRepr.of[Boolean], Flags.Mutable, Symbol.noSymbol)
@@ -407,7 +416,7 @@ object SanelyJsoniter:
               case Some(mirrorExpr) =>
                 mirrorExpr match
                   case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveProduct[T, types, labels](m, selfRef)
+                    deriveProduct[T, types, labels](selfRef)
                   case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
                     deriveSum[T, types, labels](m, selfRef)
               case None =>

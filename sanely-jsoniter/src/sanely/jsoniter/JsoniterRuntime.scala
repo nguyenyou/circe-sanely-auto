@@ -20,21 +20,14 @@ object JsoniterRuntime:
       */
     def decodeFieldsAfterDiscriminator(in: JsonReader): P
 
-  /** Lightweight Product wrapper over an Array for use with Mirror.fromProduct. */
-  final class ArrayProduct(val arr: Array[Any]) extends Product:
-    def canEqual(that: Any): Boolean = true
-    def productArity: Int = arr.length
-    def productElement(n: Int): Any = arr(n)
-
   // === Product codec ===
 
   def productCodec[P](
-    mirror: => Mirror.ProductOf[P],
     names: Array[String],
     initCodecs: () => Array[JsonValueCodec[Any]],
     nullValues: Array[Any],
     encodeFn: (P, Array[JsonValueCodec[Any]], JsonWriter) => Unit,
-    decodeFn: (JsonReader, Array[JsonValueCodec[Any]], Mirror.ProductOf[P]) => P
+    decodeFn: (JsonReader, Array[JsonValueCodec[Any]]) => P
   ): JsonValueCodec[P] =
     new JsonValueCodec[P]:
       private lazy val _codecs = initCodecs()
@@ -49,7 +42,7 @@ object JsoniterRuntime:
 
       def decodeValue(in: JsonReader, default: P): P =
         if in.isNextToken('{') then
-          decodeFn(in, _codecs, mirror)
+          decodeFn(in, _codecs)
         else
           in.readNullOrTokenError(default, '{')
 
@@ -183,7 +176,6 @@ object JsoniterRuntime:
   // === Configured product codec ===
 
   def configuredProductCodec[P](
-    mirror: => Mirror.ProductOf[P],
     rawNames: Array[String],
     transformMemberNames: String => String,
     initCodecs: () => Array[JsonValueCodec[Any]],
@@ -196,8 +188,8 @@ object JsoniterRuntime:
     strictDecoding: Boolean,
     encodeFn: (P, Array[String], Array[JsonValueCodec[Any]], JsonWriter) => Unit,
     encodeDropNullFn: (P, Array[String], Array[JsonValueCodec[Any]], JsonWriter) => Unit,
-    decodeFn: (JsonReader, Array[String], Array[JsonValueCodec[Any]], Mirror.ProductOf[P]) => P,
-    decodeAfterDiscFn: (JsonReader, Array[String], Array[JsonValueCodec[Any]], Mirror.ProductOf[P]) => P
+    decodeFn: (JsonReader, Array[String], Array[JsonValueCodec[Any]]) => P,
+    decodeAfterDiscFn: (JsonReader, Array[String], Array[JsonValueCodec[Any]]) => P
   ): JsonValueCodec[P] =
     val names = rawNames.map(transformMemberNames)
     new InlineFieldsCodec[P]:
@@ -214,7 +206,7 @@ object JsoniterRuntime:
 
       def decodeValue(in: JsonReader, default: P): P =
         if in.isNextToken('{') then
-          decodeFn(in, names, _codecs, mirror)
+          decodeFn(in, names, _codecs)
         else
           in.readNullOrTokenError(default, '{')
 
@@ -224,7 +216,7 @@ object JsoniterRuntime:
           else encodeFn(x, names, _codecs, out)
 
       def decodeFieldsAfterDiscriminator(in: JsonReader): P =
-        decodeAfterDiscFn(in, names, _codecs, mirror)
+        decodeAfterDiscFn(in, names, _codecs)
 
   // === Configured sum codec ===
 
