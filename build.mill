@@ -2,7 +2,7 @@ package build
 
 import mill._, scalalib._, publish._
 
-val publishVersion = "0.16.0"
+val publishVersion = "0.17.0"
 val circeVersion = "0.14.15"
 val jsoniterScalaVersion = "2.38.9"
 val utestVersion = "0.10.0-RC1"

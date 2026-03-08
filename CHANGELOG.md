@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.17.0] - 2026-03-08
+
+### sanely-jsoniter
+
+#### Added
+- **Iterable and Array container codecs** — `Iterable[T]` and `Array[T]` are now supported as container types in jsoniter codec derivation
+- **IndexedSeq codec support** — `IndexedSeq[T]` is now correctly derived
+
+#### Performance
+- **P3.5: Direct constructor call for product decode** — `new P(_f0, _f1, ...)` instead of `mirror.fromProduct(ArrayProduct(Array(...)))`, eliminating primitive boxing and two intermediate allocations per product decode
+- **P3.6: charBuf dispatch for sum type decode** — sum type discriminator matching now uses `charBufToHashCode`-based dispatch instead of string comparison
+
+#### Fixed
+- **Resolve case classes inside containers for auto derivation** — `List[MyCaseClass]`, `Option[MyCaseClass]` etc. now correctly auto-derive the inner case class codec instead of failing
+- **ScopeException from JAR** — switched to Term-based reflect API to fix `ScopeException` when deriving codecs for types loaded from external JARs
+
 ## [0.16.0] - 2026-03-07
 
 ### Performance
