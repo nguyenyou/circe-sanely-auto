@@ -66,6 +66,18 @@ The configured speedup (1.4x on CI vs 2.2x locally) is compressed by CI noise �
 
 sanely-jsoniter is **competitive with jsoniter-scala native** — within ~10% on both reads and writes, sometimes faster, sometimes slower depending on hardware and JIT warmup. Both dramatically outperform circe-jawn. sanely-jsoniter allocates **89% less memory per read** and **96% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
 
+### Compile-time cost of adding sanely-jsoniter
+
+Adding jsoniter codecs on top of existing circe codecs. 199 types, measured with [hyperfine](https://github.com/sharkdp/hyperfine):
+
+| Module | Mean ± σ | |
+|---|---|---|
+| **circe codecs only** (baseline) | 811ms ± 21ms | 1.0x |
+| **circe + jsoniter codecs** | 1,560ms ± 101ms | 1.9x |
+| **Marginal cost** | **~749ms** | **~3.8ms/type** |
+
+The jsoniter codec derivation roughly doubles compile time for the affected module — but in absolute terms it's under 1 second for 199 types. For a codebase with hundreds of types, expect sub-2-second additional compile time in exchange for 5–6x runtime throughput.
+
 <details>
 <summary>CI numbers (ubuntu-latest, GitHub Actions shared runners)</summary>
 
@@ -85,7 +97,7 @@ On CI (x86), jsoniter-scala is ~11% faster on writes while sanely-jsoniter is ~2
 
 **CI environment**: `ubuntu-latest` (GitHub Actions shared runners), x86_64, OpenJDK 25. CPU governor set to `performance`, turbo boost disabled. Full results tracked in [BENCHMARK.md](BENCHMARK.md).
 
-**Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~350 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 3.55x–3.61x across 20 runs in 2 separate sessions (local).
+**Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~350 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 3.55x–3.61x across 20 runs in 2 separate sessions (local). The jsoniter marginal cost benchmark (`bash bench.sh --jsoniter 10`) compiles 199 types with circe codecs only vs circe + jsoniter codecs, measuring the additional compile-time cost of adopting sanely-jsoniter.
 
 **Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Allocation per operation measured via `ThreadMXBean.getThreadAllocatedBytes` (precise, per-thread, no GC noise). Numbers reported are from a representative run.
 

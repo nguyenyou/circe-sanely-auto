@@ -56,6 +56,7 @@ Compile-time benchmarks use [hyperfine](https://github.com/sharkdp/hyperfine) (`
 ```bash
 bash bench.sh 5                 # auto derivation via hyperfine (~300 types)
 bash bench.sh --configured 5    # configured derivation via hyperfine (~230 types)
+bash bench.sh --jsoniter 5      # marginal cost of sanely-jsoniter (~199 types, circe-only vs circe+jsoniter)
 ./mill benchmark.sanely.compile # compile benchmark: our library (auto)
 ./mill benchmark.generic.compile # compile benchmark: circe-generic (auto)
 ./mill benchmark-configured.sanely.compile   # compile benchmark: our library (configured)
@@ -101,6 +102,7 @@ open /tmp/flamegraph.html
 | `demo/` | Runnable examples |
 | `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
 | `benchmark-configured/` | Configured derivation benchmark. Three sub-modules: `sanely`, `generic`, `generic-compat` sharing `benchmark-configured/shared/src/` |
+| `benchmark-jsoniter/` | sanely-jsoniter marginal compile-time cost. Three sub-modules: `types` (shared), `circe-only` (baseline), `circe-jsoniter` (circe + jsoniter codecs) |
 | `benchmark-runtime/` | Runtime performance benchmark. Compares circe-jawn vs circe+jsoniter-parser vs pure jsoniter-scala (reading + writing throughput) |
 | `tapir-test/` | Tapir integration tests. Proves sanely-jsoniter codecs work through Tapir's codec layer and produce wire-compatible output with circe bridge |
 | `zinc-test/` | Zinc incremental compilation tests. Verifies macros re-expand correctly when types change. 5 scenarios, 21 checks |

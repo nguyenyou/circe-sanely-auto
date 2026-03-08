@@ -7,6 +7,7 @@ N=""
 for arg in "$@"; do
   case "$arg" in
     --configured) BENCH_TYPE="benchmark-configured" ;;
+    --jsoniter) BENCH_TYPE="benchmark-jsoniter" ;;
     *) N="$arg" ;;
   esac
 done
@@ -36,13 +37,34 @@ case "$BENCH_TYPE" in
       "benchmark-configured.generic-compat.compile"
     )
     ;;
+  benchmark-jsoniter)
+    BASELINE_LABEL="circe-only (baseline)"
+    PREP_TARGETS=(
+      "sanely.jvm.compile"
+      "sanely-jsoniter.jvm.compile"
+      "benchmark-jsoniter.types.compile"
+    )
+    ;;
   *)
     echo "Unknown benchmark suite: $BENCH_TYPE" >&2
     exit 1
     ;;
 esac
 
-echo "Compile-time benchmark: circe-sanely-auto vs $BASELINE_LABEL (N=$N)"
+case "$BENCH_TYPE" in
+  benchmark-jsoniter)
+    HEADLINE="Marginal compile-time cost of adding sanely-jsoniter (N=$N)"
+    OURS="circe-jsoniter"
+    OPPONENT="circe-only"
+    ;;
+  *)
+    HEADLINE="Compile-time benchmark: circe-sanely-auto vs $BASELINE_LABEL (N=$N)"
+    OURS="sanely"
+    OPPONENT="generic"
+    ;;
+esac
+
+echo "$HEADLINE"
 echo "Benchmark suite: $BENCH_TYPE"
 echo "Method: Mill daemon, hyperfine with --warmup 1, --runs $N"
 echo "================================================================"
@@ -59,9 +81,9 @@ echo ""
 hyperfine \
   --warmup 1 \
   --runs "$N" \
-  --prepare "rm -rf out/$BENCH_TYPE/sanely" \
-  --command-name "$BENCH_TYPE.sanely" \
-  "./mill $BENCH_TYPE.sanely.compile" \
-  --prepare "rm -rf out/$BENCH_TYPE/generic" \
-  --command-name "$BENCH_TYPE.generic" \
-  "./mill $BENCH_TYPE.generic.compile"
+  --prepare "rm -rf out/$BENCH_TYPE/$OPPONENT" \
+  --command-name "$BENCH_TYPE.$OPPONENT" \
+  "./mill $BENCH_TYPE.$OPPONENT.compile" \
+  --prepare "rm -rf out/$BENCH_TYPE/$OURS" \
+  --command-name "$BENCH_TYPE.$OURS" \
+  "./mill $BENCH_TYPE.$OURS.compile"
