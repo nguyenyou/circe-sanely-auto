@@ -28,19 +28,32 @@ This contract is enforced by 327 tests — including 192 property-based tests au
 
 ## The numbers
 
-### Compile time — 3.6x faster
+### Compile time — 2.9–3.6x faster
 
-~350 types, M3 Max, JDK 25, Mill 1.1.2, Scala 3.8.2, measured with [hyperfine](https://github.com/sharkdp/hyperfine):
+~350 types, measured with [hyperfine](https://github.com/sharkdp/hyperfine):
 
 | | circe | circe-sanely-auto | |
 |---|---|---|---|
 | **Auto derivation** | 9.25s | **2.56s** | **3.6x faster** |
 | **Configured derivation** | 2.74s | **1.27s** | **2.2x faster** |
-| **Compiler work** | 1,558 samples | **825 samples** | **47% less** |
-| **Memory allocations** | 10,674 samples | **3,942 samples** | **63% less** |
-| **Peak RSS** | 1,133 MB | **893 MB** | **21% less** |
+| **Bytecode** | 3,384 KB | **2,635 KB** | **-22%** |
+| **Peak RSS** | 1,133 MB | **893 MB** | **-21%** |
 
-### Runtime — 4.8x faster reads, 6.2x faster writes, 85–95% less allocation
+<details>
+<summary>CI numbers (ubuntu-latest, GitHub Actions shared runners)</summary>
+
+Shared runners are noisier than dedicated hardware. Absolute times are ~3x slower; **ratios** are the meaningful metric:
+
+| | circe | circe-sanely-auto | |
+|---|---|---|---|
+| **Auto derivation** | 21.0s | **7.2s** | **2.9x faster** |
+| **Configured derivation** | 6.6s | **4.6s** | **1.4x faster** |
+| **Peak RSS (auto)** | 1,041 MB | **863 MB** | **-17%** |
+
+The configured speedup (1.4x on CI vs 2.2x locally) is compressed by CI noise — sanely's σ is 1.26s on a 4.6s mean (27% CoV), while circe-generic's σ is 0.25s (4% CoV). The speedup is real but smaller workloads are harder to measure reliably on shared runners. Full CI results: [BENCHMARK.md](BENCHMARK.md).
+</details>
+
+### Runtime — 4–5x faster reads, 6–7x faster writes, 85–95% less allocation
 
 ~1.4 KB JSON payload, nested products, sealed traits, optional fields:
 
@@ -51,14 +64,28 @@ This contract is enforced by 327 tests — including 192 property-based tests au
 | **sanely-jsoniter** | **~750K** | **5.4x** | **3 KB** | **~780K** | **6.2x** | **1 KB** |
 | jsoniter-scala native | ~690K | 5.0x | 3 KB | ~728K | 5.8x | 1 KB |
 
-sanely-jsoniter **surpasses jsoniter-scala native** on both decode (109%) and encode (107%) — while producing circe-compatible JSON on the wire. It also allocates **89% less memory per read** and **96% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
+sanely-jsoniter is **competitive with jsoniter-scala native** — within ~10% on both reads and writes, sometimes faster, sometimes slower depending on hardware and JIT warmup. Both dramatically outperform circe-jawn. sanely-jsoniter allocates **89% less memory per read** and **96% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
+
+<details>
+<summary>CI numbers (ubuntu-latest, GitHub Actions shared runners)</summary>
+
+| Approach | Reading (ops/sec) | | Writing (ops/sec) | |
+|---|---|---|---|---|
+| **circe + jawn** (baseline) | ~90K | 1.0x | ~58K | 1.0x |
+| **sanely-jsoniter** | **~370K** | **4.1x** | **~378K** | **6.5x** |
+| jsoniter-scala native | ~362K | 4.0x | ~422K | 7.3x |
+
+On CI (x86), jsoniter-scala is ~11% faster on writes while sanely-jsoniter is ~2% faster on reads. On Apple Silicon (M3 Max), sanely-jsoniter leads on both axes. The performance difference between the two is small and architecture-dependent — both are in the same league. Full CI results: [BENCHMARK.md](BENCHMARK.md).
+</details>
 
 <details>
 <summary>Benchmark methodology & cross-session stability</summary>
 
-**Environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2 (zinc on JDK 21.0.9), Scala 3.8.2.
+**Local environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2 (zinc on JDK 21.0.9), Scala 3.8.2.
 
-**Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~350 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 3.55x–3.61x across 20 runs in 2 separate sessions.
+**CI environment**: `ubuntu-latest` (GitHub Actions shared runners), x86_64, OpenJDK 25. CPU governor set to `performance`, turbo boost disabled. Full results tracked in [BENCHMARK.md](BENCHMARK.md).
+
+**Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~350 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 3.55x–3.61x across 20 runs in 2 separate sessions (local).
 
 **Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Allocation per operation measured via `ThreadMXBean.getThreadAllocatedBytes` (precise, per-thread, no GC noise). Numbers reported are from a representative run.
 
@@ -153,14 +180,14 @@ The macro generates optimized codec bodies using TASTy API:
 - **Direct constructor call** — `new P(_f0, _f1, ...)` instead of `mirror.fromProduct(ArrayProduct(Array(...)))`, eliminating primitive boxing and two intermediate allocations per product decode
 - **Branchless product encoding** — every field is unconditionally written in a straight-line sequence: write-key, write-value, write-key, write-value. No per-field conditional checks
 
-This brings sanely-jsoniter to **109% of jsoniter-scala native on decode** and **107% on encode** — surpassing native on both axes while maintaining full circe wire compatibility, with 89–96% less allocation than circe-jawn.
+This brings sanely-jsoniter to **within ~10% of jsoniter-scala native** on both reads and writes — competitive with native performance while maintaining full circe wire compatibility, with 89–96% less allocation than circe-jawn.
 
 <details>
-<summary>Why sanely-jsoniter is faster than jsoniter-scala native</summary>
+<summary>Why sanely-jsoniter is competitive with jsoniter-scala native</summary>
 
-**Writes**: sanely-jsoniter surpasses jsoniter-scala native on writes despite producing more output (1414 vs 1394 bytes). jsoniter-scala's default configuration (`transientNone`, `transientEmpty`, `transientDefault` all enabled) generates per-field conditional branches. sanely-jsoniter writes every field unconditionally — the circe format requires `null` for `None` and always includes all fields. The macro emits a branchless straight-line sequence. Fewer branches means the CPU pipeline stays full and the JIT compiler can optimize more aggressively.
+**Writes**: jsoniter-scala's default configuration (`transientNone`, `transientEmpty`, `transientDefault` all enabled) generates per-field conditional branches. sanely-jsoniter writes every field unconditionally — the circe format requires `null` for `None` and always includes all fields. The macro emits a branchless straight-line sequence. On some architectures (e.g. Apple Silicon), this gives sanely-jsoniter an edge; on others (e.g. x86 CI runners), jsoniter-scala is ~11% faster on writes. The difference is small and architecture-dependent.
 
-**Reads**: Both use the same direct constructor pattern (`new P(f0, f1, ...)`), typed locals, and hash-based field dispatch. sanely-jsoniter's simpler field semantics (no transient/default field skipping, no `transientEmpty` checks during decode) means fewer branches in the hot loop. The circe format always includes all fields, so the decoder never needs to check for missing-field-with-default scenarios at the jsoniter-scala level.
+**Reads**: Both use the same direct constructor pattern (`new P(f0, f1, ...)`), typed locals, and hash-based field dispatch. sanely-jsoniter's simpler field semantics (no transient/default field skipping, no `transientEmpty` checks during decode) means fewer branches in the hot loop. Performance is within a few percent of each other.
 </details>
 
 ## Compatibility
