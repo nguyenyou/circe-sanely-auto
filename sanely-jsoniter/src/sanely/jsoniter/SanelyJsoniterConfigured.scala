@@ -630,7 +630,7 @@ object SanelyJsoniterConfigured:
         case None => ()
 
       if !negativeBuiltinCache.contains(cacheKey) then
-        tryResolveBuiltin[T](dealiased) match
+        tryResolveBuiltin[T](dealiased, Some(selfRef)) match
           case Some(codec) =>
             exprCache(cacheKey) = codec
             return codec
@@ -662,7 +662,7 @@ object SanelyJsoniterConfigured:
 
     // === Builtin type resolution ===
 
-    private def tryResolveBuiltin[T: Type](dealiased: TypeRepr): Option[Expr[JsonValueCodec[T]]] =
+    private def tryResolveBuiltin[T: Type](dealiased: TypeRepr, selfRefOpt: Option[Expr[JsonValueCodec[A]]] = None): Option[Expr[JsonValueCodec[T]]] =
       resolvePrimCodec(dealiased).map(_.asInstanceOf[Expr[JsonValueCodec[T]]]).orElse {
         dealiased match
           case AppliedType(tycon, List(arg)) =>
@@ -680,10 +680,18 @@ object SanelyJsoniterConfigured:
             }.orElse {
               arg.asType match
                 case '[a] =>
-                  tryResolveBuiltin[a](arg.dealias).map { codec =>
+                  tryResolveBuiltin[a](arg.dealias, selfRefOpt).map { codec =>
                     exprCache(argKey) = codec
                     codec
                   }
+            }.orElse {
+              selfRefOpt.flatMap { selfRef =>
+                arg.asType match
+                  case '[a] =>
+                    val codec = resolveOneCodec[a](selfRef)
+                    exprCache(argKey) = codec
+                    Some(codec)
+              }
             }
             innerResolved.flatMap { innerCodec =>
               arg.asType match
@@ -706,10 +714,18 @@ object SanelyJsoniterConfigured:
             }.orElse {
               valArg.asType match
                 case '[v] =>
-                  tryResolveBuiltin[v](valArg.dealias).map { codec =>
+                  tryResolveBuiltin[v](valArg.dealias, selfRefOpt).map { codec =>
                     exprCache(valKey) = codec
                     codec
                   }
+            }.orElse {
+              selfRefOpt.flatMap { selfRef =>
+                valArg.asType match
+                  case '[v] =>
+                    val codec = resolveOneCodec[v](selfRef)
+                    exprCache(valKey) = codec
+                    Some(codec)
+              }
             }
             valResolved.flatMap { valCodec =>
               valArg.asType match
@@ -741,10 +757,18 @@ object SanelyJsoniterConfigured:
               }.orElse {
                 arg.asType match
                   case '[a] =>
-                    tryResolveBuiltin[a](arg.dealias).map { codec =>
+                    tryResolveBuiltin[a](arg.dealias, selfRefOpt).map { codec =>
                       exprCache(argKey) = codec
                       codec: Expr[JsonValueCodec[?]]
                     }
+              }.orElse {
+                selfRefOpt.flatMap { selfRef =>
+                  arg.asType match
+                    case '[a] =>
+                      val codec = resolveOneCodec[a](selfRef)
+                      exprCache(argKey) = codec
+                      Some(codec: Expr[JsonValueCodec[?]])
+                }
               }
             (resolveArg(leftArg), resolveArg(rightArg)) match
               case (Some(lc), Some(rc)) =>
