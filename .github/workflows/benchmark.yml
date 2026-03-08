@@ -206,10 +206,87 @@ jobs:
           name: macro-profile-configured
           path: macro-profile-configured.txt
 
+  peak-rss:
+    name: peak-rss
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.ref }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Warm up Mill daemon
+        run: ./mill sanely.jvm.compile >/dev/null 2>/dev/null
+      - name: Measure Peak RSS
+        run: |
+          measure_rss() {
+            local module="$1" clean_dir="$2"
+            rm -rf "$clean_dir"
+            /usr/bin/time -v ./mill "$module" > /dev/null 2> /tmp/time-output.txt
+            grep "Maximum resident set size" /tmp/time-output.txt | awk '{print $NF}'
+          }
+
+          {
+            RSS=$(measure_rss "benchmark.sanely.compile" "out/benchmark/sanely")
+            echo "sanely-auto (auto): $RSS KB"
+
+            RSS=$(measure_rss "benchmark.generic.compile" "out/benchmark/generic")
+            echo "circe-generic (auto): $RSS KB"
+
+            RSS=$(measure_rss "benchmark-configured.sanely.compile" "out/benchmark-configured/sanely")
+            echo "sanely-auto (configured): $RSS KB"
+
+            RSS=$(measure_rss "benchmark-configured.generic.compile" "out/benchmark-configured/generic")
+            echo "circe-generic (configured): $RSS KB"
+          } | tee peak-rss.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: peak-rss
+          path: peak-rss.txt
+
+  bytecode-impact:
+    name: bytecode-impact
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.ref }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Compile and measure bytecode
+        run: |
+          # Compile all benchmark modules
+          ./mill benchmark.sanely.compile benchmark.generic.compile \
+                 benchmark-configured.sanely.compile benchmark-configured.generic.compile
+
+          measure_bytecode() {
+            local label="$1" classes_dir="$2"
+            local bytes
+            bytes=$(find "$classes_dir" -name '*.class' -exec stat --format='%s' {} + 2>/dev/null | awk '{s+=$1} END {print s}')
+            echo "$label: $bytes bytes ($(echo "scale=1; $bytes / 1024" | bc) KB)"
+          }
+
+          {
+            measure_bytecode "sanely-auto (auto)" "out/benchmark/sanely/compile.dest/classes"
+            measure_bytecode "circe-generic (auto)" "out/benchmark/generic/compile.dest/classes"
+            measure_bytecode "sanely-auto (configured)" "out/benchmark-configured/sanely/compile.dest/classes"
+            measure_bytecode "circe-generic (configured)" "out/benchmark-configured/generic/compile.dest/classes"
+          } 2>&1 | tee bytecode-impact.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bytecode-impact
+          path: bytecode-impact.txt
+
   # ── Post-release: accumulate results in BENCHMARK.md ──
   update-benchmark-md:
     name: Update BENCHMARK.md
-    needs: [setup, compile-auto, compile-configured, runtime, macro-profile-auto, macro-profile-configured]
+    needs: [setup, compile-auto, compile-configured, runtime, macro-profile-auto, macro-profile-configured, peak-rss, bytecode-impact]
     if: needs.setup.outputs.mode == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -237,35 +314,7 @@ jobs:
             echo ""
             echo "**Date:** $DATE | **SHA:** \`${SHA:0:7}\`"
             echo ""
-            echo "### Compile Time — Auto Derivation"
-            echo ""
-            echo '```'
-            cat results/compile-auto/*.txt
-            echo '```'
-            echo ""
-            echo "### Compile Time — Configured Derivation"
-            echo ""
-            echo '```'
-            cat results/compile-configured/*.txt
-            echo '```'
-            echo ""
-            echo "### Runtime Performance"
-            echo ""
-            echo '```'
-            cat results/runtime/*.txt
-            echo '```'
-            echo ""
-            echo "### Macro Profile — Auto"
-            echo ""
-            echo '```'
-            cat results/macro-profile-auto/*.txt
-            echo '```'
-            echo ""
-            echo "### Macro Profile — Configured"
-            echo ""
-            echo '```'
-            cat results/macro-profile-configured/*.txt
-            echo '```'
+            python3 scripts/summarize_benchmark.py results
           } > new-section.md
 
       - name: Update BENCHMARK.md
@@ -307,32 +356,25 @@ jobs:
           if [ -n "$EXISTING" ]; then
             echo "PR #$EXISTING already exists — updated via force push"
           else
-            cat > /tmp/pr-body.md <<'BODY'
-          Automated benchmark results. Merge to accumulate in `BENCHMARK.md`.
-
-          **Contents:**
-          - Compile time — auto derivation (~300 types)
-          - Compile time — configured derivation (~230 types)
-          - Runtime performance (circe-jawn vs circe+jsoniter vs jsoniter-scala)
-          - Macro profile — auto derivation
-          - Macro profile — configured derivation
-          BODY
-
             gh pr create \
               --title "Benchmark results for $VERSION" \
-              --body-file /tmp/pr-body.md \
+              --body "Automated benchmark results. Merge to accumulate in BENCHMARK.md." \
               --base main
           fi
 
   # ── PR comment: post results on the pull request ──
   post-pr-comment:
     name: Post PR comment
-    needs: [setup, compile-auto, compile-configured, runtime, macro-profile-auto, macro-profile-configured]
+    needs: [setup, compile-auto, compile-configured, runtime, macro-profile-auto, macro-profile-configured, peak-rss, bytecode-impact]
     if: needs.setup.outputs.mode == 'pr'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.ref }}
+
       - name: Download all results
         uses: actions/download-artifact@v4
         with:
@@ -350,45 +392,7 @@ jobs:
             echo ""
             echo "**SHA:** \`${SHA:0:7}\` | **Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC') | **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
             echo ""
-            echo "<details>"
-            echo "<summary>Compile Time — Auto Derivation</summary>"
-            echo ""
-            echo '```'
-            cat results/compile-auto/*.txt
-            echo '```'
-            echo "</details>"
-            echo ""
-            echo "<details>"
-            echo "<summary>Compile Time — Configured Derivation</summary>"
-            echo ""
-            echo '```'
-            cat results/compile-configured/*.txt
-            echo '```'
-            echo "</details>"
-            echo ""
-            echo "<details>"
-            echo "<summary>Runtime Performance</summary>"
-            echo ""
-            echo '```'
-            cat results/runtime/*.txt
-            echo '```'
-            echo "</details>"
-            echo ""
-            echo "<details>"
-            echo "<summary>Macro Profile — Auto</summary>"
-            echo ""
-            echo '```'
-            cat results/macro-profile-auto/*.txt
-            echo '```'
-            echo "</details>"
-            echo ""
-            echo "<details>"
-            echo "<summary>Macro Profile — Configured</summary>"
-            echo ""
-            echo '```'
-            cat results/macro-profile-configured/*.txt
-            echo '```'
-            echo "</details>"
+            python3 scripts/summarize_benchmark.py results
           } > /tmp/comment-body.md
 
           gh pr comment "$PR" --body-file /tmp/comment-body.md
