@@ -55,6 +55,9 @@ case class NestedContainers(
   optList: Option[List[Int]]
 )
 
+// IndexedSeq fields (#146)
+case class WithIndexedSeq(ids: IndexedSeq[Int], names: IndexedSeq[String])
+
 // Field name that needs JSON escaping
 case class QuotedFieldName(`a"b`: String, `c\\d`: String)
 
@@ -923,6 +926,57 @@ object CompatEdgeCaseTest extends TestSuite:
       // circe -> jsoniter
       val cJson = v.asJson.noSpaces
       assert(readFromString[NestedContainers](cJson) == v)
+    }
+
+    test("IndexedSeq - roundtrip") {
+      given JsonValueCodec[WithIndexedSeq] = deriveJsoniterCodec
+      val v = WithIndexedSeq(IndexedSeq(1, 2, 3), IndexedSeq("a", "b"))
+      val decoded = roundtrip(v)
+      assert(decoded == v)
+    }
+
+    test("IndexedSeq - empty") {
+      given JsonValueCodec[WithIndexedSeq] = deriveJsoniterCodec
+      val v = WithIndexedSeq(IndexedSeq.empty, IndexedSeq.empty)
+      val decoded = roundtrip(v)
+      assert(decoded == v)
+    }
+
+    test("IndexedSeq - cross-codec with circe") {
+      import io.circe.generic.semiauto.deriveCodec
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+
+      given CirceCodec[WithIndexedSeq] = deriveCodec
+      given JsonValueCodec[WithIndexedSeq] = deriveJsoniterCodec
+
+      val v = WithIndexedSeq(IndexedSeq(10, 20), IndexedSeq("x"))
+
+      // jsoniter -> circe
+      val jJson = writeToString(v)
+      assert(circeDecode[WithIndexedSeq](jJson) == Right(v))
+
+      // circe -> jsoniter
+      val cJson = v.asJson.noSpaces
+      assert(readFromString[WithIndexedSeq](cJson) == v)
+    }
+
+    test("IndexedSeq - configured codec") {
+      case class ConfIS(items: IndexedSeq[Int], label: String)
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[ConfIS] = deriveJsoniterConfiguredCodec
+      val v = ConfIS(IndexedSeq(1, 2, 3), "test")
+      val decoded = roundtrip(v)
+      assert(decoded == v)
+    }
+
+    test("IndexedSeq - nested List[IndexedSeq[Int]]") {
+      case class NestedIS(data: List[IndexedSeq[Int]])
+      given JsonValueCodec[NestedIS] = deriveJsoniterCodec
+      val v = NestedIS(List(IndexedSeq(1, 2), IndexedSeq(3)))
+      val decoded = roundtrip(v)
+      assert(decoded == v)
     }
 
     test("field-order - decode with reversed field order") {
