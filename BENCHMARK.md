@@ -1,6 +1,8 @@
 # Benchmark History
 
-Automated benchmarks run on `ubuntu-latest` after each release.
+Automated benchmarks run on `ubuntu-latest` (GitHub Actions shared runners) after each release.
+
+**Note on CI vs local numbers:** Shared runners have noisy neighbors, no CPU pinning, and variable clock speeds. Absolute throughput is ~50% lower than dedicated hardware. **Ratios between libraries** (e.g. sanely-jsoniter vs circe-jawn) are the meaningful metric — they remain stable across environments. The README reports numbers from a dedicated Apple M3 Max; these CI results track regressions between releases.
 
 <!-- BENCHMARK ENTRIES -->
 
