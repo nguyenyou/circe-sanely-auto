@@ -266,6 +266,51 @@ object SanelyJsoniter:
 
     // === Sum derivation ===
 
+    /** Generate charBuf-based dispatch for sum type decode (non-configured).
+      * Labels are compile-time known strings. Uses linear chain for ≤8 variants / ≤64 total chars,
+      * hash dispatch for larger ADTs.
+      */
+    private def generateSumDecodeBody[S: Type](
+      inExpr: Expr[JsonReader],
+      codecsExpr: Expr[Array[JsonValueCodec[Any]]],
+      variants: List[(String, Int)] // (label, codec index)
+    ): Expr[S] =
+      val allLabels = variants.map(_._1)
+      val errorMsg = Expr("expected one of: " + allLabels.mkString(", "))
+      val errorTerm = '{ $inExpr.decodeError($errorMsg) }.asTerm
+
+      val owner = Symbol.spliceOwner
+      val klSym = Symbol.newVal(owner, "_kl", TypeRepr.of[Int], Flags.EmptyFlags, Symbol.noSymbol)
+      val klDef = ValDef(klSym, Some('{ $inExpr.readKeyAsCharBuf() }.asTerm))
+
+      def buildDecodeBranch(label: String, codecIdx: Int, elseBranch: Term): Term =
+        val cond = '{ $inExpr.isCharBufEqualsTo(${Ref(klSym).asExprOf[Int]}, ${Expr(label)}) }.asTerm
+        val idxE = Expr(codecIdx)
+        val decode = '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[S] }.asTerm
+        If(cond, decode, elseBranch)
+
+      val totalChars = allLabels.foldLeft(0)(_ + _.length)
+      val dispatchTerm: Term =
+        if variants.size <= 8 && totalChars <= 64 then
+          variants.foldRight[Term](errorTerm) { case ((label, idx), elseBranch) =>
+            buildDecodeBranch(label, idx, elseBranch)
+          }
+        else
+          val hashOf = (v: (String, Int)) =>
+            JsonReader.toHashCode(v._1.toCharArray, v._1.length)
+          val grouped = groupByOrdered(variants)(hashOf)
+          val cases = grouped.map { case (hash, fields) =>
+            val chain = fields.foldRight[Term](errorTerm) { case ((label, idx), elseBranch) =>
+              buildDecodeBranch(label, idx, elseBranch)
+            }
+            CaseDef(Literal(IntConstant(hash)), None, chain)
+          }
+          val defaultCase = CaseDef(Wildcard(), None, errorTerm)
+          val scrutinee = '{ $inExpr.charBufToHashCode(${Ref(klSym).asExprOf[Int]}): @scala.annotation.switch }.asTerm
+          Match(scrutinee, (cases :+ defaultCase).toList)
+
+      Block(List(klDef), dispatchTerm).asExprOf[S]
+
     private def deriveSum[S: Type, Types: Type, Labels: Type](
       mirror: Expr[Mirror.SumOf[S]],
       selfRef: Expr[JsonValueCodec[A]]
@@ -290,7 +335,11 @@ object SanelyJsoniter:
             case '[t] => '{ ${codec.asInstanceOf[Expr[JsonValueCodec[t]]]}.asInstanceOf[JsonValueCodec[Any]] }
         }
         val codecsArrayExpr = '{ Array(${Varargs(codecExprs)}*) }
-        '{ JsoniterRuntime.sumCodec[S]($mirror, $labelsExpr, () => $codecsArrayExpr) }
+        val variants = cases.zipWithIndex.map { case ((label, _, _), idx) => (label, idx) }
+        val decodeFnExpr = '{ (in: JsonReader, codecs: Array[JsonValueCodec[Any]]) =>
+          ${ generateSumDecodeBody[S]('in, 'codecs, variants) }
+        }
+        '{ JsoniterRuntime.sumCodec[S]($mirror, $labelsExpr, () => $codecsArrayExpr, $decodeFnExpr) }
       else
         // Build direct codec array (for encoding — includes sub-trait sum codecs)
         val directLabelsExpr = Expr(cases.map(_._1).toArray)
@@ -317,9 +366,14 @@ object SanelyJsoniter:
         }
         val allLeafCodecsArrayExpr = '{ Array(${Varargs(allLeafCodecExprs)}*) }
 
+        val allLeafVariants = allLeaves.zipWithIndex.map { case ((label, _, _), idx) => (label, idx) }
+        val decodeFnExpr = '{ (in: JsonReader, codecs: Array[JsonValueCodec[Any]]) =>
+          ${ generateSumDecodeBody[S]('in, 'codecs, allLeafVariants) }
+        }
+
         '{ JsoniterRuntime.sumCodecWithSubTraits[S](
           $mirror, $directLabelsExpr, $isSubTraitExpr, () => $directCodecsArrayExpr,
-          $allLeafLabelsExpr, () => $allLeafCodecsArrayExpr) }
+          $allLeafLabelsExpr, () => $allLeafCodecsArrayExpr, $decodeFnExpr) }
 
     // === Sub-trait leaf collection ===
 
