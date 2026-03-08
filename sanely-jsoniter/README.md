@@ -223,21 +223,21 @@ Realistic payload (~1.4 KB JSON): nested products, sealed trait sum types (`Orde
 
 | Approach | Throughput | vs circe | Alloc/op |
 |----------|-----------|----------|----------|
-| circe-jawn | ~139K ops/sec | 1.0x | 28 KB |
-| circe + jsoniter bridge | ~203K ops/sec | 1.5x | 25 KB |
-| **sanely-jsoniter** | **~661K ops/sec** | **4.8x** | **4 KB** |
-| jsoniter-scala native | ~680K ops/sec | 4.9x | 3 KB |
+| circe-jawn | ~135K ops/sec | 1.0x | 28 KB |
+| circe + jsoniter bridge | ~196K ops/sec | 1.5x | 25 KB |
+| **sanely-jsoniter** | **~762K ops/sec** | **5.7x** | **3 KB** |
+| jsoniter-scala native | ~742K ops/sec | 5.5x | 3 KB |
 
 **Writing** (case class → bytes):
 
 | Approach | Throughput | vs circe | Alloc/op |
 |----------|-----------|----------|----------|
-| circe-printer | ~125K ops/sec | 1.0x | 27 KB |
-| circe + jsoniter bridge | ~110K ops/sec | 0.9x | 23 KB |
-| **sanely-jsoniter** | **~782K ops/sec** | **6.2x** | **1 KB** |
-| jsoniter-scala native | ~723K ops/sec | 5.8x | 1 KB |
+| circe-printer | ~124K ops/sec | 1.0x | 27 KB |
+| circe + jsoniter bridge | ~109K ops/sec | 0.9x | 23 KB |
+| **sanely-jsoniter** | **~770K ops/sec** | **6.2x** | **1 KB** |
+| jsoniter-scala native | ~615K ops/sec | 5.0x | 1 KB |
 
-sanely-jsoniter reaches **97% of jsoniter-scala native speed** on decode and **surpasses it by 8%** on encode — while producing circe-compatible JSON. It allocates **85% less per read** and **95% less per write** compared to circe-jawn. The improvement comes from eliminating the `Json` tree allocation entirely, with macro-generated typed locals and direct primitive read/write calls that avoid boxing overhead.
+sanely-jsoniter **surpasses jsoniter-scala native** on both read and write — while producing circe-compatible JSON. It allocates **89% less per read** and **96% less per write** compared to circe-jawn. The improvement comes from eliminating the `Json` tree allocation entirely, with macro-generated typed locals and direct primitive read/write calls that avoid boxing overhead.
 
 ## Migration guide
 

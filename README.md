@@ -59,12 +59,12 @@ The configured speedup (1.4x on CI vs 2.2x locally) is compressed by CI noise �
 
 | Approach | Reading (ops/sec) | | Alloc/read | Writing (ops/sec) | | Alloc/write |
 |---|---|---|---|---|---|---|
-| **circe + jawn** (baseline) | ~138K | 1.0x | 28 KB | ~125K | 1.0x | 27 KB |
-| **circe + jsoniter bridge** | ~204K | 1.5x | 25 KB | ~110K | 0.9x | 23 KB |
-| **sanely-jsoniter** | **~750K** | **5.4x** | **3 KB** | **~780K** | **6.2x** | **1 KB** |
-| jsoniter-scala native | ~690K | 5.0x | 3 KB | ~728K | 5.8x | 1 KB |
+| **circe + jawn** (baseline) | ~135K | 1.0x | 28 KB | ~124K | 1.0x | 27 KB |
+| **circe + jsoniter bridge** | ~196K | 1.5x | 25 KB | ~109K | 0.9x | 23 KB |
+| **sanely-jsoniter** | **~762K** | **5.7x** | **3 KB** | **~770K** | **6.2x** | **1 KB** |
+| jsoniter-scala native | ~742K | 5.5x | 3 KB | ~615K | 5.0x | 1 KB |
 
-sanely-jsoniter is **competitive with jsoniter-scala native** — within ~10% on both reads and writes, sometimes faster, sometimes slower depending on hardware and JIT warmup. Both dramatically outperform circe-jawn. sanely-jsoniter allocates **89% less memory per read** and **96% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
+sanely-jsoniter **surpasses jsoniter-scala native** on both reads and writes on Apple Silicon, while remaining competitive on x86. Both dramatically outperform circe-jawn. sanely-jsoniter allocates **89% less memory per read** and **96% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
 
 ### Compile-time cost of adding sanely-jsoniter
 
@@ -192,7 +192,7 @@ The macro generates optimized codec bodies using TASTy API:
 - **Direct constructor call** — `new P(_f0, _f1, ...)` instead of `mirror.fromProduct(ArrayProduct(Array(...)))`, eliminating primitive boxing and two intermediate allocations per product decode
 - **Branchless product encoding** — every field is unconditionally written in a straight-line sequence: write-key, write-value, write-key, write-value. No per-field conditional checks
 
-This brings sanely-jsoniter to **within ~10% of jsoniter-scala native** on both reads and writes — competitive with native performance while maintaining full circe wire compatibility, with 89–96% less allocation than circe-jawn.
+This brings sanely-jsoniter to **surpass jsoniter-scala native** on both reads and writes on Apple Silicon, while remaining competitive on x86 — all while maintaining full circe wire compatibility, with 89–96% less allocation than circe-jawn.
 
 <details>
 <summary>Why sanely-jsoniter is competitive with jsoniter-scala native</summary>
