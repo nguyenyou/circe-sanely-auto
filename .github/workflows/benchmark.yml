@@ -218,14 +218,18 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
-      - name: Warm up Mill daemon
-        run: ./mill sanely.jvm.compile >/dev/null 2>/dev/null
+      - name: Pre-compile dependencies
+        run: |
+          # Pre-compile shared deps so --no-server runs only measure the benchmark module
+          ./mill sanely.jvm.compile >/dev/null 2>/dev/null
+          ./mill benchmark-configured.generic-compat.compile >/dev/null 2>/dev/null
       - name: Measure Peak RSS
         run: |
           measure_rss() {
             local module="$1" clean_dir="$2"
             rm -rf "$clean_dir"
-            /usr/bin/time -v ./mill "$module" > /dev/null 2> /tmp/time-output.txt
+            # --no-server: runs compiler in-process so /usr/bin/time captures actual compiler RSS
+            /usr/bin/time -v ./mill --no-server "$module" > /dev/null 2> /tmp/time-output.txt
             grep "Maximum resident set size" /tmp/time-output.txt | awk '{print $NF}'
           }
 
@@ -261,15 +265,23 @@ jobs:
           java-version: 25
       - name: Compile and measure bytecode
         run: |
-          # Compile all benchmark modules
-          ./mill benchmark.sanely.compile benchmark.generic.compile \
-                 benchmark-configured.sanely.compile benchmark-configured.generic.compile
+          # Compile each module individually to ensure all succeed
+          ./mill benchmark.sanely.compile
+          ./mill benchmark.generic.compile
+          ./mill benchmark-configured.sanely.compile
+          ./mill benchmark-configured.generic.compile
 
           measure_bytecode() {
             local label="$1" classes_dir="$2"
+            if [ ! -d "$classes_dir" ]; then
+              echo "$label: ERROR — classes dir not found at $classes_dir"
+              return
+            fi
             local bytes
-            bytes=$(find "$classes_dir" -name '*.class' -exec stat --format='%s' {} + 2>/dev/null | awk '{s+=$1} END {print s}')
-            echo "$label: $bytes bytes ($(echo "scale=1; $bytes / 1024" | bc) KB)"
+            bytes=$(find "$classes_dir" -name '*.class' -print0 | xargs -0 stat --format='%s' | awk '{s+=$1} END {print s+0}')
+            local kb
+            kb=$(awk "BEGIN {printf \"%.1f\", $bytes / 1024}")
+            echo "$label: $bytes bytes ($kb KB)"
           }
 
           {
