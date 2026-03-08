@@ -665,6 +665,13 @@ object SanelyJsoniter:
           Some('{ Codecs.seq[A]($innerCodec) }.asInstanceOf[Expr[JsonValueCodec[T]]])
         case s if s.endsWith(".IndexedSeq") =>
           Some('{ Codecs.indexedSeq[A]($innerCodec) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+        case s if s.endsWith(".Iterable") =>
+          Some('{ Codecs.iterable[A]($innerCodec) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+        case "scala.Array" =>
+          Expr.summon[scala.reflect.ClassTag[A]] match
+            case Some(ct) =>
+              Some('{ Codecs.array[A]($innerCodec)(using $ct) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+            case None => None
         case _ => None
 
     // === Recursive types ===

@@ -1,6 +1,7 @@
 package sanely.jsoniter
 
 import com.github.plokhotnyuk.jsoniter_scala.core.*
+import scala.reflect.ClassTag
 
 /** Built-in JsonValueCodec instances for primitive and common types.
   * Used internally by the macro — not intended for direct user consumption.
@@ -149,6 +150,41 @@ object Codecs:
         out.writeArrayEnd()
     def decodeValue(in: JsonReader, default: IndexedSeq[T]): IndexedSeq[T] =
       vector(inner).decodeValue(in, if default == null then null else default.toVector)
+
+  def iterable[T](inner: JsonValueCodec[T]): JsonValueCodec[Iterable[T]] = new JsonValueCodec[Iterable[T]]:
+    val nullValue: Iterable[T] = null
+    def encodeValue(x: Iterable[T], out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeArrayStart()
+        x.foreach(e => inner.encodeValue(e, out))
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: Iterable[T]): Iterable[T] =
+      list(inner).decodeValue(in, if default == null then null else default.toList)
+
+  def array[T](inner: JsonValueCodec[T])(using ct: ClassTag[T]): JsonValueCodec[Array[T]] = new JsonValueCodec[Array[T]]:
+    val nullValue: Array[T] = null
+    def encodeValue(x: Array[T], out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeArrayStart()
+        var i = 0
+        while i < x.length do
+          inner.encodeValue(x(i), out)
+          i += 1
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: Array[T]): Array[T] =
+      if !in.isNextToken('[') then
+        in.readNullOrTokenError(default, '[')
+      else
+        val buf = Array.newBuilder[T]
+        if !in.isNextToken(']') then
+          in.rollbackToken()
+          buf += inner.decodeValue(in, inner.nullValue)
+          while in.isNextToken(',') do
+            buf += inner.decodeValue(in, inner.nullValue)
+          if !in.isCurrentToken(']') then in.arrayEndOrCommaError()
+        buf.result()
 
   def set[T](inner: JsonValueCodec[T]): JsonValueCodec[Set[T]] = new JsonValueCodec[Set[T]]:
     val nullValue: Set[T] = null

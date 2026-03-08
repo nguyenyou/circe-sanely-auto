@@ -58,6 +58,13 @@ case class NestedContainers(
 // IndexedSeq fields (#146)
 case class WithIndexedSeq(ids: IndexedSeq[Int], names: IndexedSeq[String])
 
+// Iterable and Array fields (#151)
+case class WithIterable(items: Iterable[Int], labels: Iterable[String])
+case class WithArray(nums: Array[Int], words: Array[String]):
+  override def equals(that: Any): Boolean = that match
+    case o: WithArray => java.util.Arrays.equals(nums, o.nums) && java.util.Arrays.equals(words.asInstanceOf[Array[AnyRef]], o.words.asInstanceOf[Array[AnyRef]])
+    case _ => false
+
 // Field name that needs JSON escaping
 case class QuotedFieldName(`a"b`: String, `c\\d`: String)
 
@@ -977,6 +984,120 @@ object CompatEdgeCaseTest extends TestSuite:
       val v = NestedIS(List(IndexedSeq(1, 2), IndexedSeq(3)))
       val decoded = roundtrip(v)
       assert(decoded == v)
+    }
+
+    test("Iterable - roundtrip") {
+      given JsonValueCodec[WithIterable] = deriveJsoniterCodec
+      val v = WithIterable(List(1, 2, 3), List("a", "b"))
+      val decoded = roundtrip(v)
+      assert(decoded.items.toList == v.items.toList)
+      assert(decoded.labels.toList == v.labels.toList)
+    }
+
+    test("Iterable - empty") {
+      given JsonValueCodec[WithIterable] = deriveJsoniterCodec
+      val v = WithIterable(Nil, Nil)
+      val decoded = roundtrip(v)
+      assert(decoded.items.toList == Nil)
+      assert(decoded.labels.toList == Nil)
+    }
+
+    test("Iterable - cross-codec with circe") {
+      import io.circe.generic.semiauto.deriveCodec
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+
+      given CirceCodec[WithIterable] = deriveCodec
+      given JsonValueCodec[WithIterable] = deriveJsoniterCodec
+
+      val v = WithIterable(List(10, 20), List("x"))
+
+      // jsoniter -> circe
+      val jJson = writeToString(v)
+      val circeResult = circeDecode[WithIterable](jJson)
+      assert(circeResult.isRight)
+      assert(circeResult.toOption.get.items.toList == v.items.toList)
+
+      // circe -> jsoniter
+      val cJson = v.asJson.noSpaces
+      val jResult = readFromString[WithIterable](cJson)
+      assert(jResult.items.toList == v.items.toList)
+    }
+
+    test("Iterable - configured codec") {
+      case class ConfIt(items: Iterable[Int], label: String)
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[ConfIt] = deriveJsoniterConfiguredCodec
+      val v = ConfIt(List(1, 2, 3), "test")
+      val json = writeToString(v)
+      val decoded = readFromString[ConfIt](json)
+      assert(decoded.items.toList == v.items.toList)
+      assert(decoded.label == v.label)
+    }
+
+    test("Array - roundtrip") {
+      given JsonValueCodec[WithArray] = deriveJsoniterCodec
+      val v = WithArray(Array(1, 2, 3), Array("a", "b"))
+      val json = writeToString(v)
+      val decoded = readFromString[WithArray](json)
+      assert(decoded == v)
+    }
+
+    test("Array - empty") {
+      given JsonValueCodec[WithArray] = deriveJsoniterCodec
+      val v = WithArray(Array.empty[Int], Array.empty[String])
+      val json = writeToString(v)
+      val decoded = readFromString[WithArray](json)
+      assert(decoded == v)
+    }
+
+    test("Array - cross-codec with circe") {
+      import io.circe.generic.semiauto.{deriveEncoder, deriveDecoder}
+      import io.circe.{Encoder, Decoder, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+
+      given Encoder[WithArray] = deriveEncoder
+      given Decoder[WithArray] = deriveDecoder
+      given JsonValueCodec[WithArray] = deriveJsoniterCodec
+
+      val v = WithArray(Array(10, 20), Array("x"))
+
+      // jsoniter -> circe
+      val jJson = writeToString(v)
+      val circeResult = circeDecode[WithArray](jJson)
+      assert(circeResult.isRight)
+      assert(circeResult.toOption.get == v)
+
+      // circe -> jsoniter
+      val cJson = v.asJson.noSpaces
+      val jResult = readFromString[WithArray](cJson)
+      assert(jResult == v)
+    }
+
+    test("Array - configured codec") {
+      case class ConfArr(items: Array[Int], label: String)
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[ConfArr] = deriveJsoniterConfiguredCodec
+      val v = ConfArr(Array(1, 2, 3), "test")
+      val json = writeToString(v)
+      val decoded = readFromString[ConfArr](json)
+      assert(java.util.Arrays.equals(decoded.items, v.items))
+      assert(decoded.label == v.label)
+    }
+
+    test("Array - nested Option[Array[Int]]") {
+      case class NestedArr(data: Option[Array[Int]])
+      given JsonValueCodec[NestedArr] = deriveJsoniterCodec
+      val v = NestedArr(Some(Array(1, 2, 3)))
+      val json = writeToString(v)
+      val decoded = readFromString[NestedArr](json)
+      assert(java.util.Arrays.equals(decoded.data.get, v.data.get))
+
+      val empty = NestedArr(None)
+      val decoded2 = roundtrip(empty)
+      assert(decoded2.data == None)
     }
 
     test("field-order - decode with reversed field order") {
