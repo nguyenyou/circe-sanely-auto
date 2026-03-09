@@ -215,6 +215,67 @@ This means you can adopt sanely-jsoniter on the hot path and keep circe everywhe
 
 Cross-codec tests encode values with sanely-jsoniter and decode with circe (and vice versa), asserting identical results for products, sum types, options, and all primitive types. There are no upstream tests from jsoniter-scala — since we intentionally diverge from jsoniter-scala's format, their tests don't apply.
 
+## Comparison with other jsoniter-scala circe approaches
+
+jsoniter-scala itself offers two ways to work with circe. Understanding how they differ from sanely-jsoniter helps you pick the right tool.
+
+### 1. `jsoniter-scala-circe` — the bridge approach
+
+The `jsoniter-scala-circe` module provides a `JsonValueCodec[Json]` — a jsoniter codec for circe's `Json` AST type. It replaces circe's JSON **parser** (jawn) with jsoniter's faster parser, but you still use circe's `Encoder[T]`/`Decoder[T]` for domain objects:
+
+```
+bytes → jsoniter parser → circe Json AST → circe Decoder[T] → T
+T → circe Encoder[T] → circe Json AST → jsoniter serializer → bytes
+```
+
+This is the "circe + jsoniter bridge" row in the benchmark table above (~1.5x read, ~0.9x write vs circe-jawn). Near-zero migration effort — you just swap the parser — but limited gains because the intermediate `Json` tree is still allocated on every request.
+
+### 2. `JsonCodecMaker.makeCirceLike` — native codec with circe-ish defaults
+
+jsoniter-scala's own `JsonCodecMaker` has `makeCirceLike` and `makeCirceLikeSnakeCased` convenience methods. These are jsoniter's native codec derivation with flags tuned to approximate circe's **default** encoding:
+
+```scala
+// Equivalent to:
+JsonCodecMaker.make(
+  CodecMakerConfig
+    .withTransientEmpty(false)      // serialize empty collections (circe always does)
+    .withTransientDefault(false)    // serialize fields matching defaults (circe always does)
+    .withTransientNone(false)       // serialize None as null (circe always does)
+    .withDiscriminatorFieldName(None)  // external tagging for ADTs (circe's default)
+    .withCirceLikeObjectEncoding(true) // case objects as {"Name":{}} (circe's format)
+)
+```
+
+For simple case classes and sealed traits with **no configuration**, this produces compatible JSON. But it covers only circe's default encoding — not the full configuration surface.
+
+### 3. sanely-jsoniter — full circe derivation engine
+
+sanely-jsoniter mirrors **all** of circe's configured derivation modes, not just the defaults.
+
+| Capability | `jsoniter-scala-circe` | `makeCirceLike` | **sanely-jsoniter** |
+|---|---|---|---|
+| **Approach** | Swap parser, keep circe codecs | Native jsoniter codec, circe-ish flags | Full circe derivation → jsoniter codec |
+| **Codec type** | `JsonValueCodec[Json]` | `JsonValueCodec[T]` | `JsonValueCodec[T]` |
+| **Still uses circe codecs?** | Yes | No | No |
+| **Default encoding** | N/A (delegates to circe) | Yes | Yes |
+| **`withDefaults`** | N/A | No | Yes |
+| **`withDiscriminator("type")`** | N/A | No (hardcoded to `None`) | Yes |
+| **`withSnakeCaseMemberNames`** | N/A | Only via `makeCirceLikeSnakeCased` | Yes (+ arbitrary transforms) |
+| **`withDropNullValues`** | N/A | No | Yes |
+| **`withStrictDecoding`** | N/A | No | Yes |
+| **Enum string codecs** (`"Red"`) | N/A | No | Yes |
+| **Value enum codecs** | N/A | No | Yes |
+| **Circe-identical error messages** | N/A | No | Yes |
+| **`derives` syntax** | No | No | Yes |
+| **Performance vs circe-jawn** | ~1.5x | ~5-6x | ~5-6x |
+| **Migration effort** | Near-zero | Per-type | Per-type |
+
+**When to use which:**
+
+- **`jsoniter-scala-circe`** — Quick win with no code changes. You keep all your circe codecs and just get a faster JSON parser. Good first step.
+- **`makeCirceLike`** — If you're writing new code that only needs circe's default encoding format (no `Configuration`, no `withDefaults`, no discriminator). You get jsoniter-native speed with circe-compatible JSON.
+- **sanely-jsoniter** — If your codebase uses circe's configured derivation (`withDefaults`, `withDiscriminator`, `withSnakeCaseMemberNames`, etc.) and you need guaranteed wire compatibility across all configuration combinations. This is the only option that mirrors circe's full derivation surface.
+
 ## Performance
 
 Realistic payload (~1.4 KB JSON): nested products, sealed trait sum types (`OrderStatus`), optional fields, lists. Run via `bash bench-runtime.sh`.
