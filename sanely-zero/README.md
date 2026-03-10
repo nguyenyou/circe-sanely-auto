@@ -43,3 +43,7 @@ Early research phase. See:
 - [ANALYSIS.md](ANALYSIS.md) — competitive analysis vs jsoniter-scala, 4-phase implementation plan
 - [RESEARCH.md](RESEARCH.md) — performance techniques from 12 JSON libraries across the ecosystem
 - [MASCOT.md](MASCOT.md) — project mascot: Rei (零), the Zero Swift
+
+## Vibe coded
+
+This project is 100% vibe coded with [Claude Code](https://claude.com/claude-code) using the Opus 4.6 model. I (the author) barely understand any of the techniques or knowledge used in the code — it is the AI who read all the code across jsoniter-scala, zio-blocks, DSL-JSON, kotlinx.serialization, and other projects to learn the tricks and apply them here.
