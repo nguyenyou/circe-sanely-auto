@@ -104,283 +104,97 @@ jsoniter-scala's `JsonCodecMaker.make` supports features we don't need:
 
 We write every field unconditionally (circe's format). Fewer branches, simpler generated code, better JIT optimization.
 
-## What a custom parser/writer would add
+## The architecture: port, keep, and rewrite
 
-### The API surface to replace
+Three layers, three strategies:
 
-sanely-jsoniter calls ~25 methods on `JsonReader` and ~12 methods on `JsonWriter`. These are the operations:
+1. **PORT from jsoniter-scala** (MIT licensed) — low-level parsing/writing primitives. Proven code, proven tests. We take correctness for free.
+2. **KEEP from sanely-jsoniter** — the codec-layer macro techniques that already beat jsoniter-scala. These carry over unchanged.
+3. **REWRITE for performance** — new optimizations only possible because we own BOTH the macro AND the parser. This is where we pull ahead.
 
-**JsonReader (parsing bytes → values):**
-- Token navigation: `nextToken()`, `isNextToken(t)`, `isCurrentToken(t)`, `rollbackToken()`
-- Key reading: `readKeyAsCharBuf()`, `readKeyAsString()`
-- Field dispatch: `charBufToHashCode(len)`, `isCharBufEqualsTo(len, s)`
-- Primitives: `readInt()`, `readLong()`, `readDouble()`, `readFloat()`, `readBoolean()`, `readByte()`, `readShort()`, `readChar()`, `readString(default)`, `readBigInt(default)`, `readBigDecimal(default)`
-- Control: `skip()`, `readNullOrError(default, msg)`, `readNullOrTokenError(default, t)`
+### The unified component map
 
-**JsonWriter (values → bytes):**
-- Structure: `writeObjectStart()`, `writeObjectEnd()`, `writeArrayStart()`, `writeArrayEnd()`
-- Keys: `writeKey(s)`, `writeNonEscapedAsciiKey(s)`
-- Values: `writeVal(Int/Long/Double/Float/Boolean/String/BigDecimal/BigInt/Char)`, `writeNull()`
-- Special: `writeRawVal(bytes)` (for pre-serialized JSON)
+| Component | Strategy | Source | Lines | Read impact | Write impact | Why |
+|---|---|---|---|---|---|---|
+| **Integer read (Int/Long)** | PORT | jsoniter `readInt/readLong` | ~80 | — | — | Proven overflow detection, leading zero handling |
+| **Float/Double read** | PORT | jsoniter Eisel-Lemire | ~200 | — | — | Hardest correctness problem; proven ~500-line implementation |
+| **String read + UTF-8** | PORT | jsoniter `parseEncodedString` | ~150 | — | — | UTF-8 validation, escape sequences, surrogate pairs |
+| **BigDecimal/BigInt read** | PORT | jsoniter | ~50 | — | — | Digit/scale limits for DoS prevention |
+| **Boolean/null read** | FRESH | — | ~30 | — | — | Trivial: direct byte comparison |
+| **Field dispatch (charBuf+hash)** | PORT | jsoniter | ~100 | — | — | `charBufToHashCode`, `isCharBufEqualsTo` |
+| **Token navigation** | PORT+SIMPLIFY | jsoniter | ~100 | — | — | Strip streaming, keep `byte[]` path only |
+| **skip()** | PORT | jsoniter | ~80 | — | — | Skip unknown fields: objects, arrays, strings, numbers |
+| **Buffer management** | PORT+SIMPLIFY | jsoniter | ~100 | — | — | Strip `InputStream`, keep grow/pool logic |
+| **Primitive write (Int/Long/...)** | PORT | jsoniter `writeVal` | ~200 | — | — | Shortest float/double representation is non-trivial |
+| **String write + escaping** | PORT | jsoniter `writeEncodedString` | ~100 | — | — | UTF-8 encoding, surrogate pair handling |
+| **Structure write (obj/arr)** | FRESH | — | ~50 | — | — | Trivial: `buf(pos) = '{'` |
+| **Error reporting** | FRESH | — | ~80 | — | — | Our own format with byte offset |
+| **Entry points** | FRESH | — | ~50 | — | — | `readFromArray`, `writeToString`, etc. |
+| | | | | | | |
+| **Direct constructor calls** | KEEP | sanely-jsoniter macro | 0 | **+19%** | +2% | Already have: `new P(_f0, _f1, ...)` vs `mirror.fromProduct` |
+| **Typed local variables** | KEEP | sanely-jsoniter macro | 0 | **+5-10%** | — | Already have: unboxed primitives on stack |
+| **Branchless product encoding** | KEEP | sanely-jsoniter macro | 0 | — | **+25%** | Already have: unconditional write-key, write-val sequence |
+| **Hash-based @switch dispatch** | KEEP | sanely-jsoniter macro | 0 | **+5-10%** | — | Already have: compile-time hashes, JVM tableswitch |
+| **Direct primitive I/O** | KEEP | sanely-jsoniter macro | 0 | **+3-5%** | +3-5% | Already have: `in.readInt()` not `codec.decodeValue()` |
+| **Simpler field semantics** | KEEP | sanely-jsoniter macro | 0 | +2-3% | **+5-10%** | No transient/default checks (circe writes all fields) |
+| | | | | | | |
+| **Field-order prediction** | **REWRITE** | NEW | ~100 | **+5-15%** | — | Only with custom parser: skip hash for ordered fields |
+| **Compile-time key bytes** | **REWRITE** | NEW | ~50 | — | **+5-10%** | Only with custom parser: pre-computed `"name":` byte arrays |
+| **Fused key+value parsing** | **REWRITE** | NEW | incl. above | **+2-5%** | — | Only with custom parser: compare key bytes inline |
+| **Eliminated virtual dispatch** | **REWRITE** | NEW (architectural) | 0 | **+2-5%** | +2-5% | No JsonReader/Writer class boundary for JIT to cross |
+| **Pre-sized write buffers** | **REWRITE** | NEW | ~30 | — | **+2-5%** | Macro estimates output size, no grow-and-copy |
+| **Inlined integer parsing** | **REWRITE** | NEW | ~80 | **+3-8%** | — | Macro generates readInt loop directly per field |
 
-For reference, jsoniter-scala's implementation:
-- `JsonReader.scala`: ~4,900 lines
-- `JsonWriter.scala`: ~3,400 lines
+**Subtotals:**
 
-We don't need all of that. We need the subset our macros actually call.
+| Strategy | Lines | Purpose |
+|---|---|---|
+| **PORT** from jsoniter | ~1,090 (~70%) | Correctness foundation — proven parsing/writing |
+| **FRESH** code | ~210 (~14%) | Trivial components — structure, errors, entry points |
+| **KEEP** from sanely-jsoniter | 0 (macro) | Existing codec-layer wins that already beat jsoniter |
+| **REWRITE** for performance | ~260 (~16%) | New optimizations unlocked by owning both macro + parser |
+| **Total** | ~1,560 | |
 
-### Where a custom parser creates new optimization opportunities
+### Where each strategy comes from
 
-#### Opportunity 1: Field-order prediction (reading)
+**PORT** — jsoniter-scala is **MIT licensed** (Copyright 2017 Andriy Plokhotnyuk). We include the notice in source files. We port the ~1,100 lines of parsing/writing logic our macros call, strip the ~6,800 lines we don't need (streaming, pretty-printing, temporal types, UUID, base64, Scala 2 compat).
 
-When we encode an object, fields come out in declaration order. When another instance of our library (or circe) decodes, the fields arrive in declaration order. Today, every field still goes through hash dispatch. A custom reader could:
+**KEEP** — The codec-layer techniques (direct constructors, typed locals, branchless encoding, hash dispatch, direct primitive I/O) are macro-generated and already proven in sanely-jsoniter benchmarks. They carry over unchanged because they're in the macro, not the parser.
+
+**REWRITE** — The ~260 lines of new code are the performance moat. These optimizations are **only possible because we own both the macro AND the parser**:
+
+### Why the REWRITE optimizations can't exist without a custom parser
+
+**Field-order prediction** requires the parser to expose "check if the next key matches this known byte sequence" — a method that doesn't exist in jsoniter's `JsonReader` API. We can't do field-order prediction while calling `readKeyAsCharBuf()` + `charBufToHashCode()` because those always go through the hash path.
 
 ```scala
-// Fast path: check if next key matches the expected field in order
-if (isNextKeyEquals("name")) { _name = readString(null) }  // O(1), no hash
-else if (isNextKeyEquals("age")) { _age = readInt() }       // O(1)
-else { fallbackToHashDispatch() }                           // rare path
+// With custom parser: O(1) ordered check, hash fallback for unordered
+if (reader.isNextKey(KEY_NAME_BYTES)) { _name = reader.readString(null) }
+else { fallbackToHashDispatch(reader) }
 ```
 
-**Expected impact**: eliminates hash computation for >90% of fields in self-produced JSON. For ordered fields, this is a straight comparison of N bytes vs computing a hash over N bytes.
-
-#### Opportunity 2: Fused key+value parsing
-
-Today: read key into charBuf → compute hash → match → read value. With a custom parser:
+**Compile-time key bytes** requires the writer to accept pre-computed `Array[Byte]` for field names — `System.arraycopy(KEY_NAME, 0, buf, pos, 7)` instead of `writeNonEscapedAsciiKey("name")` which re-processes the string on every call. jsoniter's `writeNonEscapedAsciiKey` already skips escaping, but still copies char-by-char from a `String`.
 
 ```scala
-// Can fuse key comparison and value reading into one pass
-// If key bytes are "name":, start reading the string value immediately
-// No intermediate charBuf storage needed
-```
-
-When the macro knows what field it expects next (field-order prediction), the key comparison can be inlined and fused with value reading. The key bytes are known at compile time as byte arrays.
-
-#### Opportunity 3: Fully inlined parsing
-
-jsoniter-scala's `JsonReader` is a class with mutable state (buffer position, charBuf, etc.). Method calls go through virtual dispatch. With a custom parser, the macro can inline the parsing logic directly:
-
-```scala
-// Instead of: in.readInt()
-// Generate:
-var n = 0; var neg = false
-var b = buf(pos); pos += 1
-if (b == '-') { neg = true; b = buf(pos); pos += 1 }
-while (b >= '0' && b <= '9') { n = n * 10 + (b - '0'); b = buf(pos); pos += 1 }
-if (neg) n = -n
-_age = n
-```
-
-JIT already does some of this inlining, but explicit inlining removes the dependency on JIT warmup and eliminates method frame overhead.
-
-#### Opportunity 4: SWAR whitespace scanning
-
-Process 8 bytes at once to skip whitespace (space, tab, newline, carriage return):
-
-```scala
-// Read 8 bytes as a Long, check all at once
-val word = Unsafe.getLong(buf, offset)
-// Bit trick: identify bytes that are whitespace
-val mask = ((word - 0x2121212121212121L) & ~word & 0x8080808080808080L)
-// Count leading whitespace bytes
-val skip = java.lang.Long.numberOfLeadingZeros(mask) >> 3
-```
-
-JSON with pretty-printing or human-formatted input has significant whitespace. Even compact JSON has spaces after colons and commas in some producers. Jumping over whitespace 8 bytes at a time vs one at a time.
-
-#### Opportunity 5: Direct byte-buffer management
-
-jsoniter-scala manages its own `byte[]` buffer with growth logic. A custom implementation can:
-- Pre-size the write buffer based on the expected output size (knowable at compile time: N fields × average field size)
-- Use `ByteBuffer` or `Unsafe` for direct memory operations
-- Pool buffers per-thread with `ThreadLocal` (jsoniter already does this, but we control sizing)
-
-#### Opportunity 6: Compile-time key bytes
-
-Field names are known at compile time. The macro can generate them as `Array[Byte]` constants:
-
-```scala
-// Pre-computed at compile time
+// With custom writer: single arraycopy, compile-time pre-encoded
 private val KEY_NAME: Array[Byte] = Array('"', 'n', 'a', 'm', 'e', '"', ':')
-private val KEY_AGE: Array[Byte] = Array('"', 'a', 'g', 'e', '"', ':')
-
-// Write: single System.arraycopy instead of quote + escape + quote + colon
 System.arraycopy(KEY_NAME, 0, buf, pos, 7); pos += 7
 ```
 
-This eliminates per-field string escaping checks on the write path. Most field names are ASCII-safe and known at compile time — no need to scan for characters that need escaping.
+**Eliminated virtual dispatch** requires no `JsonReader`/`JsonWriter` class boundary at all. The parsing state (buffer, position, charBuf) can be local variables in the generated method, or a struct-like class that JIT can scalar-replace. With jsoniter, every `in.readInt()` is a virtual call on a class instance that JIT must prove monomorphic.
 
-### Where jsoniter-scala is hard to beat
+**Inlined integer parsing** requires the macro to generate the parsing loop inline per field. With jsoniter, `in.readInt()` calls a method on `JsonReader` — even if JIT eventually inlines it, that depends on warmup. Our macro can generate the 10-line digit loop directly in the codec.
 
-#### Number parsing (double/float)
+### Performance win summary
 
-Floating-point parsing is notoriously hard to get right. jsoniter-scala has ~500 lines dedicated to `readDouble()` with edge cases for subnormals, rounding, and precision. Options:
-- **Phase 1**: Delegate to `java.lang.Double.parseDouble()` — correct but ~2x slower for doubles
-- **Phase 2**: Port a fast-path parser (Eisel-Lemire algorithm) for common cases, fall back to `parseDouble()` for edge cases
-- **Realistic assessment**: Doubles are a small fraction of most JSON payloads. The per-field cost matters less than the per-object cost (allocation, dispatch).
+Combining KEEP (existing) + REWRITE (new), the expected total improvement vs jsoniter-scala native:
 
-#### String parsing with escapes
+| Operation | KEEP advantage (already proven) | REWRITE advantage (projected) | Combined |
+|---|---|---|---|
+| **Reading** | +3% (current benchmark) | +12-33% (field-order + fused key + inlined int + no dispatch) | **+15-36%** |
+| **Writing** | +25% (current benchmark) | +7-15% (key bytes + pre-sized buf + no dispatch) | **+32-40%** |
 
-Strings with escape sequences (`\"`, `\\`, `\n`, `\uXXXX`) require careful UTF-8 handling. jsoniter-scala handles this in ~200 lines. For the common case (no escapes), a fast path is trivial:
-
-```scala
-// Fast path: scan for closing quote, no escapes found
-val start = pos
-while (buf(pos) != '"') pos += 1
-new String(buf, start, pos - start, UTF_8)
-```
-
-The escape path is more complex but not algorithmically difficult — it's bookkeeping.
-
-#### Buffer management and streaming
-
-jsoniter-scala supports `InputStream` and `ByteBuffer` inputs with on-demand reading. For phase 1, we can require the full input in a `byte[]` or `String` (covers >95% of HTTP use cases). Streaming can come later.
-
-#### Error messages
-
-jsoniter-scala produces error messages with byte offset and context. We need circe-compatible error messages for the compatibility contract. The error format is different anyway — we'd need custom error messages regardless.
-
-## Why we don't start from scratch: porting from jsoniter-scala
-
-jsoniter-scala is **MIT licensed**. We can port any code we want — just include the copyright notice. This eliminates the biggest risk: we don't have to reinvent Andriy's years of micro-optimization. We take it.
-
-### What to port vs what to write fresh
-
-| Component | Lines (est.) | Source | Correctness risk | Performance impact |
-|---|---|---|---|---|
-| **Writer: primitives** | ~200 | Port from jsoniter | None — proven | High |
-| **Writer: strings + escaping** | ~100 | Port from jsoniter | None — proven | Medium |
-| **Writer: structure (obj/arr)** | ~50 | Write fresh | None — trivial | Low |
-| **Writer: buffer management** | ~100 | Port pattern, simplify | Low | Medium |
-| **Reader: token navigation** | ~100 | Port pattern, simplify | Low | Medium |
-| **Reader: integers (int/long)** | ~80 | Port from jsoniter | None — proven | High |
-| **Reader: strings + UTF-8** | ~150 | Port from jsoniter | None — proven | High |
-| **Reader: field dispatch** | ~100 | Port from jsoniter | None — proven | High |
-| **Reader: doubles/floats** | ~200 | Port from jsoniter | None — proven Eisel-Lemire | Low per field |
-| **Reader: BigDecimal/BigInt** | ~50 | Port from jsoniter | None — proven | Low |
-| **Reader: booleans/null** | ~30 | Write fresh | None — trivial | Low |
-| **Reader: buffer management** | ~100 | Port pattern, simplify | Low | Medium |
-| **Reader: error reporting** | ~80 | Write fresh | Low | Zero (error path) |
-| **Reader: skip (unknown values)** | ~80 | Port from jsoniter | None — proven | Low |
-| **Entry points (readFrom/writeTo)** | ~50 | Write fresh | None — trivial | Zero |
-| **Total** | **~1,470** | **~70% ported** | **Low overall** | |
-
-**Estimate: ~1,500 lines, of which ~70% is ported from jsoniter-scala's MIT-licensed code.** The remaining ~30% is fresh code for trivial components (structure tokens, entry points, error messages). jsoniter-scala is ~8,300 lines because it handles streaming, pretty-printing, temporal types, UUID, base64, configuration, and Scala 2 compatibility — none of which we need.
-
-**Cross-platform cost**: jsoniter-scala maintains ~8,200 lines for JS and ~8,300 lines for JVM — nearly identical. Our ~1,500 lines will be ~95% shared, with minimal platform splits only for Float/Double formatting tolerances and Long precision on JS.
-
-### What porting means concretely
-
-We don't copy-paste 8,000 lines. We extract the ~1,500 lines of parsing/writing logic our macros actually call, adapt the API surface to our needs, and strip everything else:
-
-**Strip (not needed):**
-- Pretty-printing / indentation support (~200 lines in writer)
-- `InputStream` / `OutputStream` streaming (~300 lines) — phase 1 is `byte[]` only
-- Temporal type parsing (Duration, Instant, LocalDate, etc.) — ~1,500 lines we don't use
-- UUID parsing/writing — ~200 lines we don't use
-- Base64/Base16 encoding — ~200 lines we don't use
-- Scala 2 compatibility shims
-- Configuration options we don't expose (yet)
-
-**Keep (exact port):**
-- `readInt()`, `readLong()` — overflow detection, leading zero rejection
-- `readFloat()`, `readDouble()` — Eisel-Lemire with stdlib fallback
-- `readString()`, `parseEncodedString()` — UTF-8 + escape sequences
-- `readBigDecimal()`, `readBigInt()` — digit/scale limits
-- `writeVal(Int/Long/Float/Double/String/...)` — shortest representation
-- `writeKey()`, `writeNonEscapedAsciiKey()` — string escaping
-- `charBufToHashCode()`, `isCharBufEqualsTo()` — field dispatch
-- Buffer grow/management primitives
-
-**Adapt (port + modify):**
-- Error reporting — our format, but reuse offset tracking
-- Token navigation — simplify for `byte[]` only (no streaming refill)
-- `skip()` — keep for unknown fields, simplify buffer management
-
-### The license obligation
-
-MIT requires including the copyright notice. We add to our source files:
-
-```
-// Portions derived from jsoniter-scala (https://github.com/plokhotnyuk/jsoniter-scala)
-// Copyright (c) 2017 Andriy Plokhotnyuk. MIT License.
-```
-
-This is standard practice and costs nothing.
-
-### What this means for the risk profile
-
-| Risk | Before (write from scratch) | After (port from jsoniter) |
-|---|---|---|
-| Float/Double correctness | **High** — Eisel-Lemire is hard | **Low** — proven implementation |
-| UTF-8 correctness | **Medium** — edge cases are subtle | **Low** — proven implementation |
-| Integer overflow | **Low** — straightforward | **None** — proven implementation |
-| String escaping | **Medium** — surrogate pairs | **Low** — proven implementation |
-| Total implementation effort | ~1,500 lines from scratch | ~1,500 lines but most is porting, not inventing |
-
-The fundamental difference: **porting proven code is a translation exercise, not an engineering risk.** We test it the same way (port jsoniter's tests too), but the probability of correctness bugs drops dramatically.
-
-## Where the wins come from (ranked by impact)
-
-### Tier 1: High impact, high confidence
-
-**1. Field-order fast path (reading)**
-- Self-produced JSON has fields in declaration order >99% of the time
-- Skip hash dispatch entirely for the common case
-- **Expected impact: +5-15% reads** — every field saves a hash computation
-- Effort: ~100 lines in the macro + reader
-
-**2. Compile-time key bytes (writing)**
-- Pre-computed `"fieldName":` as byte arrays, single `arraycopy` per field
-- No per-field escape checking (compile-time verified ASCII-safe)
-- **Expected impact: +5-10% writes** — replaces string→bytes conversion per field
-- Effort: ~50 lines in the macro
-
-**3. Fully inlined integer parsing**
-- Int/Long parsing is 10-15 lines of arithmetic; JIT sometimes fails to inline across class boundaries
-- Macro can generate the parsing loop directly for each int field
-- **Expected impact: +3-8% reads** for int-heavy payloads
-- Effort: ~80 lines (already generated by macro, just targeting our reader instead of jsoniter's)
-
-### Tier 2: Medium impact, high confidence
-
-**4. Eliminated virtual dispatch**
-- No `JsonReader`/`JsonWriter` class — parsing state is local variables in the generated method
-- JIT doesn't need to prove that the reader class is monomorphic
-- **Expected impact: +2-5%** on both reads and writes
-- Effort: architectural (the whole point of custom parser)
-
-**5. Pre-sized write buffers**
-- Macro knows the approximate output size: sum of field name lengths + estimated value sizes
-- Eliminate grow-and-copy on most writes
-- **Expected impact: +2-5% writes** (fewer memory copies)
-- Effort: ~30 lines
-
-**6. Fused key parsing for ordered fields**
-- When field-order prediction hits, compare key bytes directly against known byte array
-- No charBuf intermediate, no hash computation
-- **Expected impact: +2-5% reads** (part of the field-order fast path)
-- Effort: included in #1
-
-### Tier 3: Low impact, interesting for later
-
-**7. SWAR whitespace scanning**
-- Process 8 bytes at once instead of 1
-- Only matters for non-compact JSON (pretty-printed, human-authored)
-- **Expected impact: +1-3% reads** on compact JSON, more on pretty-printed
-- Effort: ~30 lines
-
-**8. String interning / short-string optimization**
-- Enum variant names and short field values could be interned
-- Avoids allocation for known constant strings
-- **Expected impact: +1-3%** on enum-heavy payloads
-- Effort: ~50 lines
-
-**9. Vectorized string scanning (JDK 17+ Vector API)**
-- Scan for quote/escape characters 32 bytes at a time
-- Only benefits long strings (>64 bytes)
-- **Expected impact: marginal** for typical JSON, significant for large text fields
-- Effort: ~80 lines, JDK 17+ only
+These are estimates. The KEEP numbers are measured; the REWRITE numbers are projected from analysis of the hot path. Real benchmarks will validate.
 
 ## Scala.js: day-one cross-platform support
 
