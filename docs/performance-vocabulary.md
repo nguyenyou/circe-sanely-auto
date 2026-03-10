@@ -170,9 +170,12 @@ This is the central design axis in the JSON library ecosystem.
 
 - Encode: `case class → bytes` (via `JsonWriter`)
 - Decode: `bytes → case class` (via `JsonReader`)
-- "Parsing and serialization of JSON directly from UTF-8 bytes to your case classes and Scala collections and back, crazily fast without runtime-reflection, intermediate AST-trees, strings or hash maps, with minimum allocations and copying"
+- "Parsing and serialization of JSON directly from UTF-8 bytes to your data structures and back, crazily fast without using of runtime reflection or runtime code generation, intermediate ASTs, hash maps, but with minimum allocations and copying"
 - The `JsonValueCodec[T]` interface with `decodeValue(in: JsonReader, ...)` and `encodeValue(x: T, out: JsonWriter)` methods is the core abstraction
 - **Compile-time codecs** — jsoniter-scala's preferred term: "Scala macros for compile-time generation of safe and ultra-fast JSON codecs"
+- **No runtime reflection, no runtime code generation** — why jsoniter-scala works with GraalVM Native Image without restrictions
+- **Fail-fast validation** — "validates parsed values safely with the fail-fast approach and clear reporting"
+- **Stack-less parsing exceptions** — "by default to greatly reduce the impact on performance"
 
 ### Our position (circe-sanely-auto)
 
@@ -194,8 +197,18 @@ This is the central design axis in the JSON library ecosystem.
 ### Approaches
 
 - **Compositional codecs** — each type gets its own codec; composed at runtime via virtual dispatch. Our approach. Circe's approach
-- **Monolithic / whole-program codegen** — one macro expansion generates code for the entire type tree. jsoniter-scala's approach. "The macro expands into direct, hand-optimized JsonReader/JsonWriter calls for each field"
+- **Monolithic / whole-program codegen** — one macro expansion generates code for the entire type tree. jsoniter-scala's approach. "The macro expands into direct, hand-optimized JsonReader/JsonWriter calls for each field, with no reflective field discovery, no generic 'walk the structure' logic, and no codegen warmup"
 - **Semi-auto as caching** — declaring a codec with `derives` or `deriveEncoder`/`deriveDecoder` creates a stable val that implicit search finds, preventing re-derivation. "Since semi-auto yields a user-defined typeclass instance, it's always picked up as an overload and prohibits further traversal — effectively making derives an opt-in caching strategy"
+
+### plokhotnyuk's observations on codec granularity
+
+These quotes from jsoniter-scala's maintainer explain why monolithic codegen exists. They directly challenge our compositional approach and frame the trade-off we navigate:
+
+- "Full semi-auto (codec per class) **brings too many mega-morphic virtual method calls which cannot be in-lined**"
+- "Each implementation of the codec interface used in runtime **decreases possibility to optimize mega-morphic interface calls by JVM**"
+- "The most optimal way is **somewhere in the middle** for the arbitrary case when looking from the JVM side"
+- "Code that duplicates when messages have common parts will **provide pressure on the JIT compiler and CPU front-end** in runtime"
+- "Increasing the number of `make` macro calls **increases the compilation time**"
 
 ### Trade-off vocabulary
 
@@ -223,6 +236,7 @@ This is the central design axis in the JSON library ecosystem.
   - **`@Benchmark`**, **`@BenchmarkMode`**, **`@OutputTimeUnit`** — standard JMH annotations
   - **`Blackhole`** — JMH construct that consumes values to prevent DCE and constant folding
 - **GC profiler** (`-prof gc` in JMH) — measures allocation rate alongside throughput. How jsoniter-scala reports "throughput with the allocation rate of generated codecs"
+  - **`gc.alloc.rate.norm`** — normalized allocation rate per operation (bytes/op). jsoniter-scala's key allocation metric. Lower = less GC pressure
 - **Hyperfine** — command-line benchmarking tool. What we use for compile-time benchmarks
 - **Warmup iterations** — runs discarded before measurement to let JIT optimize. JMH default: 20. Critical for JVM benchmarks
 - **Measurement iterations** — runs actually recorded. JMH default: 20. More = lower variance
@@ -320,3 +334,6 @@ Key articles and discussions that established this vocabulary:
 - [circe #2126: Recursive derivation in Scala 3](https://github.com/circe/circe/issues/2126) — Mirror-based auto recursion cost
 - [Semiauto vs auto derivation (kubukoz)](https://gist.github.com/kubukoz/50eb3f3bd41b20b4e464c0b6dbc0f7b0) — "derived at each call site" vs "one place at definition site"
 - [Profiling typeclass derivation (jvican)](https://jvican.github.io/post/scalac-profiling/) — "compiler repeats materialization of implicit instances"
+- [jsoniter-scala benchmark results](https://plokhotnyuk.github.io/jsoniter-scala/) — cross-JDK throughput and allocation benchmarks
+- [LambdaSpot: fastest JSON parser for Scala](https://blog.lambdaspot.dev/the-fastest-and-safest-json-parser-and-serializer-for-scala) — jsoniter-scala design philosophy
+- [jsoniter-scala #405: codec generation granularity](https://github.com/plokhotnyuk/jsoniter-scala/issues/405) — plokhotnyuk on megamorphic dispatch trade-offs
