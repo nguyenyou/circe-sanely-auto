@@ -8,12 +8,17 @@ Terms used across the circe, jsoniter-scala, and Scala/JVM communities when disc
 
 ### Typeclass derivation cost
 
-- **Implicit search chain** — the compiler recursively resolving givens/implicits for each field and subtype. In circe-generic (Scala 2), Shapeless's `Generic`/`Lazy` layers make these chains deep and slow. The compiler "can't see through the shapeless.Lazy layers." This is the primary reason circe-generic auto is slow to compile
-- **Implicit divergence** — the compiler giving up on implicit search because it detects (or suspects) infinite recursion. Common with recursive ADTs under circe-generic. The error message is often unhelpful; the `splain` compiler plugin was recommended for better diagnostics
+- **Implicit search chain / implicit search tree** — the compiler recursively resolving givens/implicits for each field and subtype. In circe-generic (Scala 2), Shapeless's `Generic`/`Lazy` layers make these chains deep and slow. The compiler "can't see through the shapeless.Lazy layers." This is the primary reason circe-generic auto is slow to compile
+- **Implicit search time** — Odersky measured 50-65% of total type-checking time spent in implicit search. The dominant compile-time cost for typeclass-heavy code
+- **Failed implicit search** — a search that doesn't find a match. Surprisingly expensive and a major bottleneck identified by `scalac-profiling`. The compiler may explore many dead-end candidates before giving up
+- **Diverging implicit expansion** — the compiler giving up on implicit search because it detects (or suspects) infinite recursion. Common with recursive ADTs under circe-generic. The error message is often unhelpful; the `splain` compiler plugin was recommended for better diagnostics
+- **Repeated materialization** — the core inefficiency where the compiler re-derives the same instance across different implicit searches because prior expansions can't be shared. What our single-pass expansion eliminates
 - **Macro expansion** — the compiler executing macro code to generate ASTs. In our approach, `Expr.summonIgnoring` resolves all instances within a single expansion, avoiding implicit search chains entirely
 - **Recursive macro expansion** — macro methods expanding macro methods as part of derivation. "Costly on compiletime" because each expansion is a fresh macro invocation. Semi-auto derivation acts as a "caching strategy" that breaks the chain
+- **Suspended compilation** — in Scala 3, files containing unresolved macro calls are suspended until dependencies compile. The compiler repeats compilation stages until all sources compile or no progress is made
 - **`transparent inline given` waste** — a known Scala 3 issue where the compiler "expands some transparent macro — perhaps triggering implicit searches — burns a lot of CPU to construct a whole correct expression, and then flushes it down the toilet" because a better match was found. No error message, no indication
 - **Inlining budget / `-Xmax-inlines`** — the compiler's limit on recursive inline expansion depth. Complex derivation hierarchies can exhaust this, requiring the flag to be bumped
+- **Tree growth** — Odersky measured ASTs growing from ~25,000 nodes (parser) to ~150,000 nodes (cleanup); 140% growth from parsing to cleanup. Macro-generated code contributes significantly to this
 
 ### Zinc and incremental compilation
 
@@ -21,11 +26,22 @@ Terms used across the circe, jsoniter-scala, and Scala/JVM communities when disc
 - **Compilation unit** — the chunk of code the compiler processes together. Monolithic codegen = one big unit; compositional = many small units
 - **Incremental compilation granularity** — how fine-grained Zinc's recompilation is. Finer = faster rebuilds when a single type changes
 
-### Compiler phases
+### Compiler phases (Scala 3)
 
-- **Typer phase** — where implicit/given resolution happens. The bottleneck for shapeless-based derivation
-- **Macro expansion phase** — where our code runs. The bottleneck for macro-based derivation
-- **Bytecode generation (GenBCode)** — translating typed ASTs to JVM bytecode. Rarely the bottleneck but affected by AST size
+Exact phase names from `scala3-compiler -Xshow-phases`. The ones most relevant to us:
+
+- **`typer`** — where implicit/given resolution happens. Typically 50-70% of compilation. The bottleneck for shapeless-based derivation
+- **`inlining`** — "inline and execute macros." Where our code runs. The bottleneck for macro-based derivation. Inspect output with `-Xprint:postInlining`
+- **`postInlining`** — "add mirror support for inlined code." Runs after macro expansion
+- **`patternMatcher`** — pattern matching compilation. Relevant when macros generate match expressions
+- **`erasure`** — "rewrite types to JVM model, erasing all type parameters." Where generic type information is lost
+- **`genBCode`** — translating typed ASTs to JVM bytecode. Rarely the bottleneck but affected by AST size
+
+### Profiling tools
+
+- **`scalac-profiling`** — Scala Center compiler plugin for profiling implicit search and macro expansion. The standard tool for diagnosing compilation bottlenecks
+- **`-Xlog-implicits`** — compiler flag to trace implicit resolution (noisy but diagnostic)
+- **`SANELY_PROFILE=true`** — our macro-level profiling via `MacroTimer`. Use with `analyze_profile.py`
 
 ### Questions to ask
 
@@ -86,16 +102,20 @@ This is the standard JVM terminology for how virtual calls are optimized. These 
 ### Scala-specific JVM issues
 
 - **Closure megamorphism** — a well-known Scala issue. `foreach` with different anonymous functions causes the closure call site to become megamorphic. Odersky: "The reason seems to be that the foreach itself is not inlined, so the call to the closure becomes megamorphic and therefore slow." `RawArrayForeachMega` is 10x slower than the monomorphic case
-- **Value boxing** — wrapping primitives in objects (e.g., `Int` → `java.lang.Integer`) at generic boundaries. One of the two "well-known code patterns that the JVM fails to optimize properly" in Scala (the other being megamorphic dispatch)
-- **Trait method dispatch** — trait default methods can't be optimized via CHA. A megamorphic call to a trait method is never inlined, even if the method has no overrides
+- **Value boxing / unboxing** — wrapping primitives in objects (e.g., `Int` → `java.lang.Integer`) at generic boundaries. A JVM double is 8 bytes vs 24 bytes boxed. One of the two "well-known code patterns that the JVM fails to optimize properly" in Scala (the other being megamorphic dispatch). `@specialized` generates primitive-specific bytecode versions but causes code size explosion
+- **Scalar replacement** — JIT optimization where escape analysis proves an object doesn't escape, so its fields are replaced with local variables. Can yield 10x speedups. More powerful than simple stack allocation
+- **Trait method dispatch** — trait default methods can't be optimized via CHA. A megamorphic call to a trait method is never inlined, even if the method has no overrides. "Because CHA is not available for default methods, default methods can only be inlined by C2 based on type profiling"
 
 ### Memory and allocation
 
-- **Allocation rate** — bytes of heap memory allocated per operation. High allocation rate = more GC pressure
+- **Allocation rate** — bytes of heap memory allocated per operation. Measured in MB/s. Key metric for GC tuning: Eden size = allocation rate x desired GC interval. Scala's immutable style tends to create more short-lived objects
+- **Allocation pressure** — the GC load caused by high allocation rates. Scala's immutable, functional style creates more short-lived objects than typical Java code
 - **Minimum allocations and copying** — jsoniter-scala's phrasing for their design goal. Not "allocation-free" or "zero-copy" — they say "minimum"
 - **GC pause / stop-the-world** — garbage collector halts all application threads. Distorts benchmark results if not accounted for
+  - **`-XX:+UseParallelGC`** — recommended for Scala compiler (throughput-oriented)
+  - **`-XX:+UseG1GC`** — common for services (latency-oriented)
 - **Peak RSS** (Resident Set Size) — maximum physical memory used by the process
-- **Escape analysis** — JIT optimization that stack-allocates objects that don't "escape" the method. Eliminates heap allocation for short-lived objects
+- **Escape analysis** — JIT optimization that determines whether objects "escape" their creating method. Enables stack allocation and scalar replacement. Can yield 10x speedups for short-lived objects
 
 ### CPU and hardware
 
@@ -168,12 +188,16 @@ This is the central design axis in the JSON library ecosystem.
 
 ### Methodology
 
-- **JMH** (Java Microbenchmark Harness) — the gold standard for JVM microbenchmarks. Handles warmup, GC, JIT, fork isolation
+- **JMH** (Java Microbenchmark Harness) — the gold standard for JVM microbenchmarks. Handles warmup, GC, JIT, fork isolation. In Scala, typically used via the `sbt-jmh` plugin or Mill's JMH support
+  - **Throughput mode (`thrpt`)** — operations per time unit, reported as `ops/s`. Higher = better
+  - **Average time mode (`avgt`)** — time per operation, reported as `ns/op` or `ms/op`. Lower = better
+  - **`@Benchmark`**, **`@BenchmarkMode`**, **`@OutputTimeUnit`** — standard JMH annotations
+  - **`Blackhole`** — JMH construct that consumes values to prevent DCE and constant folding
 - **GC profiler** (`-prof gc` in JMH) — measures allocation rate alongside throughput. How jsoniter-scala reports "throughput with the allocation rate of generated codecs"
 - **Hyperfine** — command-line benchmarking tool. What we use for compile-time benchmarks
-- **Warmup iterations** — runs discarded before measurement to let JIT optimize. Critical for JVM benchmarks
-- **Measurement iterations** — runs actually recorded. More = lower variance
-- **Fork isolation** — running each benchmark in a fresh JVM to avoid cross-contamination of JIT state and type profiles
+- **Warmup iterations** — runs discarded before measurement to let JIT optimize. JMH default: 20. Critical for JVM benchmarks
+- **Measurement iterations** — runs actually recorded. JMH default: 20. More = lower variance
+- **Forks** — separate JVM processes to avoid JIT bias and type profile pollution. JMH default: 10. Each fork starts with a clean JVM
 
 ### Common pitfalls
 
@@ -253,5 +277,12 @@ Key articles and discussions that established this vocabulary:
 - [Expr.summonIgnoring proposal (scala/scala3#21909)](https://github.com/scala/scala3/discussions/21909) — the Scala 3 discussion on recursive summon prevention
 - [Scala trait method performance (scala-lang.org)](https://www.scala-lang.org/blog/2016/07/08/trait-method-performance.html) — CHA limitations for trait default methods
 - [circe-derivation](https://github.com/circe/circe-derivation) — macro-based derivation without shapeless
+- [circe known issues](https://circe.github.io/circe/codecs/known-issues.html) — shapeless stack overflow, implicit divergence
 - [jsoniter-scala](https://github.com/plokhotnyuk/jsoniter-scala) — compile-time codecs, direct encoding, benchmark methodology
 - [How much are you paying for abstraction?](https://kmaliszewski9.github.io/scala/2026/02/20/jsoniter.html) — real-world jsoniter-scala adoption and performance impact
+- [scalac-profiling (Scala Center)](https://www.scala-lang.org/blog/2018/06/04/scalac-profiling.html) — profiling implicit search and macro expansion
+- [Odersky on compiler speed](https://www.scala-lang.org/old/node/4762) — implicit search time measurements
+- [Scala 3 inline docs](https://docs.scala-lang.org/scala3/guides/macros/inline.html) — `inline def`, `summonInline`, expansion semantics
+- [Scala 3 derivation-macro docs](https://docs.scala-lang.org/scala3/reference/contextual/derivation-macro.html) — `Expr.summon` in macro context
+- [Stephen's compile time blog](https://stephenn.com/2017/07/circe-argonaut-shapless-play-json-compile-time/) — circe vs argonaut-shapeless vs play-json compile times
+- [GeoTrellis High Performance Scala](https://geotrellis.readthedocs.io/en/1.0/architecture/high-performance-scala/) — boxing, specialization, allocation patterns
