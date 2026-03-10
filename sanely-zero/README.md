@@ -1,8 +1,10 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="mascot/dark/rei-banner.svg">
-  <source media="(prefers-color-scheme: light)" srcset="mascot/light/rei-banner.svg">
-  <img alt="sanely-zero" src="mascot/light/rei-banner.svg" width="100%">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="mascot/dark/rei-banner.svg">
+    <source media="(prefers-color-scheme: light)" srcset="mascot/light/rei-banner.svg">
+    <img alt="sanely-zero — Rei the Zero Swift" src="mascot/light/rei-banner.svg" width="600" height="315">
+  </picture>
+</p>
 
 # sanely-zero
 
