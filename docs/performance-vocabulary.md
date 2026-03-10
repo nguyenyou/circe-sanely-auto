@@ -62,6 +62,35 @@ Exact phase names from `scala3-compiler -Xshow-phases`. The ones most relevant t
 
 From fastest to slowest: **manual codecs / jsoniter-scala > circe-derivation (macros, no shapeless) > circe-generic semi-auto ~ magnolia semi-auto > circe-generic auto > circe-generic-extras**. Our library targets the top of this hierarchy.
 
+### How circe users describe the problem
+
+These are the exact phrases from circe issues and community discussions. Use them to ensure we speak the same language:
+
+- "**Exponentially increasing compile times** when using codec derivation" — circe issue #339 title
+- "**Typer phase takes 6.9 seconds**" (auto) vs "**114 ms**" (semi-auto) — circe issue #2051, the canonical measurement showing auto's cost
+- "An automatically derived decoder will be **generated for each implicit call site**" — why auto is slow: no caching across call sites
+- "**Codecs are derived as needed by the usage**" (auto) vs "**you only have one place where a codec for a given type will be derived: at definition site**" (semi-auto) — kubukoz's explanation of the fundamental difference
+- "The compiler **repeats the materialization** of implicit instances" — scalac-profiling blog, describing the core inefficiency
+- "**Horribly slow compile times**" — circe-derivation README, motivating non-shapeless derivation
+- "**May stack overflow during compilation** for large or deeply-nested case classes and sealed trait hierarchies" — circe known-issues docs
+- "**knownDirectSubclasses** known to fail" — the Shapeless/Scala Reflect method that causes sealed trait issues
+- "Runtime performance of derived instances **should be practically indistinguishable from manually-defined instances**" — circe docs, the runtime performance contract
+- "**Drop-in replacement**" — how circe-derivation and our library position their APIs relative to circe-generic
+
+### Quantitative reference points (from community benchmarks)
+
+These help calibrate expectations when discussing compile times:
+
+| Scenario | Time | Source |
+|---|---|---|
+| Auto derivation, typer phase | 6.9s | circe #2051 |
+| Semi-auto derivation, typer phase | ~110ms | circe #2051 |
+| 200 types, circe auto | ~68s | Scala Users forum |
+| 200 types, jsoniter-scala | ~32s | Scala Users forum |
+| Auto → semi-auto migration | "5 min down to under 1 min" | Scala Users forum |
+| akka-http-json with circe auto | ~100s compile | akka-http-json #47 |
+| akka-http-json after fix | ~3s compile | akka-http-json #47 |
+
 ---
 
 ## Runtime Performance
@@ -286,3 +315,8 @@ Key articles and discussions that established this vocabulary:
 - [Scala 3 derivation-macro docs](https://docs.scala-lang.org/scala3/reference/contextual/derivation-macro.html) — `Expr.summon` in macro context
 - [Stephen's compile time blog](https://stephenn.com/2017/07/circe-argonaut-shapless-play-json-compile-time/) — circe vs argonaut-shapeless vs play-json compile times
 - [GeoTrellis High Performance Scala](https://geotrellis.readthedocs.io/en/1.0/architecture/high-performance-scala/) — boxing, specialization, allocation patterns
+- [circe #339: Exponentially increasing compile times](https://github.com/circe/circe/issues/339) — the original compile-time issue
+- [circe #2051: Slow codec automatic derivation](https://github.com/circe/circe/issues/2051) — typer phase 6.9s vs 110ms measurements
+- [circe #2126: Recursive derivation in Scala 3](https://github.com/circe/circe/issues/2126) — Mirror-based auto recursion cost
+- [Semiauto vs auto derivation (kubukoz)](https://gist.github.com/kubukoz/50eb3f3bd41b20b4e464c0b6dbc0f7b0) — "derived at each call site" vs "one place at definition site"
+- [Profiling typeclass derivation (jvican)](https://jvican.github.io/post/scalac-profiling/) — "compiler repeats materialization of implicit instances"
