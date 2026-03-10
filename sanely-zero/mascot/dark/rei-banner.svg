@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0D1020"/>
+      <stop offset="100%" stop-color="#151A35"/>
+    </linearGradient>
+    <linearGradient id="wingL" x1="0.9" y1="0.2" x2="0.1" y2="0.8">
+      <stop offset="0%" stop-color="#00E5FF"/>
+      <stop offset="100%" stop-color="#006E85"/>
+    </linearGradient>
+    <linearGradient id="wingR" x1="0.1" y1="0.2" x2="0.9" y2="0.8">
+      <stop offset="0%" stop-color="#00E5FF"/>
+      <stop offset="100%" stop-color="#006E85"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#F0F0F4"/>
+      <stop offset="100%" stop-color="#E8E8EC"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#FF9F1C" stop-opacity="0.55"/>
+      <stop offset="50%" stop-color="#FF9F1C" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#FF9F1C" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0%" stop-color="transparent"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.3"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#vignette)"/>
+
+  <g transform="translate(320, 295) scale(0.58)">
+    <path d="M -340,-130 C -328,-142 -305,-148 -275,-142 C -228,-130 -175,-108 -125,-78 C -78,-50 -40,-18 -16,12 C -6,24 0,34 0,38 C 0,34 6,24 16,12 C 40,-18 78,-50 125,-78 C 175,-108 228,-130 275,-142 C 305,-148 328,-142 340,-130 C 348,-122 348,-112 338,-104 C 320,-90 290,-82 255,-74 C 200,-60 145,-40 98,-14 C 60,8 32,30 16,50 C 8,60 4,64 0,66 C -4,64 -8,60 -16,50 C -32,30 -60,8 -98,-14 C -145,-40 -200,-60 -255,-74 C -290,-82 -320,-90 -338,-104 C -348,-112 -348,-122 -340,-130 Z" fill="url(#wingL)"/>
+    <path d="M 340,-130 C 328,-142 305,-148 275,-142 C 228,-130 175,-108 125,-78 C 78,-50 40,-18 16,12 C 6,24 0,34 0,38 L 0,66 C 4,64 8,60 16,50 C 32,30 60,8 98,-14 C 145,-40 200,-60 255,-74 C 290,-82 320,-90 338,-104 C 348,-112 348,-122 340,-130 Z" fill="url(#wingR)"/>
+    <!-- Body — silver-white for dark mode -->
+    <path d="M 0,-52 C 8,-48 13,-36 14,-20 C 15,-2 14,18 12,38 C 10,58 7,78 5,92 C 3,102 1,108 0,112 C -1,108 -3,102 -5,92 C -7,78 -10,58 -12,38 C -14,18 -15,-2 -14,-20 C -13,-36 -8,-48 0,-52 Z" fill="url(#body)"/>
+    <ellipse cx="0" cy="-58" rx="8" ry="9" fill="#E8E8EC"/>
+    <path d="M -2,108 L -22,175 L -3,152 L 0,185 L 3,152 L 22,175 L 2,108 Z" fill="#E8E8EC"/>
+    <circle cx="0" cy="-8" r="35" fill="none" stroke="#FF9F1C" stroke-width="1.4" opacity="0.35"/>
+    <circle cx="0" cy="-8" r="16" fill="url(#glow)"/>
+    <circle cx="0" cy="-8" r="7.5" fill="#FF9F1C"/>
+    <circle cx="0" cy="-8" r="2.8" fill="#1B1F3B"/>
+    <circle cx="1.8" cy="-10.2" r="1.1" fill="white" opacity="0.9"/>
+  </g>
+
+  <text x="480" y="230" font-family="'Courier New',monospace" font-size="16" font-weight="700" fill="#00D4FF" opacity="0.35" transform="rotate(-8, 480, 230)">{</text>
+  <text x="505" y="212" font-family="'Courier New',monospace" font-size="12" font-weight="700" fill="#00D4FF" opacity="0.2" transform="rotate(-13, 505, 212)">}</text>
+  <rect x="524" y="198" width="4" height="4" rx="1" fill="#00D4FF" opacity="0.12" transform="rotate(-16, 526, 200)"/>
+  <circle cx="540" cy="188" r="1.2" fill="#00D4FF" opacity="0.07"/>
+
+  <text x="640" y="285" font-family="'SF Mono','Fira Code','JetBrains Mono','Cascadia Code',Consolas,monospace" font-size="48" font-weight="400" fill="#E8E8EC" letter-spacing="1.5">sanely-zero</text>
+  <line x1="640" y1="305" x2="765" y2="305" stroke="#FF9F1C" stroke-width="2" opacity="0.5"/>
+  <text x="640" y="342" font-family="'SF Mono','Fira Code','JetBrains Mono','Cascadia Code',Consolas,monospace" font-size="17" font-weight="400" fill="#00D4FF" opacity="0.7" letter-spacing="0.5">zero dependencies.</text>
+  <text x="640" y="370" font-family="'SF Mono','Fira Code','JetBrains Mono','Cascadia Code',Consolas,monospace" font-size="17" font-weight="400" fill="#00D4FF" opacity="0.7" letter-spacing="0.5">compile-time foresight.</text>
+  <text x="640" y="398" font-family="'SF Mono','Fira Code','JetBrains Mono','Cascadia Code',Consolas,monospace" font-size="17" font-weight="400" fill="#00D4FF" opacity="0.7" letter-spacing="0.5">fastest JSON.</text>
+
+  <circle cx="1100" cy="180" r="2" fill="#00D4FF" opacity="0.08"/>
+  <circle cx="1130" cy="210" r="1.5" fill="#00D4FF" opacity="0.05"/>
+  <circle cx="150" cy="550" r="1.5" fill="#00D4FF" opacity="0.06"/>
+  <circle cx="1050" cy="480" r="2" fill="#00D4FF" opacity="0.04"/>
+</svg>
