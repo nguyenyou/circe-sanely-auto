@@ -240,28 +240,85 @@ jsoniter-scala supports `InputStream` and `ByteBuffer` inputs with on-demand rea
 
 jsoniter-scala produces error messages with byte offset and context. We need circe-compatible error messages for the compatibility contract. The error format is different anyway — we'd need custom error messages regardless.
 
-## Feasibility assessment by component
+## Why we don't start from scratch: porting from jsoniter-scala
 
-| Component | Lines (est.) | Difficulty | Correctness risk | Performance impact |
+jsoniter-scala is **MIT licensed**. We can port any code we want — just include the copyright notice. This eliminates the biggest risk: we don't have to reinvent Andriy's years of micro-optimization. We take it.
+
+### What to port vs what to write fresh
+
+| Component | Lines (est.) | Source | Correctness risk | Performance impact |
 |---|---|---|---|---|
-| **Writer: primitives** | ~200 | Easy | Low | High — writing is simpler, biggest gap vs jsoniter |
-| **Writer: strings + escaping** | ~100 | Easy | Low | Medium — escape scanning is well-understood |
-| **Writer: structure (obj/arr)** | ~50 | Easy | Low | Low — trivial byte appends |
-| **Writer: buffer management** | ~100 | Easy | Low | Medium — pre-sizing, growth, pooling |
-| **Reader: token navigation** | ~100 | Easy | Low | Medium — whitespace skip, token peek |
-| **Reader: integers (int/long)** | ~80 | Easy | Low | High — very common, easy to optimize |
-| **Reader: strings** | ~150 | Medium | Medium | High — allocation-sensitive |
-| **Reader: field dispatch** | ~100 | Easy | Low | High — charBuf + hash is proven |
-| **Reader: doubles/floats** | ~200 | Hard | High | Low — uncommon in most payloads |
-| **Reader: BigDecimal/BigInt** | ~50 | Medium | Medium | Low — uncommon, delegate to stdlib |
-| **Reader: booleans/null** | ~30 | Easy | Low | Low — trivial |
-| **Reader: buffer management** | ~100 | Easy | Low | Medium |
-| **Reader: error reporting** | ~80 | Easy | Low | Zero (error path only) |
-| **Reader: skip (unknown values)** | ~80 | Medium | Medium | Low (unknown fields are rare) |
-| **Entry points (readFrom/writeTo)** | ~50 | Easy | Low | Zero |
-| **Total** | **~1,470** | | | |
+| **Writer: primitives** | ~200 | Port from jsoniter | None — proven | High |
+| **Writer: strings + escaping** | ~100 | Port from jsoniter | None — proven | Medium |
+| **Writer: structure (obj/arr)** | ~50 | Write fresh | None — trivial | Low |
+| **Writer: buffer management** | ~100 | Port pattern, simplify | Low | Medium |
+| **Reader: token navigation** | ~100 | Port pattern, simplify | Low | Medium |
+| **Reader: integers (int/long)** | ~80 | Port from jsoniter | None — proven | High |
+| **Reader: strings + UTF-8** | ~150 | Port from jsoniter | None — proven | High |
+| **Reader: field dispatch** | ~100 | Port from jsoniter | None — proven | High |
+| **Reader: doubles/floats** | ~200 | Port from jsoniter | None — proven Eisel-Lemire | Low per field |
+| **Reader: BigDecimal/BigInt** | ~50 | Port from jsoniter | None — proven | Low |
+| **Reader: booleans/null** | ~30 | Write fresh | None — trivial | Low |
+| **Reader: buffer management** | ~100 | Port pattern, simplify | Low | Medium |
+| **Reader: error reporting** | ~80 | Write fresh | Low | Zero (error path) |
+| **Reader: skip (unknown values)** | ~80 | Port from jsoniter | None — proven | Low |
+| **Entry points (readFrom/writeTo)** | ~50 | Write fresh | None — trivial | Zero |
+| **Total** | **~1,470** | **~70% ported** | **Low overall** | |
 
-**Estimate: ~1,500 lines for a complete, correct, competitive parser + writer.** jsoniter-scala is ~8,300 lines because it handles many features we don't need (streaming, pretty-printing, configuration options, Scala 2 compatibility, etc.).
+**Estimate: ~1,500 lines, of which ~70% is ported from jsoniter-scala's MIT-licensed code.** The remaining ~30% is fresh code for trivial components (structure tokens, entry points, error messages). jsoniter-scala is ~8,300 lines because it handles streaming, pretty-printing, temporal types, UUID, base64, configuration, and Scala 2 compatibility — none of which we need.
+
+**Cross-platform cost**: jsoniter-scala maintains ~8,200 lines for JS and ~8,300 lines for JVM — nearly identical. Our ~1,500 lines will be ~95% shared, with minimal platform splits only for Float/Double formatting tolerances and Long precision on JS.
+
+### What porting means concretely
+
+We don't copy-paste 8,000 lines. We extract the ~1,500 lines of parsing/writing logic our macros actually call, adapt the API surface to our needs, and strip everything else:
+
+**Strip (not needed):**
+- Pretty-printing / indentation support (~200 lines in writer)
+- `InputStream` / `OutputStream` streaming (~300 lines) — phase 1 is `byte[]` only
+- Temporal type parsing (Duration, Instant, LocalDate, etc.) — ~1,500 lines we don't use
+- UUID parsing/writing — ~200 lines we don't use
+- Base64/Base16 encoding — ~200 lines we don't use
+- Scala 2 compatibility shims
+- Configuration options we don't expose (yet)
+
+**Keep (exact port):**
+- `readInt()`, `readLong()` — overflow detection, leading zero rejection
+- `readFloat()`, `readDouble()` — Eisel-Lemire with stdlib fallback
+- `readString()`, `parseEncodedString()` — UTF-8 + escape sequences
+- `readBigDecimal()`, `readBigInt()` — digit/scale limits
+- `writeVal(Int/Long/Float/Double/String/...)` — shortest representation
+- `writeKey()`, `writeNonEscapedAsciiKey()` — string escaping
+- `charBufToHashCode()`, `isCharBufEqualsTo()` — field dispatch
+- Buffer grow/management primitives
+
+**Adapt (port + modify):**
+- Error reporting — our format, but reuse offset tracking
+- Token navigation — simplify for `byte[]` only (no streaming refill)
+- `skip()` — keep for unknown fields, simplify buffer management
+
+### The license obligation
+
+MIT requires including the copyright notice. We add to our source files:
+
+```
+// Portions derived from jsoniter-scala (https://github.com/plokhotnyuk/jsoniter-scala)
+// Copyright (c) 2017 Andriy Plokhotnyuk. MIT License.
+```
+
+This is standard practice and costs nothing.
+
+### What this means for the risk profile
+
+| Risk | Before (write from scratch) | After (port from jsoniter) |
+|---|---|---|
+| Float/Double correctness | **High** — Eisel-Lemire is hard | **Low** — proven implementation |
+| UTF-8 correctness | **Medium** — edge cases are subtle | **Low** — proven implementation |
+| Integer overflow | **Low** — straightforward | **None** — proven implementation |
+| String escaping | **Medium** — surrogate pairs | **Low** — proven implementation |
+| Total implementation effort | ~1,500 lines from scratch | ~1,500 lines but most is porting, not inventing |
+
+The fundamental difference: **porting proven code is a translation exercise, not an engineering risk.** We test it the same way (port jsoniter's tests too), but the probability of correctness bugs drops dramatically.
 
 ## Where the wins come from (ranked by impact)
 
@@ -325,17 +382,72 @@ jsoniter-scala produces error messages with byte offset and context. We need cir
 - **Expected impact: marginal** for typical JSON, significant for large text fields
 - Effort: ~80 lines, JDK 17+ only
 
-## What we give up (honest assessment)
+## Scala.js: day-one cross-platform support
 
-### 1. Andriy's years of micro-optimization
+### How jsoniter-scala does it
 
-jsoniter-scala's `JsonReader` has been micro-optimized over years by one of the most performance-focused Scala developers. We start from a clean implementation. The fast-path common cases will be easy to match, but obscure edge cases (subnormal doubles, 4-byte UTF-8 sequences, deeply nested structures) will need careful attention.
+jsoniter-scala has **separate implementations** for JVM and Scala.js (`CrossType.Full`):
 
-**Mitigation**: We can start by delegating hard cases to stdlib (Double.parseDouble, etc.) and optimize incrementally.
+| Platform | JsonReader | JsonWriter | Total |
+|---|---|---|---|
+| Scala.js | 4,493 lines | 3,696 lines | 8,189 lines |
+| JVM-Native | 4,946 lines | 3,362 lines | 8,308 lines |
+
+They do **NOT** use JavaScript's `JSON.parse()`. Both platforms do byte-level parsing with nearly identical logic. The differences are minimal:
+
+- `Array[Int]` vs `Array[Byte]` for a magnitude field (platform-specific optimization)
+- Float/Double formatting tolerances (JS allows slightly longer output for whole-number floats)
+- `Long.MinValue` edge cases excluded on JS (scala-java-time library limitation)
+
+### Our approach: shared implementation with minimal platform splits
+
+Since the JVM and JS implementations are ~99% identical, we use a **shared source** strategy:
+
+```
+sanely-zero/
+├── src/           # Shared: reader, writer, codecs, macros (95% of code)
+├── src-jvm/       # JVM-only: Unsafe optimizations, if any
+├── src-js/        # JS-only: platform stubs, if any
+```
+
+**What goes in shared (everything):**
+- All parsing logic (readInt, readString, readDouble, etc.)
+- All writing logic (writeVal, writeKey, etc.)
+- Buffer management
+- UTF-8 handling
+- Field dispatch (charBuf, hash)
+- All macro-generated code
+
+**What might need platform splits (very little):**
+- Float/Double shortest-representation formatting (minor tolerance differences)
+- `Long.MinValue`/`Long.MaxValue` precision (JS number limitations)
+- If we use `sun.misc.Unsafe` for SWAR tricks (JVM only, with safe fallback in shared)
+
+### Why this works
+
+1. **No `InputStream`/`OutputStream`** in phase 1 — `byte[]` and `String` work identically on both platforms
+2. **No `Unsafe`** required for correctness — only for optional JVM-specific optimizations
+3. **`java.lang.Double.parseDouble()`** works on Scala.js (transpiles to `parseFloat()` in JS)
+4. **UTF-8 `Array[Byte]` handling** is identical on both platforms — Scala.js `Array[Byte]` is a real byte array
+5. **`new String(bytes, UTF_8)`** works on both platforms
+
+### The 3 known JS edge cases (from jsoniter-scala's test exclusions)
+
+1. **`Long.MaxValue` / `Long.MinValue`** — JS numbers lose precision beyond 2^53. JSON numbers that exceed this range may not roundtrip perfectly. **Same issue our existing sanely library already handles** — we skip these tests with `Platform.isJS`.
+
+2. **Float formatting** — JS allows 3 extra characters when formatting floats as whole numbers (e.g., `1.0E7` vs `1.0E7000`). Non-issue if we format consistently.
+
+3. **Duration with negative nanos** — scala-java-time limitation. Not relevant for JSON number parsing.
+
+## What we give up (revised honest assessment)
+
+### 1. ~~Andriy's years of micro-optimization~~ → We port it
+
+**No longer a concern.** MIT license means we take the proven code. The ~500 lines of Eisel-Lemire float/double parsing, the UTF-8 validation, the buffer management patterns — we port them directly and inherit their correctness.
 
 ### 2. Streaming support
 
-jsoniter-scala supports `InputStream` reading. We'd start with `byte[]`/`String` only.
+jsoniter-scala supports `InputStream` reading. We start with `byte[]`/`String` only.
 
 **Mitigation**: HTTP frameworks (http4s, Tapir, Netty) buffer the request body anyway. `byte[]` input covers >95% of real use cases. Add streaming later if needed.
 
@@ -345,61 +457,57 @@ Our current benchmarks use a custom measurement loop. For credible claims of "fa
 
 **Mitigation**: Add a JMH benchmark module before any public claims.
 
-### 4. Cross-platform (Scala.js)
-
-jsoniter-scala has Scala.js support. Our custom parser would initially target JVM only.
-
-**Mitigation**: Can provide a Scala.js backend that delegates to JavaScript's `JSON.parse` + typed traversal, or maintain the jsoniter-scala dependency for Scala.js only.
-
 ## Phased implementation plan
 
-### Phase 1: Writer (2-3 days)
+All phases are **cross-platform from day one** (JVM + Scala.js). Shared source with minimal platform splits.
 
-Writer is simpler, and writes are where we already have the largest lead (+25% vs jsoniter-scala native). A custom writer should push that further.
+### Phase 1: Writer + reader core (port from jsoniter)
 
-Deliverables:
-- `SanelyWriter` class: buffer management, primitive writes, string escaping, structure tokens
-- Macro generates write code targeting `SanelyWriter` instead of `JsonWriter`
-- `writeToArray[A]` and `writeToString[A]` entry points
-- Benchmark: measure against jsoniter-scala writer
-
-### Phase 2: Reader for products (3-5 days)
-
-The most performance-critical path. Products are >80% of codec usage.
+Port the proven primitives. This is translation, not invention.
 
 Deliverables:
-- `SanelyReader` class: token navigation, primitive reads, field dispatch (charBuf + hash)
-- Field-order prediction in macro-generated decode bodies
-- `readFromArray[A]` and `readFromString[A]` entry points
-- Benchmark: measure against jsoniter-scala reader
+- `SanelyWriter`: buffer management, primitive writes (port `writeVal` overloads), string escaping (port `writeEncodedString`), structure tokens (`{`, `}`, `[`, `]`)
+- `SanelyReader`: token navigation, primitive reads (port `readInt/Long/Float/Double/String/Boolean/BigDecimal/BigInt`), null handling, error reporting with byte offset
+- Field dispatch infrastructure: `charBufToHashCode`, `isCharBufEqualsTo`, `readKeyAsCharBuf`
+- `skip()` for unknown fields
+- Entry points: `readFromArray`, `readFromString`, `writeToArray`, `writeToString`
+- **Port jsoniter's test vectors**: all 370+ explicit edge cases + property-based generators
+- Cross-platform: JVM + Scala.js, shared source
+- Benchmark: measure against jsoniter-scala reader/writer
 
-### Phase 3: Reader for containers + sum types (2-3 days)
+### Phase 2: Macro integration + products
 
-Complete the type coverage.
+Wire the macro to generate code targeting our reader/writer instead of jsoniter's.
 
 Deliverables:
-- Container reading: List, Vector, Set, Option, Map, Array, Either
+- Macro generates encode/decode bodies using `SanelyReader`/`SanelyWriter` API
+- Direct primitive I/O, typed locals, direct constructor calls (all existing optimizations)
+- Hash-based field dispatch using our `charBufToHashCode`
+- Product roundtrip tests against circe (existing cross-codec suite)
+
+### Phase 3: Containers + sum types + configured
+
+Complete type coverage and configuration support.
+
+Deliverables:
+- Container codecs: List, Vector, Set, Option, Map, Array, Either
 - Sum type dispatch with external tagging
 - Sub-trait hierarchy support
 - Discriminator handling (fast path + slow path)
+- Configured derivation: `withDefaults`, `withDiscriminator`, `withSnakeCaseMemberNames`, `withDropNullValues`, `withStrictDecoding`
+- Cross-codec tests against circe for all configurations
 
-### Phase 4: Configured derivation (2-3 days)
+### Phase 4: Optimize (our unique advantages)
 
-Thread configuration through the custom reader/writer.
-
-Deliverables:
-- `withDefaults`, `withDiscriminator`, `withSnakeCaseMemberNames`, `withDropNullValues`, `withStrictDecoding`
-- Cross-codec tests against circe
-- Tapir integration tests
-
-### Phase 5: Optimize + validate (ongoing)
+These are the optimizations only possible because we own the parser AND the macro:
 
 Deliverables:
-- Field-order prediction
-- Compile-time key bytes
-- JMH benchmarks
-- Edge case hardening (malformed input, overflow, precision)
-- Allocation profiling
+- Field-order prediction (skip hash dispatch for ordered fields)
+- Compile-time key bytes (`"fieldName":` as pre-computed byte arrays)
+- Pre-sized write buffers (macro estimates output size)
+- JMH benchmarks for credible claims
+- JSONTestSuite conformance (318 test files)
+- Allocation profiling + optimization
 
 ## The competitive landscape
 
@@ -419,7 +527,7 @@ The proposed library ("sanely-zero" or whatever we name it) would be the only ze
 
 **The structural advantage is real**: compile-time schema knowledge allows optimizations that no runtime-generic parser can achieve. Field-order prediction, fused key parsing, compile-time key bytes, fully inlined primitive parsing — none of these are possible without knowing the schema at macro expansion time.
 
-**The risk is correctness**, not performance. Building a correct JSON parser that handles all edge cases (UTF-8, number precision, escape sequences, deeply nested structures) is well-understood but requires careful implementation. We should start with delegating hard cases to stdlib and optimize incrementally.
+**The risk was correctness — but porting eliminates it.** By porting jsoniter-scala's proven parsing code (MIT licensed), we inherit years of battle-tested correctness for float/double precision, UTF-8 validation, and string escaping. We port the code and the tests together.
 
 **The moat**: if we achieve this, no one else can easily replicate it. The combination of Scala 3 macros, `Expr.summonIgnoring`, single-pass expansion, typed locals, direct constructors, AND a custom parser is a high barrier. jsoniter-scala would need to adopt our macro techniques, and circe would need to abandon its `Json` tree.
 
@@ -501,17 +609,9 @@ This is the #1 correctness concern. jsoniter-scala has 45+ explicit precision ed
 *Leading zeros in mantissa/exponent:*
 - 1-7 leading zeros with property-based testing (1,000 cases)
 
-**Our approach — phased:**
+**Our approach:** Port jsoniter-scala's Eisel-Lemire implementation directly (MIT licensed, ~500 lines). This is proven code with all edge cases handled — subnormals, rounding boundaries, denormalized numbers. We port the code AND the tests together: the 45+ explicit precision edge cases are regression tests for the exact Eisel-Lemire boundaries. No need for a phased correctness approach — we start with the proven fast implementation.
 
-*Phase 1 (correctness-first):* Delegate to `java.lang.Double.parseDouble()` / `Float.parseFloat()`. Extract the number substring from the byte buffer and call stdlib. Correct by definition — stdlib is the reference implementation.
-
-*Phase 2 (fast path):* Add integer-representable fast path: if the number has no decimal point and exponent fits in Long, compute directly. This covers `42`, `1000000`, `-17` — which is the majority of "numbers that happen to be doubles" in practice.
-
-*Phase 3 (Eisel-Lemire):* Port the Eisel-Lemire algorithm for the general case. Fall back to `parseDouble()` for the ~1% of inputs where Eisel-Lemire is inconclusive.
-
-**Critical: adopt jsoniter's exact edge case list.** Every precision edge case they enumerate is a regression test for us. The 45+ explicit values are the output of Eisel-Lemire boundary analysis — these are the exact inputs where rounding errors happen.
-
-**Estimated test count: 60+ explicit cases + 70,000 property iterations**
+**Estimated test count: 60+ explicit cases + 70,000 property iterations (all ported from jsoniter)**
 
 #### 3. String parsing + UTF-8 — medium difficulty, medium risk
 
