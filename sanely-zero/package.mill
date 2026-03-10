@@ -1,0 +1,48 @@
+package build.`sanely-zero`
+
+import mill.*, scalalib.*, scalajslib.*, publish.*
+
+object `package` extends mill.Module {
+
+  object jvm extends SharedModule {
+    object test extends ScalaTests with SharedTests
+  }
+
+  object js extends ScalaJSModule with SharedModule {
+    override def scalaJSVersion = build.scalaJSVersion
+    object test extends ScalaJSTests with SharedTests
+  }
+
+  trait SharedModule extends PlatformScalaModule with SonatypeCentralPublishModule {
+    def artifactName = "sanely-zero"
+    def scalaVersion = build.scala3Version
+    def publishVersion = build.publishVersion
+
+    def pomSettings = PomSettings(
+      description = "Zero-dependency JSON engine for Scala 3 — fastest JSON parsing and writing, cross-platform JVM + Scala.js",
+      organization = "io.github.nguyenyou",
+      url = "https://github.com/nguyenyou/circe-sanely-auto",
+      licenses = Seq(License.MIT),
+      versionControl = VersionControl.github("nguyenyou", "circe-sanely-auto"),
+      developers = Seq(Developer("nguyenyou", "Tu Nguyen", "https://github.com/nguyenyou")),
+    )
+
+    // Zero external dependencies — only Scala stdlib
+    def mvnDeps = Task { super.mvnDeps() }
+
+    def scalacOptions = Task {
+      super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+    }
+
+    trait SharedTests extends ScalaTests with TestModule.Utest {
+      def mvnDeps = Task {
+        super.mvnDeps() ++ Seq(
+          mvn"com.lihaoyi::utest::${build.utestVersion}",
+        )
+      }
+      def scalacOptions = Task {
+        super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
+      }
+    }
+  }
+}
