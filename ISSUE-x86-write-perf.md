@@ -133,11 +133,46 @@ This is what jsoniter-scala's monolithic derivation achieves automatically. It w
 
 **Files to modify**: `SanelyJsoniter.scala` (major refactor of codec generation)
 
+## Trade-off Analysis
+
+Each fix trades something different. Understanding these trade-offs matters because the project's core value proposition is **fast compile times** — trading compile-time performance for runtime performance would undermine the reason this library exists.
+
+### Fix 1: Inline primitive containers — near-free
+
+| You trade | You get |
+|---|---|
+| Slightly more macro expansion work (marginally slower compile time) | Fewer virtual dispatches at runtime |
+
+No zinc incremental compilation impact — we're inlining `Option`/`List` handling for stdlib types that never change. This is the closest to a free win.
+
+### Fix 2: Pre-computed key byte arrays — near-free
+
+| You trade | You get |
+|---|---|
+| Small memory increase per codec (one `Array[Byte]` per field name, allocated once at init) | Faster key writing on all platforms |
+
+Essentially free. The byte arrays are tiny and allocated once.
+
+### Fix 3: Recursive inline expansion — real costs
+
+| You trade | You get |
+|---|---|
+| **Compile time** — macro must recursively expand nested types, generating much larger ASTs | Eliminates all inter-codec virtual dispatch |
+| **Bytecode size** — Address fields get duplicated into every codec that references Address | Monolithic runtime performance |
+| **Zinc granularity** — if Address changes, everything that inlines Address must recompile (today only AddressCodec recompiles) | Fewer runtime objects |
+| **Macro complexity** — cycle detection, depth limits, deduplication logic needed | Harder to maintain |
+
+Fix 3 is essentially trading **compile-time performance for runtime performance**. This directly contradicts the project's identity — the whole reason this library exists is that circe-generic has slow compilation. Making our macros do more work to generate faster runtime code undermines that.
+
+### ARM impact
+
+None of these fixes would regress ARM performance. On ARM, the JIT already devirtualizes the dispatch chain, so Fixes 1-2 produce code equivalent to what the JIT generates — same steady-state throughput, slightly faster warmup. Fix 3 is also neutral-to-positive on ARM but carries the compile-time costs listed above.
+
 ## Recommendation
 
-Start with **Fix 1** (inline primitive containers) — highest ROI. Most fields in real-world types are `String`, `Int`, `Long`, `Option[String]`, `List[String]`, and these are exactly the cases where virtual dispatch can be eliminated at compile time without architectural changes.
+Implement **Fix 1 + Fix 2** only. They're near-free and should close ~60-70% of the x86 gap. If x86 writes are still -3-4% after both fixes, that's an acceptable trade-off — the library's pitch is compile speed, not runtime speed.
 
-After Fix 1, measure on both platforms. If still losing on x86, proceed to Fix 2. Fix 3 is the nuclear option if the first two aren't sufficient.
+**Do not implement Fix 3** unless there's a compelling user demand for runtime parity with jsoniter-scala on x86. The compile-time and zinc incremental compilation costs are too high relative to the project's priorities.
 
 ## Validation
 
