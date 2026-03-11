@@ -171,33 +171,43 @@ object SanelyJsoniterConfigured:
         Block(terms.init.toList, terms.last).asExprOf[Unit]
 
     private def tryDirectRead[T: Type](in: Expr[JsonReader]): Option[Expr[T]] =
-      val tpe = TypeRepr.of[T].dealias
-      if tpe =:= TypeRepr.of[Int] then Some('{ $in.readInt() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Long] then Some('{ $in.readLong() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Double] then Some('{ $in.readDouble() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Float] then Some('{ $in.readFloat() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $in.readBoolean() }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Short] then Some('{ $in.readInt().toShort }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[Byte] then Some('{ $in.readInt().toByte }.asExprOf[T])
+      val tpe0 = TypeRepr.of[T].dealias
+      val tpe = if isOpaqueAlias(tpe0) then opaqueDealias(tpe0) else tpe0
+      // For opaque types, read as underlying then cast back
+      def cast(e: Expr[?]): Expr[T] =
+        if isOpaqueAlias(tpe0) then '{ ${e}.asInstanceOf[T] }
+        else e.asExprOf[T]
+      if tpe =:= TypeRepr.of[Int] then Some(cast('{ $in.readInt() }))
+      else if tpe =:= TypeRepr.of[Long] then Some(cast('{ $in.readLong() }))
+      else if tpe =:= TypeRepr.of[Double] then Some(cast('{ $in.readDouble() }))
+      else if tpe =:= TypeRepr.of[Float] then Some(cast('{ $in.readFloat() }))
+      else if tpe =:= TypeRepr.of[Boolean] then Some(cast('{ $in.readBoolean() }))
+      else if tpe =:= TypeRepr.of[Short] then Some(cast('{ $in.readInt().toShort }))
+      else if tpe =:= TypeRepr.of[Byte] then Some(cast('{ $in.readInt().toByte }))
       else if tpe =:= TypeRepr.of[Char] then
-        Some('{ val _s = $in.readString(null); if _s == null || _s.isEmpty then 0.toChar else _s.charAt(0) }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[String] then Some('{ $in.readString(null) }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ $in.readBigDecimal(null) }.asExprOf[T])
-      else if tpe =:= TypeRepr.of[BigInt] then Some('{ $in.readBigInt(null) }.asExprOf[T])
+        Some(cast('{ val _s = $in.readString(null); if _s == null || _s.isEmpty then 0.toChar else _s.charAt(0) }))
+      else if tpe =:= TypeRepr.of[String] then Some(cast('{ $in.readString(null) }))
+      else if tpe =:= TypeRepr.of[BigDecimal] then Some(cast('{ $in.readBigDecimal(null) }))
+      else if tpe =:= TypeRepr.of[BigInt] then Some(cast('{ $in.readBigInt(null) }))
       else None
 
     private def typedDefaultTerm(tpe: TypeRepr): Term =
-      val d = tpe.dealias
-      if d =:= TypeRepr.of[Int] then Literal(IntConstant(0))
-      else if d =:= TypeRepr.of[Long] then Literal(LongConstant(0L))
-      else if d =:= TypeRepr.of[Double] then Literal(DoubleConstant(0.0))
-      else if d =:= TypeRepr.of[Float] then Literal(FloatConstant(0.0f))
-      else if d =:= TypeRepr.of[Boolean] then Literal(BooleanConstant(false))
-      else if d =:= TypeRepr.of[Short] then '{ (0: Short) }.asTerm
-      else if d =:= TypeRepr.of[Byte] then '{ (0: Byte) }.asTerm
-      else if d =:= TypeRepr.of[Char] then '{ (0: Char) }.asTerm
-      else if d <:< TypeRepr.of[Option[?]] then '{ None }.asTerm
-      else Literal(NullConstant())
+      val d0 = tpe.dealias
+      val needsCast = isOpaqueAlias(d0)
+      val d = if needsCast then opaqueDealias(d0) else d0
+      val raw =
+        if d =:= TypeRepr.of[Int] then Literal(IntConstant(0))
+        else if d =:= TypeRepr.of[Long] then Literal(LongConstant(0L))
+        else if d =:= TypeRepr.of[Double] then Literal(DoubleConstant(0.0))
+        else if d =:= TypeRepr.of[Float] then Literal(FloatConstant(0.0f))
+        else if d =:= TypeRepr.of[Boolean] then Literal(BooleanConstant(false))
+        else if d =:= TypeRepr.of[Short] then '{ (0: Short) }.asTerm
+        else if d =:= TypeRepr.of[Byte] then '{ (0: Byte) }.asTerm
+        else if d =:= TypeRepr.of[Char] then '{ (0: Char) }.asTerm
+        else if d <:< TypeRepr.of[Option[?]] then '{ None }.asTerm
+        else Literal(NullConstant())
+      if needsCast then TypeApply(Select.unique(raw, "asInstanceOf"), List(Inferred(tpe)))
+      else raw
 
     /** Generate decode body with typed locals for configured product.
       * Similar to SanelyJsoniter.generateDecodeBody but handles:
@@ -263,6 +273,9 @@ object SanelyJsoniterConfigured:
       }
 
       // Build if-else chain for field matching (names are runtime-transformed)
+      // When a field has a default and is not Option, null JSON values are intercepted:
+      // - with useDefaults: keep the Scala default (var already initialized with it)
+      // - without useDefaults: keep the type's zero value (var already initialized with it)
       def buildMatchChain(keyLenRef: Term): Term =
         val unmatchedBranch = '{
           if $strictDecodingExpr then
@@ -278,8 +291,23 @@ object SanelyJsoniterConfigured:
                 case Some(expr) => expr.asTerm
                 case None =>
                   '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[t] }.asTerm
-              val assign = Assign(Ref(vi.sym), readTerm)
-              If(cond, assign, elseBranch)
+              val body =
+                if vi.hasDefault && !vi.isOption then
+                  // Intercept null at JSON level: peek at next token
+                  // If null → consume it, keep var's initialized value (default or zero)
+                  // If not null → rollback and read normally
+                  '{
+                    if $inExpr.isNextToken('n') then
+                      $inExpr.rollbackToken()
+                      $inExpr.skip()
+                      () // keep existing var value (Scala default if useDefaults, zero otherwise)
+                    else
+                      $inExpr.rollbackToken()
+                      ${Assign(Ref(vi.sym), readTerm).asExprOf[Unit]}
+                  }.asTerm
+                else
+                  Assign(Ref(vi.sym), readTerm)
+              If(cond, body, elseBranch)
         }
 
       // Build result: direct constructor call
@@ -371,7 +399,7 @@ object SanelyJsoniterConfigured:
               ValDef(v.sym, Some(v.defaultTerm))
       }
 
-      // Build if-else chain (same as decode body)
+      // Build if-else chain (same as decode body, with null interception)
       def buildMatchChain(keyLenRef: Term): Term =
         val unmatchedBranch = '{
           if $strictDecodingExpr then
@@ -387,8 +415,20 @@ object SanelyJsoniterConfigured:
                 case Some(expr) => expr.asTerm
                 case None =>
                   '{ $codecsExpr($idxE).decodeValue($inExpr, $codecsExpr($idxE).nullValue).asInstanceOf[t] }.asTerm
-              val assign = Assign(Ref(vi.sym), readTerm)
-              If(cond, assign, elseBranch)
+              val body =
+                if vi.hasDefault && !vi.isOption then
+                  '{
+                    if $inExpr.isNextToken('n') then
+                      $inExpr.rollbackToken()
+                      $inExpr.skip()
+                      ()
+                    else
+                      $inExpr.rollbackToken()
+                      ${Assign(Ref(vi.sym), readTerm).asExprOf[Unit]}
+                  }.asTerm
+                else
+                  Assign(Ref(vi.sym), readTerm)
+              If(cond, body, elseBranch)
         }
 
       // Build result: direct constructor call
@@ -429,47 +469,66 @@ object SanelyJsoniterConfigured:
       Block(varDefs :+ afterDiscIf, resultTerm).asExprOf[P]
 
     private def tryDirectWrite[T: Type](fa: Expr[T], out: Expr[JsonWriter]): Option[Expr[Unit]] =
-      val tpe = TypeRepr.of[T].dealias
-      if tpe =:= TypeRepr.of[Int] then Some('{ $out.writeVal(${fa.asExprOf[Int]}) })
-      else if tpe =:= TypeRepr.of[Long] then Some('{ $out.writeVal(${fa.asExprOf[Long]}) })
-      else if tpe =:= TypeRepr.of[Float] then Some('{ $out.writeVal(${fa.asExprOf[Float]}) })
-      else if tpe =:= TypeRepr.of[Double] then Some('{ $out.writeVal(${fa.asExprOf[Double]}) })
-      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $out.writeVal(${fa.asExprOf[Boolean]}) })
-      else if tpe =:= TypeRepr.of[Short] then Some('{ $out.writeVal(${fa.asExprOf[Short]}.toInt) })
-      else if tpe =:= TypeRepr.of[Byte] then Some('{ $out.writeVal(${fa.asExprOf[Byte]}.toInt) })
-      else if tpe =:= TypeRepr.of[Char] then Some('{ $out.writeVal(${fa.asExprOf[Char]}.toString) })
+      val tpe0 = TypeRepr.of[T].dealias
+      val tpe = if isOpaqueAlias(tpe0) then opaqueDealias(tpe0) else tpe0
+      // Cast to underlying type for opaque types so overload resolution works
+      def castInt: Expr[Int] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Int] } else fa.asExprOf[Int]
+      def castLong: Expr[Long] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Long] } else fa.asExprOf[Long]
+      def castFloat: Expr[Float] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Float] } else fa.asExprOf[Float]
+      def castDouble: Expr[Double] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Double] } else fa.asExprOf[Double]
+      def castBoolean: Expr[Boolean] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Boolean] } else fa.asExprOf[Boolean]
+      def castShort: Expr[Short] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Short] } else fa.asExprOf[Short]
+      def castByte: Expr[Byte] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Byte] } else fa.asExprOf[Byte]
+      def castChar: Expr[Char] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Char] } else fa.asExprOf[Char]
+      def castString: Expr[String] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[String] } else fa.asExprOf[String]
+      def castBigDecimal: Expr[BigDecimal] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[BigDecimal] } else fa.asExprOf[BigDecimal]
+      def castBigInt: Expr[BigInt] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[BigInt] } else fa.asExprOf[BigInt]
+      if tpe =:= TypeRepr.of[Int] then Some('{ $out.writeVal(${castInt}) })
+      else if tpe =:= TypeRepr.of[Long] then Some('{ $out.writeVal(${castLong}) })
+      else if tpe =:= TypeRepr.of[Float] then Some('{ $out.writeVal(${castFloat}) })
+      else if tpe =:= TypeRepr.of[Double] then Some('{ $out.writeVal(${castDouble}) })
+      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $out.writeVal(${castBoolean}) })
+      else if tpe =:= TypeRepr.of[Short] then Some('{ $out.writeVal(${castShort}.toInt) })
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ $out.writeVal(${castByte}.toInt) })
+      else if tpe =:= TypeRepr.of[Char] then Some('{ $out.writeVal(${castChar}.toString) })
       else if tpe =:= TypeRepr.of[String] then
-        val s = fa.asExprOf[String]
-        Some('{ val _v = $s; if _v == null then $out.writeNull() else $out.writeVal(_v) })
+        Some('{ val _v = ${castString}; if _v == null then $out.writeNull() else $out.writeVal(_v) })
       else if tpe =:= TypeRepr.of[BigDecimal] then
-        val bd = fa.asExprOf[BigDecimal]
-        Some('{ val _v = $bd; if _v == null then $out.writeNull() else $out.writeVal(_v) })
+        Some('{ val _v = ${castBigDecimal}; if _v == null then $out.writeNull() else $out.writeVal(_v) })
       else if tpe =:= TypeRepr.of[BigInt] then
-        val bi = fa.asExprOf[BigInt]
-        Some('{ val _v = $bi; if _v == null then $out.writeNull() else $out.writeVal(_v) })
+        Some('{ val _v = ${castBigInt}; if _v == null then $out.writeNull() else $out.writeVal(_v) })
       else None
 
     private def tryDirectWriteDropNull[T: Type](
       fa: Expr[T], names: Expr[Array[String]], idx: Expr[Int], out: Expr[JsonWriter]
     ): Option[Expr[Unit]] =
-      val tpe = TypeRepr.of[T].dealias
-      if tpe =:= TypeRepr.of[Int] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${fa.asExprOf[Int]}) })
-      else if tpe =:= TypeRepr.of[Long] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${fa.asExprOf[Long]}) })
-      else if tpe =:= TypeRepr.of[Float] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${fa.asExprOf[Float]}) })
-      else if tpe =:= TypeRepr.of[Double] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${fa.asExprOf[Double]}) })
-      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${fa.asExprOf[Boolean]}) })
-      else if tpe =:= TypeRepr.of[Short] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${fa.asExprOf[Short]}.toInt) })
-      else if tpe =:= TypeRepr.of[Byte] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${fa.asExprOf[Byte]}.toInt) })
-      else if tpe =:= TypeRepr.of[Char] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${fa.asExprOf[Char]}.toString) })
+      val tpe0 = TypeRepr.of[T].dealias
+      val tpe = if isOpaqueAlias(tpe0) then opaqueDealias(tpe0) else tpe0
+      def castInt: Expr[Int] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Int] } else fa.asExprOf[Int]
+      def castLong: Expr[Long] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Long] } else fa.asExprOf[Long]
+      def castFloat: Expr[Float] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Float] } else fa.asExprOf[Float]
+      def castDouble: Expr[Double] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Double] } else fa.asExprOf[Double]
+      def castBoolean: Expr[Boolean] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Boolean] } else fa.asExprOf[Boolean]
+      def castShort: Expr[Short] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Short] } else fa.asExprOf[Short]
+      def castByte: Expr[Byte] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Byte] } else fa.asExprOf[Byte]
+      def castChar: Expr[Char] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[Char] } else fa.asExprOf[Char]
+      def castString: Expr[String] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[String] } else fa.asExprOf[String]
+      def castBigDecimal: Expr[BigDecimal] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[BigDecimal] } else fa.asExprOf[BigDecimal]
+      def castBigInt: Expr[BigInt] = if isOpaqueAlias(tpe0) then '{ $fa.asInstanceOf[BigInt] } else fa.asExprOf[BigInt]
+      if tpe =:= TypeRepr.of[Int] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${castInt}) })
+      else if tpe =:= TypeRepr.of[Long] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${castLong}) })
+      else if tpe =:= TypeRepr.of[Float] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${castFloat}) })
+      else if tpe =:= TypeRepr.of[Double] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${castDouble}) })
+      else if tpe =:= TypeRepr.of[Boolean] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${castBoolean}) })
+      else if tpe =:= TypeRepr.of[Short] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${castShort}.toInt) })
+      else if tpe =:= TypeRepr.of[Byte] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${castByte}.toInt) })
+      else if tpe =:= TypeRepr.of[Char] then Some('{ $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(${castChar}.toString) })
       else if tpe =:= TypeRepr.of[String] then
-        val s = fa.asExprOf[String]
-        Some('{ val _v = $s; if _v != null then { $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(_v) } })
+        Some('{ val _v = ${castString}; if _v != null then { $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(_v) } })
       else if tpe =:= TypeRepr.of[BigDecimal] then
-        val bd = fa.asExprOf[BigDecimal]
-        Some('{ val _v = $bd; if _v != null then { $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(_v) } })
+        Some('{ val _v = ${castBigDecimal}; if _v != null then { $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(_v) } })
       else if tpe =:= TypeRepr.of[BigInt] then
-        val bi = fa.asExprOf[BigInt]
-        Some('{ val _v = $bi; if _v != null then { $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(_v) } })
+        Some('{ val _v = ${castBigInt}; if _v != null then { $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(_v) } })
       else None
 
     // === Sum derivation (configured) ===
@@ -657,7 +716,8 @@ object SanelyJsoniterConfigured:
         return selfRef.asInstanceOf[Expr[JsonValueCodec[T]]]
 
       val dealiased = tpe.dealias
-      val cacheKey = cheapTypeKey(dealiased)
+      val effectiveType = if isOpaqueAlias(dealiased) then opaqueDealias(dealiased) else dealiased
+      val cacheKey = cheapTypeKey(effectiveType)
 
       exprCache.get(cacheKey) match
         case Some(cached) => return cached.asInstanceOf[Expr[JsonValueCodec[T]]]
@@ -696,10 +756,79 @@ object SanelyJsoniterConfigured:
 
     // === Builtin type resolution ===
 
+    private def isTuple(tpe: TypeRepr): Boolean = tpe <:< TypeRepr.of[Tuple]
+
+    private def tryResolveTuple[T: Type](dealiased: TypeRepr, selfRefOpt: Option[Expr[JsonValueCodec[A]]]): Option[Expr[JsonValueCodec[T]]] =
+      def resolveArg(arg: TypeRepr): Expr[JsonValueCodec[?]] =
+        val argKey = cheapTypeKey(arg)
+        exprCache.get(argKey).map(_.asInstanceOf[Expr[JsonValueCodec[?]]]).getOrElse {
+          resolvePrimCodec(arg.dealias).getOrElse {
+            arg.asType match
+              case '[a] =>
+                Expr.summonIgnoring[JsonValueCodec[a]](cachedIgnoreSymbols*).getOrElse {
+                  tryResolveBuiltin[a](arg.dealias, selfRefOpt).getOrElse {
+                    selfRefOpt match
+                      case Some(selfRef) => resolveOneCodec[a](selfRef)
+                      case None => report.errorAndAbort(s"Cannot resolve JsonValueCodec for tuple element ${Type.show[a]}")
+                  }
+                }
+          }
+        }
+      dealiased match
+        case AppliedType(_, args) if isTuple(dealiased) =>
+          args.length match
+            case 1 =>
+              args.head.asType match
+                case '[a] =>
+                  val ca = resolveArg(args(0)).asInstanceOf[Expr[JsonValueCodec[a]]]
+                  Some('{ Codecs.tuple1[a]($ca) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+            case 2 =>
+              (args(0).asType, args(1).asType) match
+                case ('[a], '[b]) =>
+                  val ca = resolveArg(args(0)).asInstanceOf[Expr[JsonValueCodec[a]]]
+                  val cb = resolveArg(args(1)).asInstanceOf[Expr[JsonValueCodec[b]]]
+                  Some('{ Codecs.tuple2[a, b]($ca, $cb) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+            case 3 =>
+              (args(0).asType, args(1).asType, args(2).asType) match
+                case ('[a], '[b], '[c]) =>
+                  val ca = resolveArg(args(0)).asInstanceOf[Expr[JsonValueCodec[a]]]
+                  val cb = resolveArg(args(1)).asInstanceOf[Expr[JsonValueCodec[b]]]
+                  val cc = resolveArg(args(2)).asInstanceOf[Expr[JsonValueCodec[c]]]
+                  Some('{ Codecs.tuple3[a, b, c]($ca, $cb, $cc) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+            case 4 =>
+              (args(0).asType, args(1).asType, args(2).asType, args(3).asType) match
+                case ('[a], '[b], '[c], '[d]) =>
+                  val ca = resolveArg(args(0)).asInstanceOf[Expr[JsonValueCodec[a]]]
+                  val cb = resolveArg(args(1)).asInstanceOf[Expr[JsonValueCodec[b]]]
+                  val cc = resolveArg(args(2)).asInstanceOf[Expr[JsonValueCodec[c]]]
+                  val cd = resolveArg(args(3)).asInstanceOf[Expr[JsonValueCodec[d]]]
+                  Some('{ Codecs.tuple4[a, b, c, d]($ca, $cb, $cc, $cd) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+            case 5 =>
+              (args(0).asType, args(1).asType, args(2).asType, args(3).asType, args(4).asType) match
+                case ('[a], '[b], '[c], '[d], '[e]) =>
+                  val ca = resolveArg(args(0)).asInstanceOf[Expr[JsonValueCodec[a]]]
+                  val cb = resolveArg(args(1)).asInstanceOf[Expr[JsonValueCodec[b]]]
+                  val cc = resolveArg(args(2)).asInstanceOf[Expr[JsonValueCodec[c]]]
+                  val cd = resolveArg(args(3)).asInstanceOf[Expr[JsonValueCodec[d]]]
+                  val ce = resolveArg(args(4)).asInstanceOf[Expr[JsonValueCodec[e]]]
+                  Some('{ Codecs.tuple5[a, b, c, d, e]($ca, $cb, $cc, $cd, $ce) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+            case n if n >= 6 && n <= 22 =>
+              val codecExprs = args.map { arg =>
+                val c = resolveArg(arg)
+                '{ $c.asInstanceOf[JsonValueCodec[Any]] }
+              }
+              val codecArray = '{ Array[JsonValueCodec[Any]](${Varargs(codecExprs)}*) }
+              Some('{ Codecs.tupleGeneric($codecArray) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+            case _ => None
+        case _ => None
+
     private def tryResolveBuiltin[T: Type](dealiased: TypeRepr, selfRefOpt: Option[Expr[JsonValueCodec[A]]] = None): Option[Expr[JsonValueCodec[T]]] =
       resolvePrimCodec(dealiased).map(_.asInstanceOf[Expr[JsonValueCodec[T]]]).orElse {
-        dealiased match
-          case AppliedType(tycon, List(arg)) =>
+        tryResolveTuple[T](dealiased, selfRefOpt)
+      }.orElse {
+        val resolveTarget = if isOpaqueAlias(dealiased) then opaqueDealias(dealiased) else dealiased
+        resolveTarget match
+          case AppliedType(tycon, List(arg)) if !isTuple(resolveTarget) =>
             val argKey = cheapTypeKey(arg)
             val innerOpt =
               if negativeBuiltinCache.contains(argKey) then exprCache.get(argKey)
@@ -735,44 +864,48 @@ object SanelyJsoniterConfigured:
             }
           case AppliedType(tycon, List(keyArg, valArg))
             if tycon.typeSymbol.fullName.endsWith(".Map") =>
-            val valKey = cheapTypeKey(valArg)
-            val valOpt = (if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
-                         else resolvePrimCodec(valArg.dealias).orElse(exprCache.get(valKey)))
-            val valResolved = valOpt.orElse {
-              valArg.asType match
-                case '[v] =>
-                  Expr.summonIgnoring[JsonValueCodec[v]](cachedIgnoreSymbols*).map { codec =>
-                    exprCache(valKey) = codec
-                    codec
-                  }
-            }.orElse {
-              valArg.asType match
-                case '[v] =>
-                  tryResolveBuiltin[v](valArg.dealias, selfRefOpt).map { codec =>
-                    exprCache(valKey) = codec
-                    codec
-                  }
-            }.orElse {
-              selfRefOpt.flatMap { selfRef =>
+            // Check for external given for the whole Map type first
+            val wholeMapSummoned = Expr.summonIgnoring[JsonValueCodec[T]](cachedIgnoreSymbols*)
+            wholeMapSummoned.orElse {
+              val valKey = cheapTypeKey(valArg)
+              val valOpt = (if negativeBuiltinCache.contains(valKey) then exprCache.get(valKey)
+                           else resolvePrimCodec(valArg.dealias).orElse(exprCache.get(valKey)))
+              val valResolved = valOpt.orElse {
                 valArg.asType match
                   case '[v] =>
-                    val codec = resolveOneCodec[v](selfRef)
-                    exprCache(valKey) = codec
-                    Some(codec)
+                    Expr.summonIgnoring[JsonValueCodec[v]](cachedIgnoreSymbols*).map { codec =>
+                      exprCache(valKey) = codec
+                      codec
+                    }
+              }.orElse {
+                valArg.asType match
+                  case '[v] =>
+                    tryResolveBuiltin[v](valArg.dealias, selfRefOpt).map { codec =>
+                      exprCache(valKey) = codec
+                      codec
+                    }
+              }.orElse {
+                selfRefOpt.flatMap { selfRef =>
+                  valArg.asType match
+                    case '[v] =>
+                      val codec = resolveOneCodec[v](selfRef)
+                      exprCache(valKey) = codec
+                      Some(codec)
+                }
               }
-            }
-            valResolved.flatMap { valCodec =>
-              valArg.asType match
-                case '[v] =>
-                  val vc = valCodec.asInstanceOf[Expr[JsonValueCodec[v]]]
-                  if keyArg =:= TypeRepr.of[String] then
-                    Some('{ Codecs.stringMap[v]($vc) }.asInstanceOf[Expr[JsonValueCodec[T]]])
-                  else
-                    keyArg.asType match
-                      case '[k] =>
-                        Expr.summon[KeyCodec[k]].map { kc =>
-                          '{ Codecs.map[k, v]($kc, $vc) }.asInstanceOf[Expr[JsonValueCodec[T]]]
-                        }
+              valResolved.flatMap { valCodec =>
+                valArg.asType match
+                  case '[v] =>
+                    val vc = valCodec.asInstanceOf[Expr[JsonValueCodec[v]]]
+                    if keyArg =:= TypeRepr.of[String] then
+                      Some('{ Codecs.stringMap[v]($vc) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+                    else
+                      keyArg.asType match
+                        case '[k] =>
+                          Expr.summon[KeyCodec[k]].map { kc =>
+                            '{ Codecs.map[k, v]($kc, $vc) }.asInstanceOf[Expr[JsonValueCodec[T]]]
+                          }
+              }
             }
           case AppliedType(tycon, List(leftArg, rightArg))
             if tycon.typeSymbol.fullName == "scala.util.Either" =>
@@ -816,18 +949,23 @@ object SanelyJsoniterConfigured:
       }
 
     private def resolvePrimCodec(tpe: TypeRepr): Option[Expr[JsonValueCodec[?]]] =
-      if tpe =:= TypeRepr.of[String] then Some('{ Codecs.string })
-      else if tpe =:= TypeRepr.of[Int] then Some('{ Codecs.int })
-      else if tpe =:= TypeRepr.of[Long] then Some('{ Codecs.long })
-      else if tpe =:= TypeRepr.of[Double] then Some('{ Codecs.double })
-      else if tpe =:= TypeRepr.of[Float] then Some('{ Codecs.float })
-      else if tpe =:= TypeRepr.of[Boolean] then Some('{ Codecs.boolean })
-      else if tpe =:= TypeRepr.of[Short] then Some('{ Codecs.short })
-      else if tpe =:= TypeRepr.of[Byte] then Some('{ Codecs.byte })
-      else if tpe =:= TypeRepr.of[BigDecimal] then Some('{ Codecs.bigDecimal })
-      else if tpe =:= TypeRepr.of[BigInt] then Some('{ Codecs.bigInt })
-      else if tpe =:= TypeRepr.of[Char] then Some('{ Codecs.char })
-      else None
+      def tryPrim(t: TypeRepr): Option[Expr[JsonValueCodec[?]]] =
+        if t =:= TypeRepr.of[String] then Some('{ Codecs.string })
+        else if t =:= TypeRepr.of[Int] then Some('{ Codecs.int })
+        else if t =:= TypeRepr.of[Long] then Some('{ Codecs.long })
+        else if t =:= TypeRepr.of[Double] then Some('{ Codecs.double })
+        else if t =:= TypeRepr.of[Float] then Some('{ Codecs.float })
+        else if t =:= TypeRepr.of[Boolean] then Some('{ Codecs.boolean })
+        else if t =:= TypeRepr.of[Short] then Some('{ Codecs.short })
+        else if t =:= TypeRepr.of[Byte] then Some('{ Codecs.byte })
+        else if t =:= TypeRepr.of[BigDecimal] then Some('{ Codecs.bigDecimal })
+        else if t =:= TypeRepr.of[BigInt] then Some('{ Codecs.bigInt })
+        else if t =:= TypeRepr.of[Char] then Some('{ Codecs.char })
+        else None
+      tryPrim(tpe).orElse {
+        if isOpaqueAlias(tpe) then tryPrim(opaqueDealias(tpe))
+        else None
+      }
 
     private def buildContainerCodec[T: Type, A: Type](
       tycon: TypeRepr,
@@ -905,6 +1043,19 @@ object SanelyJsoniterConfigured:
       catch case _: Exception => ()
       buf.result()
 
+    // === Opaque type helpers ===
+
+    private def isOpaqueAlias(tpe: TypeRepr): Boolean =
+      tpe match
+        case tr: TypeRef => tr.isOpaqueAlias
+        case _ => false
+
+    @scala.annotation.tailrec
+    private def opaqueDealias(tpe: TypeRepr): TypeRepr =
+      tpe match
+        case tr: TypeRef if tr.isOpaqueAlias => opaqueDealias(tr.translucentSuperType.dealias)
+        case _ => tpe
+
     // === Utilities ===
 
     private def cheapTypeKey(tpe: TypeRepr): String =
@@ -930,4 +1081,8 @@ object SanelyJsoniterConfigured:
       else if tpe =:= TypeRepr.of[Byte] then '{ (0: Byte): Any }
       else if tpe =:= TypeRepr.of[Char] then '{ (0: Char): Any }
       else if tpe <:< TypeRepr.of[Option[?]] then '{ None: Any }
+      else if isOpaqueAlias(tpe) then
+        val underlying = opaqueDealias(tpe)
+        underlying.asType match
+          case '[u] => '{ ${nullValueExpr[u]}.asInstanceOf[Any] }
       else '{ null: Any }

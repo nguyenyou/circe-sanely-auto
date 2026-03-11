@@ -70,6 +70,20 @@ object Codecs:
       val s = in.readString(null)
       if s == null || s.isEmpty then default else s.charAt(0)
 
+  // === Public givens (import Codecs.given for standalone primitive codecs) ===
+
+  given JsonValueCodec[Boolean] = boolean
+  given JsonValueCodec[Byte] = byte
+  given JsonValueCodec[Short] = short
+  given JsonValueCodec[Int] = int
+  given JsonValueCodec[Long] = long
+  given JsonValueCodec[Float] = float
+  given JsonValueCodec[Double] = double
+  given JsonValueCodec[String] = string
+  given JsonValueCodec[BigDecimal] = bigDecimal
+  given JsonValueCodec[BigInt] = bigInt
+  given JsonValueCodec[Char] = char
+
   // === Containers ===
 
   def option[T](inner: JsonValueCodec[T]): JsonValueCodec[Option[T]] = new JsonValueCodec[Option[T]]:
@@ -268,6 +282,135 @@ object Codecs:
             buf += (keyCodec.decode(in.readKeyAsString()) -> valueCodec.decodeValue(in, valueCodec.nullValue))
           if !in.isCurrentToken('}') then in.objectEndOrCommaError()
         buf.result()
+
+  // === Tuples ===
+
+  def tuple1[A](ca: JsonValueCodec[A]): JsonValueCodec[Tuple1[A]] = new JsonValueCodec[Tuple1[A]]:
+    val nullValue: Tuple1[A] = null.asInstanceOf[Tuple1[A]]
+    def encodeValue(x: Tuple1[A], out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeArrayStart()
+        ca.encodeValue(x._1, out)
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: Tuple1[A]): Tuple1[A] =
+      if !in.isNextToken('[') then in.readNullOrTokenError(default, '[')
+      else
+        val a = ca.decodeValue(in, ca.nullValue)
+        if !in.isNextToken(']') then in.arrayEndOrCommaError()
+        Tuple1(a)
+
+  def tuple2[A, B](ca: JsonValueCodec[A], cb: JsonValueCodec[B]): JsonValueCodec[(A, B)] = new JsonValueCodec[(A, B)]:
+    val nullValue: (A, B) = null.asInstanceOf[(A, B)]
+    def encodeValue(x: (A, B), out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeArrayStart()
+        ca.encodeValue(x._1, out)
+        cb.encodeValue(x._2, out)
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: (A, B)): (A, B) =
+      if !in.isNextToken('[') then in.readNullOrTokenError(default, '[')
+      else
+        val a = ca.decodeValue(in, ca.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val b = cb.decodeValue(in, cb.nullValue)
+        if !in.isNextToken(']') then in.arrayEndOrCommaError()
+        (a, b)
+
+  def tuple3[A, B, C](ca: JsonValueCodec[A], cb: JsonValueCodec[B], cc: JsonValueCodec[C]): JsonValueCodec[(A, B, C)] = new JsonValueCodec[(A, B, C)]:
+    val nullValue: (A, B, C) = null.asInstanceOf[(A, B, C)]
+    def encodeValue(x: (A, B, C), out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeArrayStart()
+        ca.encodeValue(x._1, out)
+        cb.encodeValue(x._2, out)
+        cc.encodeValue(x._3, out)
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: (A, B, C)): (A, B, C) =
+      if !in.isNextToken('[') then in.readNullOrTokenError(default, '[')
+      else
+        val a = ca.decodeValue(in, ca.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val b = cb.decodeValue(in, cb.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val c = cc.decodeValue(in, cc.nullValue)
+        if !in.isNextToken(']') then in.arrayEndOrCommaError()
+        (a, b, c)
+
+  def tuple4[A, B, C, D](ca: JsonValueCodec[A], cb: JsonValueCodec[B], cc: JsonValueCodec[C], cd: JsonValueCodec[D]): JsonValueCodec[(A, B, C, D)] = new JsonValueCodec[(A, B, C, D)]:
+    val nullValue: (A, B, C, D) = null.asInstanceOf[(A, B, C, D)]
+    def encodeValue(x: (A, B, C, D), out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeArrayStart()
+        ca.encodeValue(x._1, out); cb.encodeValue(x._2, out)
+        cc.encodeValue(x._3, out); cd.encodeValue(x._4, out)
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: (A, B, C, D)): (A, B, C, D) =
+      if !in.isNextToken('[') then in.readNullOrTokenError(default, '[')
+      else
+        val a = ca.decodeValue(in, ca.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val b = cb.decodeValue(in, cb.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val c = cc.decodeValue(in, cc.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val d = cd.decodeValue(in, cd.nullValue)
+        if !in.isNextToken(']') then in.arrayEndOrCommaError()
+        (a, b, c, d)
+
+  def tuple5[A, B, C, D, E](ca: JsonValueCodec[A], cb: JsonValueCodec[B], cc: JsonValueCodec[C], cd: JsonValueCodec[D], ce: JsonValueCodec[E]): JsonValueCodec[(A, B, C, D, E)] = new JsonValueCodec[(A, B, C, D, E)]:
+    val nullValue: (A, B, C, D, E) = null.asInstanceOf[(A, B, C, D, E)]
+    def encodeValue(x: (A, B, C, D, E), out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        out.writeArrayStart()
+        ca.encodeValue(x._1, out); cb.encodeValue(x._2, out)
+        cc.encodeValue(x._3, out); cd.encodeValue(x._4, out)
+        ce.encodeValue(x._5, out)
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: (A, B, C, D, E)): (A, B, C, D, E) =
+      if !in.isNextToken('[') then in.readNullOrTokenError(default, '[')
+      else
+        val a = ca.decodeValue(in, ca.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val b = cb.decodeValue(in, cb.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val c = cc.decodeValue(in, cc.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val d = cd.decodeValue(in, cd.nullValue)
+        if !in.isNextToken(',') then in.arrayEndOrCommaError()
+        val e = ce.decodeValue(in, ce.nullValue)
+        if !in.isNextToken(']') then in.arrayEndOrCommaError()
+        (a, b, c, d, e)
+
+  /** Generic tuple codec for arities 6-22. Uses productElement/Tuple.fromArray at runtime. */
+  def tupleGeneric(codecs: Array[JsonValueCodec[Any]]): JsonValueCodec[Any] = new JsonValueCodec[Any]:
+    val nullValue: Any = null
+    def encodeValue(x: Any, out: JsonWriter): Unit =
+      if x == null then out.writeNull()
+      else
+        val p = x.asInstanceOf[Product]
+        out.writeArrayStart()
+        var i = 0
+        while i < codecs.length do
+          codecs(i).encodeValue(p.productElement(i), out)
+          i += 1
+        out.writeArrayEnd()
+    def decodeValue(in: JsonReader, default: Any): Any =
+      if !in.isNextToken('[') then in.readNullOrTokenError(default, '[')
+      else
+        val arr = new Array[Any](codecs.length)
+        arr(0) = codecs(0).decodeValue(in, codecs(0).nullValue)
+        var i = 1
+        while i < codecs.length do
+          if !in.isNextToken(',') then in.arrayEndOrCommaError()
+          arr(i) = codecs(i).decodeValue(in, codecs(i).nullValue)
+          i += 1
+        if !in.isNextToken(']') then in.arrayEndOrCommaError()
+        Tuple.fromArray(arr)
 
   // === Value enums ===
 

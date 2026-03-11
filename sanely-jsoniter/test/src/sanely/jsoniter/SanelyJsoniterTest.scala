@@ -1184,4 +1184,114 @@ object SanelyJsoniterTest extends TestSuite:
       val jsoniterResult = readFromString[Color](circeJson)
       assert(jsoniterResult == Color.Blue)
     }
+
+    // === Tuple codec tests ===
+
+    test("tuple2 - round-trip as JSON array") {
+      case class WithTuple(pair: (Int, String))
+      given JsonValueCodec[WithTuple] = deriveJsoniterCodec
+      val v = WithTuple((1, "hello"))
+      val json = writeToString(v)
+      assert(json == """{"pair":[1,"hello"]}""")
+      val decoded = readFromString[WithTuple](json)
+      assert(decoded == v)
+    }
+
+    test("tuple3 - round-trip") {
+      case class WithTriple(t: (String, Int, Boolean))
+      given JsonValueCodec[WithTriple] = deriveJsoniterCodec
+      val v = WithTriple(("a", 42, true))
+      val json = writeToString(v)
+      assert(json == """{"t":["a",42,true]}""")
+      val decoded = readFromString[WithTriple](json)
+      assert(decoded == v)
+    }
+
+    test("tuple - in collection (Seq[(String, Int)])") {
+      case class WithTupleSeq(items: Seq[(String, Int)])
+      given JsonValueCodec[WithTupleSeq] = deriveJsoniterCodec
+      val v = WithTupleSeq(Seq(("a", 1), ("b", 2)))
+      val json = writeToString(v)
+      assert(json.contains("""["a",1]"""))
+      val decoded = readFromString[WithTupleSeq](json)
+      assert(decoded == v)
+    }
+
+    test("tuple1 - round-trip") {
+      case class WithTuple1(t: Tuple1[String])
+      given JsonValueCodec[WithTuple1] = deriveJsoniterCodec
+      val v = WithTuple1(Tuple1("x"))
+      val json = writeToString(v)
+      assert(json == """{"t":["x"]}""")
+      val decoded = readFromString[WithTuple1](json)
+      assert(decoded == v)
+    }
+
+    test("tuple6 - round-trip via generic path") {
+      case class WithTuple6(t: (Int, String, Boolean, Double, Long, Int))
+      given JsonValueCodec[WithTuple6] = deriveJsoniterCodec
+      val v = WithTuple6((1, "a", true, 2.5, 3L, 4))
+      val json = writeToString(v)
+      assert(json == """{"t":[1,"a",true,2.5,3,4]}""")
+      val decoded = readFromString[WithTuple6](json)
+      assert(decoded == v)
+    }
+
+    test("tuple22 - round-trip max arity") {
+      type T22 = (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
+      case class WithTuple22(t: T22)
+      given JsonValueCodec[WithTuple22] = deriveJsoniterCodec
+      val v = WithTuple22(Tuple.fromArray(Array.tabulate(22)(_ + 1)).asInstanceOf[T22])
+      val json = writeToString(v)
+      assert(json == """{"t":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22]}""")
+      val decoded = readFromString[WithTuple22](json)
+      assert(decoded == v)
+    }
+
+    // === Primitive codec given tests ===
+
+    test("primitive codecs - import given and use standalone") {
+      import sanely.jsoniter.Codecs.given
+      assert(writeToString("hello") == "\"hello\"")
+      assert(readFromString[String]("\"world\"") == "world")
+      assert(writeToString(42) == "42")
+      assert(readFromString[Int]("99") == 99)
+      assert(writeToString(true) == "true")
+      assert(readFromString[Boolean]("false") == false)
+      assert(writeToString(3.14) == "3.14")
+      assert(readFromString[Double]("2.5") == 2.5)
+    }
+
+    // === Null → default tests ===
+
+    test("configured - null value uses default when useDefaults is true (Int)") {
+      // WithDefaults: name: String, age: Int = 25, active: Boolean = true
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      // null for Int field with default → keeps 25
+      // null for Boolean field with default → keeps true
+      val json = """{"name":"Alice","age":null,"active":null}"""
+      val decoded = readFromString[WithDefaults](json)
+      assert(decoded == WithDefaults("Alice", 25, true))
+    }
+
+    test("configured - null value uses default when useDefaults is true (Option with Some default)") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[WithDefaultOption] = deriveJsoniterConfiguredCodec
+      // WithDefaultOption: name: String, tag: Option[String] = Some("default")
+      // null for Option field → None (NOT kept as default Some("default"))
+      val json = """{"name":"Alice","tag":null}"""
+      val decoded = readFromString[WithDefaultOption](json)
+      assert(decoded == WithDefaultOption("Alice", None))
+    }
+
+    test("configured - null value without useDefaults keeps zero value") {
+      given JsoniterConfiguration = JsoniterConfiguration.default // useDefaults=false
+      given JsonValueCodec[WithDefaults] = deriveJsoniterConfiguredCodec
+      // Without useDefaults, var initialized to zero (0 for Int, false for Boolean)
+      // null JSON value keeps those zeros
+      val json = """{"name":"Alice","age":null,"active":null}"""
+      val decoded = readFromString[WithDefaults](json)
+      assert(decoded == WithDefaults("Alice", 0, false))
+    }
   }
