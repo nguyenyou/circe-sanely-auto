@@ -253,7 +253,7 @@ but takes longer to do it — focus on macro profiling.
 
 ## Baseline Numbers (JMH)
 
-Reference from JMH run (M3 Max, JDK 21.0.9 Zulu, JMH 1.37, 1 fork, 5wi + 5i x 1s, -Xms512m -Xmx512m):
+Reference from JMH run (M3 Max, JDK 25.0.2 Homebrew, JMH 1.37, 1 fork, 5wi + 5i x 1s, -Xms512m -Xmx512m):
 
 ```
 Benchmark                            Mode  Cnt        Score       Error  Units

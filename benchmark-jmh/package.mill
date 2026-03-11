@@ -6,6 +6,8 @@ import contrib.jmh.JmhModule
 object `package` extends ScalaModule with JmhModule {
   def scalaVersion = build.scala3Version
   def jmhCoreVersion = "1.37"
+  // Use the system JDK (from setup-java on CI) instead of Coursier's default
+  def javaHome = Task { Option.empty[PathRef] }
   def moduleDeps = Seq(build.sanely.jvm, build.`sanely-jsoniter`.jvm)
   def scalacOptions = Task {
     super.scalacOptions() ++ Seq("-Xmax-inlines", "64")
