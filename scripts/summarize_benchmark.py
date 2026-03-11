@@ -72,71 +72,76 @@ def parse_hyperfine(text: str) -> dict | None:
     return results if results else None
 
 
-# ── Runtime parser ──
+# ── Runtime parser (JMH format) ──
+
+# Maps JMH benchmark class.method names to display names and sections
+JMH_NAME_MAP = {
+    "ReadBenchmark.circeJawn": ("circe-jawn", "reading"),
+    "ReadBenchmark.circeJsoniterBridge": ("circe+jsoniter", "reading"),
+    "ReadBenchmark.sanelyJsoniter": ("sanely-jsoniter", "reading"),
+    "ReadBenchmark.jsoniterScala": ("jsoniter-scala", "reading"),
+    "WriteBenchmark.circePrinter": ("circe-printer", "writing"),
+    "WriteBenchmark.circeJsoniterBridge": ("circe+jsoniter", "writing"),
+    "WriteBenchmark.sanelyJsoniter": ("sanely-jsoniter", "writing"),
+    "WriteBenchmark.jsoniterScala": ("jsoniter-scala", "writing"),
+}
+
+# Baselines for ratio computation
+BASELINES = {"reading": "circe-jawn", "writing": "circe-printer"}
 
 
 def parse_runtime(text: str) -> dict | None:
-    """Parse RuntimeBenchmark output into structured data."""
+    """Parse JMH output into structured data.
+
+    JMH summary table format:
+    Benchmark                            Mode  Cnt        Score       Error  Units
+    ReadBenchmark.circeJawn             thrpt    5   133567.977 ±  1334.395  ops/s
+    """
     if not text:
         return None
 
     result = {"reading": {}, "writing": {}, "reading_cmp": {}, "writing_cmp": {}}
 
-    # Find reading and writing sections
-    sections = re.split(r"\n(Reading|Writing)\s+\(", text)
-
-    current_section = None
-    in_comparison = False
-
+    # Parse JMH summary table lines
     for line in text.splitlines():
-        if line.startswith("Reading"):
-            current_section = "reading"
-            in_comparison = False
-            continue
-        if line.startswith("Writing"):
-            current_section = "writing"
-            in_comparison = False
-            continue
-        if line.startswith("---"):
-            continue
-        if not current_section:
-            continue
-
-        # Empty line after results → comparison section follows
-        if line.strip() == "":
-            if current_section and not in_comparison:
-                in_comparison = True
-            continue
-
-        # Parse result line: "  name        123456 ops/sec  (min=..., max=...)  XX KB/op"
-        result_match = re.match(
-            r"\s+(\S+(?:\+\S+)?)\s+([\d.]+)\s+ops/sec\s+\(min=([\d.]+),\s*max=([\d.]+)\)\s+(.+)",
+        match = re.match(
+            r"\s*(?:runtime\.)?(\w+\.\w+)\s+thrpt\s+(\d+)\s+([\d.]+)\s*±\s*([\d.]+)\s+ops/s",
             line,
         )
-        if result_match and not in_comparison:
-            name = result_match.group(1)
-            result[current_section][name] = {
-                "ops_sec": float(result_match.group(2)),
-                "min": float(result_match.group(3)),
-                "max": float(result_match.group(4)),
-                "alloc": result_match.group(5).strip(),
-            }
+        if not match:
             continue
 
-        # Parse comparison line: "  name        1.23x vs baseline  alloc 0.89x"
-        cmp_match = re.match(
-            r"\s+(\S+(?:\+\S+)?)\s+([\d.]+)x\s+vs\s+(\S+(?:\+\S+)?)\s*(.*)", line
-        )
-        if cmp_match:
-            name = cmp_match.group(1)
-            cmp_section = current_section + "_cmp"
-            result[cmp_section][name] = {
-                "ratio": float(cmp_match.group(2)),
-                "vs": cmp_match.group(3),
+        benchmark_name = match.group(1)
+        ops_sec = float(match.group(3))
+        error = float(match.group(4))
+
+        mapping = JMH_NAME_MAP.get(benchmark_name)
+        if not mapping:
+            continue
+
+        display_name, section = mapping
+        result[section][display_name] = {
+            "ops_sec": ops_sec,
+            "error": error,
+            "min": ops_sec - error,
+            "max": ops_sec + error,
+            "alloc": "",
+        }
+
+    # Compute ratios vs baseline
+    for section in ("reading", "writing"):
+        baseline_name = BASELINES[section]
+        baseline = result[section].get(baseline_name)
+        if not baseline:
+            continue
+        for name, data in result[section].items():
+            if name == baseline_name:
+                continue
+            ratio = data["ops_sec"] / baseline["ops_sec"]
+            result[section + "_cmp"][name] = {
+                "ratio": ratio,
+                "vs": baseline_name,
             }
-            alloc_match = re.search(r"alloc\s+([\d.]+)x", cmp_match.group(4))
-            if alloc_match:
-                result[cmp_section][name]["alloc_ratio"] = float(alloc_match.group(1))
 
     return result if any(result[k] for k in result) else None
 
@@ -316,26 +321,28 @@ def build_summary(results_dir: str) -> str:
         lines.append("")
 
     # ── Runtime table ──
-    if runtime and (runtime["reading_cmp"] or runtime["writing_cmp"]):
-        lines.append("### At a Glance — Runtime")
+    if runtime and (runtime["reading"] or runtime["writing"]):
+        lines.append("### At a Glance — Runtime (JMH)")
         lines.append("")
-        lines.append("| Benchmark | ops/sec | vs circe | alloc |")
-        lines.append("|-----------|---------|----------|-------|")
+        lines.append("| Benchmark | ops/sec | vs circe |")
+        lines.append("|-----------|---------|----------|")
 
         for section, label in [("reading", "Read"), ("writing", "Write")]:
             data = runtime[section]
             cmp = runtime[section + "_cmp"]
+            baseline_name = BASELINES[section]
             for name in data:
-                if name in ("circe-jawn", "circe-printer"):
-                    continue  # skip baseline from detail rows
                 ops = data[name]["ops_sec"]
-                alloc = data[name]["alloc"]
-                ratio_str = ""
+                error = data[name].get("error")
+                ops_str = fmt_ops(ops)
+                if error:
+                    ops_str += f" ± {fmt_ops(error)}"
+                ratio_str = "1.0x"
                 if name in cmp:
                     r = cmp[name]["ratio"]
                     ratio_str = f"**{r:.1f}x**"
                 lines.append(
-                    f"| {label}: {name} | {fmt_ops(ops)} | {ratio_str} | {alloc} |"
+                    f"| {label}: {name} | {ops_str} | {ratio_str} |"
                 )
 
         lines.append("")

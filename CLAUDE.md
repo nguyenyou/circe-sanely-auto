@@ -61,8 +61,13 @@ bash bench.sh --jsoniter 5      # marginal cost of sanely-jsoniter (~199 types, 
 ./mill benchmark.generic.compile # compile benchmark: circe-generic (auto)
 ./mill benchmark-configured.sanely.compile   # compile benchmark: our library (configured)
 ./mill benchmark-configured.generic.compile  # compile benchmark: circe-core (configured)
-bash bench-runtime.sh           # runtime benchmark: circe-jawn vs circe+jsoniter vs jsoniter-scala
-./mill benchmark-runtime.run    # run runtime benchmark directly
+bash bench-runtime.sh           # runtime benchmark: circe-jawn vs circe+jsoniter vs jsoniter-scala (quick, hand-rolled)
+./mill benchmark-runtime.run    # run runtime benchmark directly (hand-rolled harness)
+./mill benchmark-jmh.runJmh                          # JMH runtime benchmark (all 4 libraries, read + write)
+./mill benchmark-jmh.runJmh 'Read'                   # JMH read benchmarks only
+./mill benchmark-jmh.runJmh 'Write'                  # JMH write benchmarks only
+./mill benchmark-jmh.runJmh -prof gc                  # JMH with GC allocation profiler
+./mill benchmark-jmh.listJmhBenchmarks                # list detected JMH benchmarks
 ```
 
 ### Profiling
@@ -103,7 +108,8 @@ open /tmp/flamegraph.html
 | `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
 | `benchmark-configured/` | Configured derivation benchmark. Three sub-modules: `sanely`, `generic`, `generic-compat` sharing `benchmark-configured/shared/src/` |
 | `benchmark-jsoniter/` | sanely-jsoniter marginal compile-time cost. Three sub-modules: `types` (shared), `circe-only` (baseline), `circe-jsoniter` (circe + jsoniter codecs) |
-| `benchmark-runtime/` | Runtime performance benchmark. Compares circe-jawn vs circe+jsoniter-parser vs pure jsoniter-scala (reading + writing throughput) |
+| `benchmark-runtime/` | Runtime performance benchmark (hand-rolled harness). Compares circe-jawn vs circe+jsoniter-parser vs pure jsoniter-scala |
+| `benchmark-jmh/` | JMH runtime benchmark. Same comparisons as benchmark-runtime but with proper JMH fork isolation, compiler blackholes, and statistical error reporting |
 | `tapir-test/` | Tapir integration tests. Proves sanely-jsoniter codecs work through Tapir's codec layer and produce wire-compatible output with circe bridge |
 | `zinc-test/` | Zinc incremental compilation tests. Verifies macros re-expand correctly when types change. 5 scenarios, 21 checks |
 
@@ -241,3 +247,4 @@ These are now auto-synced via `scripts/sync-circe-tests.py` from the `upstream/c
 - Module names with hyphens: use `benchmark-configured.sanely`, NOT `benchmark.configured`
 - Mill 1.x: override `moduleDir` (public API), not `millSourcePath` (internal)
 - `sanely/package.mill`: cross-compile via `PlatformScalaModule` with `jvm` and `js` sub-modules
+- `//| mvnDeps:` YAML header can ONLY appear in `build.mill`, not `package.mill`. Adding build-time plugin deps (like `mill-contrib-jmh`) to `build.mill` can cause "ambiguous reference" errors for modules referenced in `build.mill` — fix by qualifying with `build.` prefix (e.g., `build.sanely.jvm`)
