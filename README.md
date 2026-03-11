@@ -74,11 +74,11 @@ Adding jsoniter codecs on top of existing circe codecs. 199 types, measured with
 
 | Module | Mean ± σ | |
 |---|---|---|
-| **circe codecs only** (baseline) | 811ms ± 21ms | 1.0x |
-| **circe + jsoniter codecs** | 1,560ms ± 101ms | 1.9x |
-| **Marginal cost** | **~749ms** | **~3.8ms/type** |
+| **circe codecs only** (baseline) | 809ms ± 39ms | 1.0x |
+| **circe + jsoniter codecs** | 850ms ± 18ms | 1.05x |
+| **Marginal cost** | **~42ms** | **~0.2ms/type** |
 
-The jsoniter codec derivation roughly doubles compile time for the affected module — but in absolute terms it's under 1 second for 199 types. For a codebase with hundreds of types, expect sub-2-second additional compile time in exchange for 5–6x runtime throughput.
+The jsoniter codec derivation adds negligible compile time — under 50ms for 199 types (~5% overhead). This is possible because sanely-jsoniter's macro resolves codecs in a single expansion pass, reusing the same caching and resolution infrastructure as the circe codec macro.
 
 <details>
 <summary>CI numbers (ubuntu-latest, GitHub Actions shared runners)</summary>
