@@ -1,6 +1,5 @@
 package sanely.jsoniter
 
-import utest.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 
 // Test types for auto derivation with container fields (prefixed to avoid collisions)
@@ -14,11 +13,10 @@ case class ACWithSeq(name: String, items: Seq[ACInner])
 case class ACWithSet(name: String, items: Set[ACInner])
 case class ACWithNested(name: String, nested: List[Option[ACInner]])
 
-object AutoContainerTest extends TestSuite:
+class AutoContainerTest extends munit.FunSuite:
 
   import sanely.jsoniter.auto.given
 
-  val tests = Tests {
 
     test("auto - List[CaseClass] field") {
       val v = ACWithList("test", List(ACInner(1, "a"), ACInner(2, "b")))
@@ -84,4 +82,3 @@ object AutoContainerTest extends TestSuite:
       val json = writeToString(v)
       assert(readFromString[ACWithNested](json) == v)
     }
-  }

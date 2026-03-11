@@ -1,6 +1,5 @@
 package sanely.jsoniter
 
-import utest.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 
 // === Test data models ===
@@ -124,7 +123,7 @@ case class WideRecord(
   india: String, juliet: Int, kilo: Boolean, lima: Double
 )
 
-object SanelyJsoniterTest extends TestSuite:
+class SanelyJsoniterTest extends munit.FunSuite:
   import sanely.jsoniter.semiauto.*
 
   // Derive codecs
@@ -146,11 +145,11 @@ object SanelyJsoniterTest extends TestSuite:
   given JsonValueCodec[WithNestedEither] = deriveJsoniterCodec
   given JsonValueCodec[WideRecord] = deriveJsoniterCodec
 
-  private def roundtrip[A: JsonValueCodec](value: A): A =
+  private def roundtrip[A: JsonValueCodec](value: A): A = {
     val json = writeToString(value)
     readFromString[A](json)
+  }
 
-  val tests = Tests {
     test("product - simple") {
       val addr = Address("123 Main", "Springfield", "62701")
       val json = writeToString(addr)
@@ -1294,4 +1293,3 @@ object SanelyJsoniterTest extends TestSuite:
       val decoded = readFromString[WithDefaults](json)
       assert(decoded == WithDefaults("Alice", 0, false))
     }
-  }

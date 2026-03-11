@@ -1,6 +1,5 @@
 package sanely
 
-import utest.*
 import io.circe.{*, given}
 import io.circe.parser.*
 import io.circe.syntax.*
@@ -92,8 +91,7 @@ object GenericFooHelper:
   given Configuration = Configuration.default.withDefaults
   val genericFooIntDecoder: Decoder[GenericFoo[Int]] = SanelyConfiguredDecoder.derived
 
-object SanelyConfiguredSuite extends TestSuite:
-  val tests = Tests {
+class SanelyConfiguredSuite extends munit.FunSuite:
 
     // === transformMemberNames ===
 
@@ -829,4 +827,3 @@ object SanelyConfiguredSuite extends TestSuite:
       val decoded = json.as[ConfigRecursiveOptionMap]
       assert(decoded == Right(root))
     }
-  }

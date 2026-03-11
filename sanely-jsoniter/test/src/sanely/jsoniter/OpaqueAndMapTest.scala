@@ -1,6 +1,5 @@
 package sanely.jsoniter
 
-import utest.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 
 // Opaque types need to be at file/object scope, not inside test blocks
@@ -33,10 +32,9 @@ object OpaqueAutoTypes:
 
   case class Person(name: Name, age: Age)
 
-object OpaqueAndMapTest extends TestSuite:
+class OpaqueAndMapTest extends munit.FunSuite:
   import sanely.jsoniter.semiauto.*
 
-  val tests = Tests {
 
     // === Opaque type tests ===
 
@@ -159,4 +157,3 @@ object OpaqueAndMapTest extends TestSuite:
       val decoded = readFromString[ConfiguredWithMap](json)
       assert(decoded == v)
     }
-  }

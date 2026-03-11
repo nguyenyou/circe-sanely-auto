@@ -19,10 +19,10 @@ object `package` extends ScalaModule {
     )
   }
 
-  object test extends ScalaTests with TestModule.Utest {
+  object test extends ScalaTests with TestModule.Munit {
     def mvnDeps = Task {
       super.mvnDeps() ++ Seq(
-        mvn"com.lihaoyi::utest:${build.utestVersion}",
+        mvn"org.scalameta::munit:${build.munitVersion}",
       )
     }
   }
