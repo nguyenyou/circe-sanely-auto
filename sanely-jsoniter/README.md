@@ -308,7 +308,7 @@ Adopting sanely-jsoniter is straightforward — you keep circe for everything el
 
 ```scala
 // Mill
-ivy"io.github.nguyenyou::sanely-jsoniter::0.18.0"
+mvn"io.github.nguyenyou::sanely-jsoniter::0.18.0"
 
 // sbt
 "io.github.nguyenyou" %% "sanely-jsoniter" % "0.18.0"
