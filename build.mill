@@ -1,8 +1,9 @@
+//| mvnDeps: ["com.lihaoyi::mill-contrib-jmh:$MILL_VERSION"]
 package build
 
 import mill._, scalalib._, publish._
 
-val publishVersion = "0.19.0"
+val publishVersion = "0.20.0"
 val circeVersion = "0.14.15"
 val jsoniterScalaVersion = "2.38.9"
 val munitVersion = "1.2.0"
@@ -11,7 +12,7 @@ val scalaJSVersion = "1.20.2"
 
 object demo extends ScalaModule {
   def scalaVersion = scala3Version
-  def moduleDeps = Seq(sanely.jvm, `sanely-jsoniter`.jvm)
+  def moduleDeps = Seq(build.sanely.jvm, build.`sanely-jsoniter`.jvm)
   def mvnDeps = Task {
     super.mvnDeps() ++ Seq(
       mvn"io.circe::circe-core:$circeVersion",

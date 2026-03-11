@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.20.0] - 2026-03-11
+
+### Added
+- **JMH benchmark module** (`benchmark-jmh/`) — rigorous runtime benchmarking via Mill's `contrib.jmh.JmhModule` (JMH 1.37). Fork isolation, compiler blackholes, 99.9% CI error reporting. 8 benchmarks: 4 read + 4 write across circe-jawn, circe+jsoniter, sanely-jsoniter, and jsoniter-scala.
+- **CI runtime benchmarks** — GitHub Actions benchmark workflow now runs JMH for runtime performance (`./mill benchmark-jmh.runJmh`), replacing the hand-rolled harness.
+
+### Fixed
+- **12 non-exhaustive match warnings** in sanely-jsoniter macros — added wildcard cases to `asType` pattern matches (5 tuple + 1 Either per file in `SanelyJsoniter.scala` and `SanelyJsoniterConfigured.scala`) and Lambda bodies in `SanelyJsoniterValueEnum.scala`.
+
+### Changed
+- **Benchmark summary script** (`scripts/summarize_benchmark.py`) rewritten to parse JMH output format. Supports all 4 approaches with error bars and ratio computation.
+- Updated README runtime table with JMH numbers (5.6x faster reads, 8.9x faster writes).
+- Updated runtime-benchmark skill with JMH commands and expected ratios.
+
 ## [0.19.0] - 2026-03-11
 
 ### sanely-jsoniter

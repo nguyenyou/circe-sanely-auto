@@ -39,14 +39,14 @@ object SanelyJsoniterValueEnum:
       val toValue = Lambda(
         Symbol.spliceOwner,
         MethodType(List("a"))(_ => List(tpe), _ => TypeRepr.of[String]),
-        { case (_, List(a: Term)) => Select.unique(a, paramName) }
+        { case (_, List(a: Term)) => Select.unique(a, paramName); case _ => report.errorAndAbort("unexpected lambda shape") }
       ).asExprOf[A => String]
       '{ Codecs.stringValueEnum[A]($valuesExpr, $toValue) }
     else if paramType =:= TypeRepr.of[Int] then
       val toValue = Lambda(
         Symbol.spliceOwner,
         MethodType(List("a"))(_ => List(tpe), _ => TypeRepr.of[Int]),
-        { case (_, List(a: Term)) => Select.unique(a, paramName) }
+        { case (_, List(a: Term)) => Select.unique(a, paramName); case _ => report.errorAndAbort("unexpected lambda shape") }
       ).asExprOf[A => Int]
       '{ Codecs.intValueEnum[A]($valuesExpr, $toValue) }
     else

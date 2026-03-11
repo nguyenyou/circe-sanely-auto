@@ -153,8 +153,12 @@ jobs:
           done
           # Disable turbo boost to reduce variance
           echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null || true
-      - name: Run benchmark
-        run: bash bench-runtime.sh "$RUNTIME_WARMUP" "$RUNTIME_ITERATIONS" 2>&1 | tee runtime.txt
+      - name: Run JMH benchmark
+        run: |
+          ./mill benchmark-jmh.runJmh \
+            -wi "$RUNTIME_WARMUP" \
+            -i "$RUNTIME_ITERATIONS" \
+            -f 1 -r 1 -w 1 2>&1 | tee runtime.txt
       - uses: actions/upload-artifact@v4
         with:
           name: runtime

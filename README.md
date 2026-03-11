@@ -55,18 +55,18 @@ Shared runners are noisier than dedicated hardware. Absolute times are ~3x slowe
 The configured speedup (1.4x on CI vs 2.2x locally) is compressed by CI noise — sanely's σ is 1.26s on a 4.6s mean (27% CoV), while circe-generic's σ is 0.25s (4% CoV). The speedup is real but smaller workloads are harder to measure reliably on shared runners. Full CI results: [BENCHMARK.md](BENCHMARK.md).
 </details>
 
-### Runtime — 4–5x faster reads, 6–7x faster writes, 85–95% less allocation
+### Runtime — 5.6x faster reads, 8.9x faster writes
 
-~1.4 KB JSON payload, nested products, sealed traits, optional fields:
+~1.4 KB JSON payload, nested products, sealed traits, optional fields. JMH (1 fork, 5 warmup + 5 measurement iterations of 1s each):
 
-| Approach | Reading (ops/sec) | | Alloc/read | Writing (ops/sec) | | Alloc/write |
-|---|---|---|---|---|---|---|
-| **circe + jawn** (baseline) | ~135K | 1.0x | 28 KB | ~124K | 1.0x | 27 KB |
-| **circe + jsoniter bridge** | ~196K | 1.5x | 25 KB | ~109K | 0.9x | 23 KB |
-| **sanely-jsoniter** | **~762K** | **5.7x** | **3 KB** | **~770K** | **6.2x** | **1 KB** |
-| jsoniter-scala native | ~742K | 5.5x | 3 KB | ~615K | 5.0x | 1 KB |
+| Approach | Reading (ops/sec) | | Writing (ops/sec) | |
+|---|---|---|---|---|
+| **circe + jawn** (baseline) | 133,568 ± 1,334 | 1.0x | 132,620 ± 2,162 | 1.0x |
+| **circe + jsoniter bridge** | 208,474 ± 3,217 | 1.6x | 125,410 ± 1,816 | 0.9x |
+| **sanely-jsoniter** | **753,142 ± 9,490** | **5.6x** | **1,179,652 ± 17,232** | **8.9x** |
+| jsoniter-scala native | 689,629 ± 18,244 | 5.2x | 987,963 ± 1,954 | 7.4x |
 
-sanely-jsoniter **surpasses jsoniter-scala native** on both reads and writes on Apple Silicon, while remaining competitive on x86. Both dramatically outperform circe-jawn. sanely-jsoniter allocates **89% less memory per read** and **96% less per write** compared to circe-jawn, meaning less GC pressure in high-throughput services.
+sanely-jsoniter **surpasses jsoniter-scala native** — **+9% reads, +19% writes** — on Apple Silicon, while remaining competitive on x86. Both dramatically outperform circe-jawn.
 
 ### Compile-time cost of adding sanely-jsoniter
 
@@ -95,13 +95,13 @@ On CI (x86), jsoniter-scala is ~11% faster on writes while sanely-jsoniter is ~2
 <details>
 <summary>Benchmark methodology & cross-session stability</summary>
 
-**Local environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2 (zinc on JDK 21.0.9), Scala 3.8.2.
+**Local environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 21.0.9 (Zulu, aarch64), Mill 1.1.2, Scala 3.8.2.
 
 **CI environment**: `ubuntu-latest` (GitHub Actions shared runners), x86_64, OpenJDK 25. CPU governor set to `performance`, turbo boost disabled. Full results tracked in [BENCHMARK.md](BENCHMARK.md).
 
 **Compile-time**: Measured with [hyperfine](https://github.com/sharkdp/hyperfine) (`bash bench.sh 10`). Each run cleans only the benchmark module's output then recompiles ~350 types (auto) or ~230 types (configured). One untimed warmup run ensures the Mill daemon JVM is JIT-warm. Ten timed runs follow, with hyperfine randomizing execution order. Dependencies are pre-compiled and cached. Cross-session stability: speedup ranged 3.55x–3.61x across 20 runs in 2 separate sessions (local). The jsoniter marginal cost benchmark (`bash bench.sh --jsoniter 10`) compiles 199 types with circe codecs only vs circe + jsoniter codecs, measuring the additional compile-time cost of adopting sanely-jsoniter.
 
-**Runtime**: Each configuration runs 5 warmup + 5 measured iterations of 1 second each. Allocation per operation measured via `ThreadMXBean.getThreadAllocatedBytes` (precise, per-thread, no GC noise). Numbers reported are from a representative run.
+**Runtime**: [JMH](https://github.com/openjdk/jmh) 1.37 via Mill's `contrib.jmh` module. 1 fork, 5 warmup + 5 measurement iterations of 1 second each, `-Xms512m -Xmx512m`. JMH provides fork isolation, compiler blackhole dead-code prevention, and statistical error reporting (99.9% CI). Run with `./mill benchmark-jmh.runJmh`.
 
 **Fairness**: Both libraries compile the same source files, same Scala version, same JVM, same Mill daemon, in the same hyperfine invocation. The only difference is the derivation import.
 </details>
@@ -114,7 +114,7 @@ Swap one dependency, change one import:
 
 ```diff
 - mvn"io.circe::circe-generic:0.14.x"
-+ mvn"io.github.nguyenyou::circe-sanely-auto:0.19.0"
++ mvn"io.github.nguyenyou::circe-sanely-auto:0.20.0"
 ```
 
 ```diff
@@ -129,7 +129,7 @@ That's it. Same JSON format, same API, same behavior. Everything else stays the 
 For HTTP hot paths where runtime throughput matters, [sanely-jsoniter](sanely-jsoniter/) generates `JsonValueCodec[T]` instances that skip the `Json` tree entirely — bytes go directly to domain objects:
 
 ```scala
-mvn"io.github.nguyenyou::sanely-jsoniter:0.19.0"
+mvn"io.github.nguyenyou::sanely-jsoniter:0.20.0"
 ```
 
 ```scala
@@ -210,7 +210,7 @@ circe-sanely-auto provides the same packages and APIs as circe-generic:
 
 | Before | After |
 |---|---|
-| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.19.0"` |
+| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.20.0"` |
 | `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` |
 | `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto.*` (unchanged) |
 
@@ -521,7 +521,8 @@ Requires [Mill](https://mill-build.org/) 1.1.2+.
 ./mill compat.jvm.test       # circe compatibility tests (JVM)
 ./mill compat.js.test        # circe compatibility tests (Scala.js)
 ./mill demo.run              # run demo
-bash bench-runtime.sh        # runtime benchmark (circe vs circe+jsoniter vs sanely-jsoniter vs jsoniter-scala)
+./mill benchmark-jmh.runJmh  # JMH runtime benchmark (all 4 libraries, read + write)
+bash bench-runtime.sh        # runtime benchmark (quick, hand-rolled harness)
 ```
 
 ## How it's made

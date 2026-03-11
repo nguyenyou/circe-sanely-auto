@@ -788,6 +788,7 @@ object SanelyJsoniterConfigured:
                   val ca = resolveArg(args(0)).asInstanceOf[Expr[JsonValueCodec[a]]]
                   val cb = resolveArg(args(1)).asInstanceOf[Expr[JsonValueCodec[b]]]
                   Some('{ Codecs.tuple2[a, b]($ca, $cb) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+                case _ => None
             case 3 =>
               (args(0).asType, args(1).asType, args(2).asType) match
                 case ('[a], '[b], '[c]) =>
@@ -795,6 +796,7 @@ object SanelyJsoniterConfigured:
                   val cb = resolveArg(args(1)).asInstanceOf[Expr[JsonValueCodec[b]]]
                   val cc = resolveArg(args(2)).asInstanceOf[Expr[JsonValueCodec[c]]]
                   Some('{ Codecs.tuple3[a, b, c]($ca, $cb, $cc) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+                case _ => None
             case 4 =>
               (args(0).asType, args(1).asType, args(2).asType, args(3).asType) match
                 case ('[a], '[b], '[c], '[d]) =>
@@ -803,6 +805,7 @@ object SanelyJsoniterConfigured:
                   val cc = resolveArg(args(2)).asInstanceOf[Expr[JsonValueCodec[c]]]
                   val cd = resolveArg(args(3)).asInstanceOf[Expr[JsonValueCodec[d]]]
                   Some('{ Codecs.tuple4[a, b, c, d]($ca, $cb, $cc, $cd) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+                case _ => None
             case 5 =>
               (args(0).asType, args(1).asType, args(2).asType, args(3).asType, args(4).asType) match
                 case ('[a], '[b], '[c], '[d], '[e]) =>
@@ -812,6 +815,7 @@ object SanelyJsoniterConfigured:
                   val cd = resolveArg(args(3)).asInstanceOf[Expr[JsonValueCodec[d]]]
                   val ce = resolveArg(args(4)).asInstanceOf[Expr[JsonValueCodec[e]]]
                   Some('{ Codecs.tuple5[a, b, c, d, e]($ca, $cb, $cc, $cd, $ce) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+                case _ => None
             case n if n >= 6 && n <= 22 =>
               val codecExprs = args.map { arg =>
                 val c = resolveArg(arg)
@@ -944,6 +948,7 @@ object SanelyJsoniterConfigured:
                     val leftCodec = lc.asInstanceOf[Expr[JsonValueCodec[l]]]
                     val rightCodec = rc.asInstanceOf[Expr[JsonValueCodec[r]]]
                     Some('{ Codecs.either[l, r]($leftCodec, $rightCodec) }.asInstanceOf[Expr[JsonValueCodec[T]]])
+                  case _ => None
               case _ => None
           case _ => None
       }
