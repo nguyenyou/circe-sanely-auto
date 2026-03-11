@@ -1,6 +1,5 @@
 package sanely
 
-import utest.*
 import sttp.tapir.Codec.JsonCodec
 import sttp.tapir.DecodeResult
 import sttp.tapir.DecodeResult.Error.JsonDecodeException
@@ -61,7 +60,7 @@ sealed trait Vehicle
 case class Car(make: String, year: Int) extends Vehicle
 case class Bike(brand: String) extends Vehicle
 
-object TapirIntegrationTest extends TestSuite:
+class TapirIntegrationTest extends munit.FunSuite:
 
   // --- Circe codecs (bridge) ---
   import io.circe.{Encoder, Decoder, Codec as CirceCodec}
@@ -75,7 +74,6 @@ object TapirIntegrationTest extends TestSuite:
 
   given JsonValueCodec[User] = jSemiauto.deriveJsoniterCodec
 
-  val tests = Tests {
     test("product - encode match") {
       val bridge = BridgeCodec.codec[User]
       val direct = DirectCodec.codec[User]
@@ -199,4 +197,3 @@ object TapirIntegrationTest extends TestSuite:
       assert(bridge.decode(json) == DecodeResult.Value(user))
       assert(direct.decode(bridge.encode(user)) == DecodeResult.Value(user))
     }
-  }

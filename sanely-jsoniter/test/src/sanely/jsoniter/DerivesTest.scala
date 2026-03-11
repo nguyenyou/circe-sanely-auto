@@ -1,6 +1,5 @@
 package sanely.jsoniter
 
-import utest.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 
 // Test types using `derives` syntax — in a separate file to avoid
@@ -16,9 +15,7 @@ enum DLevel(val value: Int) derives JsoniterCodec.ValueEnum:
   case Low extends DLevel(1)
   case High extends DLevel(3)
 
-object DerivesTest extends TestSuite:
-
-  val tests = Tests {
+class DerivesTest extends munit.FunSuite:
 
     test("derives JsoniterCodec - product round-trip") {
       val p = DPoint(3, 4)
@@ -74,4 +71,3 @@ object DerivesTest extends TestSuite:
       val codec: JsonValueCodec[DPoint] = summon[JsoniterCodec[DPoint]]
       assert(writeToString(DPoint(1, 2))(using codec) == """{"x":1,"y":2}""")
     }
-  }

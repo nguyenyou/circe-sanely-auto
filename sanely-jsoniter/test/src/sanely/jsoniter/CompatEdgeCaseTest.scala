@@ -1,6 +1,5 @@
 package sanely.jsoniter
 
-import utest.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 
 // === Edge case test types ===
@@ -71,14 +70,14 @@ case class QuotedFieldName(`a"b`: String, `c\\d`: String)
 // Type with backtick field names (Scala keywords)
 case class KeywordFields(`val`: Int, `type`: String, `class`: Boolean)
 
-object CompatEdgeCaseTest extends TestSuite:
+class CompatEdgeCaseTest extends munit.FunSuite:
   import sanely.jsoniter.semiauto.*
 
-  private def roundtrip[A: JsonValueCodec](value: A): A =
+  private def roundtrip[A: JsonValueCodec](value: A): A = {
     val json = writeToString(value)
     readFromString[A](json)
+  }
 
-  val tests = Tests {
 
     // =========================================================================
     // 1. Null vs Missing vs Default Semantics
@@ -1223,4 +1222,3 @@ object CompatEdgeCaseTest extends TestSuite:
       val decoded = readFromString[MixedValues](json)
       assert(decoded == MV(true, 99, 3.14))
     }
-  }

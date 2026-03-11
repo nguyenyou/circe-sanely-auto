@@ -1,6 +1,5 @@
 package sanely.jsoniter
 
-import utest.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 
 // Strict sum type tests are in a separate file to avoid a Scala.js linker
@@ -11,10 +10,9 @@ sealed trait StrictVehicle
 case class StrictCar(make: String, year: Int) extends StrictVehicle
 case class StrictBike(brand: String) extends StrictVehicle
 
-object StrictSumTest extends TestSuite:
+class StrictSumTest extends munit.FunSuite:
   import sanely.jsoniter.semiauto.*
 
-  val tests = Tests {
     test("strict - sum external: multi-key object rejected") {
       given JsoniterConfiguration = JsoniterConfiguration.default.withStrictDecoding
       given JsonValueCodec[StrictVehicle] = deriveJsoniterConfiguredCodec
@@ -49,4 +47,3 @@ object StrictSumTest extends TestSuite:
           case e: com.github.plokhotnyuk.jsoniter_scala.core.JsonReaderException => e
       assert(caught.getMessage.contains("Strict decoding"))
     }
-  }

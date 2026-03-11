@@ -11,7 +11,7 @@ object `package` extends mill.Module {
         mvn"io.circe::circe-core::${build.circeVersion}",
         mvn"io.circe::circe-parser::${build.circeVersion}",
         mvn"io.circe::circe-testing::${build.circeVersion}",
-        mvn"org.scalameta::munit::1.2.0",
+        mvn"org.scalameta::munit::${build.munitVersion}",
         mvn"org.scalameta::munit-scalacheck::1.2.0",
         mvn"org.typelevel::discipline-munit::2.0.0",
       )

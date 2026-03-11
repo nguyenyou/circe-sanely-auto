@@ -18,12 +18,12 @@ Mill 1.1.2. Run from repo root:
 ```bash
 ./mill sanely.jvm.compile       # compile (JVM)
 ./mill sanely.js.compile        # compile (Scala.js)
-./mill sanely.jvm.test          # unit tests - JVM (135 tests, utest)
-./mill sanely.js.test           # unit tests - Scala.js (135 tests, utest)
+./mill sanely.jvm.test          # unit tests - JVM (135 tests, munit)
+./mill sanely.js.test           # unit tests - Scala.js (135 tests, munit)
 ./mill compat.jvm.test          # circe compat tests - JVM (192 tests, munit + discipline)
 ./mill compat.js.test           # circe compat tests - Scala.js (192 tests, munit + discipline)
 ./mill demo.run                 # run demo
-./mill tapir-test.test          # Tapir integration tests (8 tests, utest)
+./mill tapir-test.test          # Tapir integration tests (8 tests, munit)
 ```
 
 **Do NOT run** `./mill __.compile` or bare `./mill` — use targeted module commands to avoid cache invalidation.
@@ -97,7 +97,7 @@ open /tmp/flamegraph.html
 | Module | Purpose |
 |---|---|
 | `sanely/` | Core library. Cross-compiled JVM + Scala.js via `PlatformScalaModule` |
-| `sanely/test/` | Unit tests (utest). Platform-specific sources in `test/src-jvm/` and `test/src-js/` |
+| `sanely/test/` | Unit tests (munit). Platform-specific sources in `test/src-jvm/` and `test/src-js/` |
 | `compat/` | Circe compatibility tests (munit + discipline). Cross-compiled JVM + Scala.js. Uses circe's own `CodecTests` |
 | `demo/` | Runnable examples |
 | `benchmark/` | Compile-time benchmark. Two sub-modules sharing `benchmark/shared/src/` |
@@ -156,7 +156,7 @@ Threads `Expr[Configuration]` through the macro. At runtime:
 
 - `io.circe::circe-core:0.14.15` (main)
 - `io.circe::circe-parser:0.14.15` (test/demo)
-- `com.lihaoyi::utest:0.10.0-RC1` (unit tests)
+- `org.scalameta::munit:1.2.0` (all tests)
 - `io.circe::circe-testing:0.14.15` + `org.typelevel::discipline-munit:2.0.0` (compat tests)
 
 ## Compiler Options
@@ -220,7 +220,6 @@ See the `runtime-benchmark` skill for detailed instructions on running and inter
 
 - Configured macro profiling: `topDerive` is a **container category** that includes `summonIgnoring`, `derive`, `summonMirror`, `subTraitDetect`, `resolveDefaults`. Category percentages sum > 100% due to nesting.
 - `Long.MaxValue`/`Long.MinValue` lose precision on Scala.js due to JSON number representation. Skipped via `Platform.isJS` (platform-specific sources in `test/src-jvm/` and `test/src-js/`).
-- `inline def derived` inside utest `test {}` blocks may not expand for generic types. Workaround: derive in a helper object outside the test block.
 - Generated compat tests: `String with Tag` → `String & Tag` fix applied by sync script (Scala 3 intersection type syntax).
 - Sealed trait `given` ordering: `given Codec.AsObject[SealedTrait] = deriveConfiguredCodec` must come AFTER all subtypes are defined (Mirror synthesis constraint). The sync script defers these.
 

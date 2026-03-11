@@ -214,7 +214,7 @@ circe-sanely-auto provides the same packages and APIs as circe-generic:
 | `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` |
 | `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto.*` (unchanged) |
 
-**327 tests**: 135 unit tests (utest, cross-compiled JVM + Scala.js) covering auto, semiauto, and configured derivation. Plus 192 compatibility tests (munit + discipline) auto-generated from circe's own `DerivesSuite`, `SemiautoDerivationSuite`, `ConfiguredDerivesSuite`, and `ConfiguredEnumDerivesSuites` via `scripts/sync-circe-tests.py` — same types, same Arbitrary instances, same property-based checks.
+**327 tests**: 135 unit tests (munit, cross-compiled JVM + Scala.js) covering auto, semiauto, and configured derivation. Plus 192 compatibility tests (munit + discipline) auto-generated from circe's own `DerivesSuite`, `SemiautoDerivationSuite`, `ConfiguredDerivesSuite`, and `ConfiguredEnumDerivesSuites` via `scripts/sync-circe-tests.py` — same types, same Arbitrary instances, same property-based checks.
 
 **Requirement**: Scala 3.8.2+. No Scala 2 support.
 

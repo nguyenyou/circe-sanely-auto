@@ -39,10 +39,10 @@ object `package` extends mill.Module {
       )
     }
 
-    trait SharedTests extends ScalaTests with TestModule.Utest {
+    trait SharedTests extends ScalaTests with TestModule.Munit {
       def mvnDeps = Task {
         super.mvnDeps() ++ Seq(
-          mvn"com.lihaoyi::utest::${build.utestVersion}",
+          mvn"org.scalameta::munit::${build.munitVersion}",
           mvn"io.circe::circe-core::${build.circeVersion}",
           mvn"io.circe::circe-parser::${build.circeVersion}",
           mvn"com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-circe::${build.jsoniterScalaVersion}",

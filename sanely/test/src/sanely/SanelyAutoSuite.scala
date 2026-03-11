@@ -1,6 +1,5 @@
 package sanely
 
-import utest.*
 import io.circe.{*, given}
 import io.circe.parser.*
 import io.circe.syntax.*
@@ -258,8 +257,7 @@ object SemiAutoAdt:
   given Encoder.AsObject[SemiAutoAdt] = SanelyEncoder.derived
   given Decoder[SemiAutoAdt] = SanelyDecoder.derived
 
-object SanelyAutoSuite extends TestSuite:
-  val tests = Tests {
+class SanelyAutoSuite extends munit.FunSuite:
     test("Simple product round-trip") {
       val v = Simple(42, "hello")
       val json = v.asJson
@@ -1118,4 +1116,3 @@ object SanelyAutoSuite extends TestSuite:
       val decoded = decode[WrapsLocal](json.noSpaces)
       assert(decoded == Right(v))
     }
-  }
