@@ -95,7 +95,7 @@ On CI (x86), jsoniter-scala is ~11% faster on writes while sanely-jsoniter is ~2
 <details>
 <summary>Benchmark methodology & cross-session stability</summary>
 
-**Local environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 21.0.9 (Zulu, aarch64), Mill 1.1.2, Scala 3.8.2.
+**Local environment**: Apple M3 Max (10P + 4E cores), 36 GB RAM, macOS 26.3, OpenJDK 25.0.2 (Homebrew, aarch64), Mill 1.1.2, Scala 3.8.2.
 
 **CI environment**: `ubuntu-latest` (GitHub Actions shared runners), x86_64, OpenJDK 25. CPU governor set to `performance`, turbo boost disabled. Full results tracked in [BENCHMARK.md](BENCHMARK.md).
 
