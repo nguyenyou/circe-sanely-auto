@@ -1,103 +1,84 @@
 # sanely-jsoniter Roadmap
 
-Prioritized for enabling migration from circe-based codebases — replacing the circe intermediary in HTTP layers (e.g. `readFromString[io.circe.Json]` + `json.as[T]` → direct `readFromString[T]`).
+Drop-in jsoniter-scala codec derivation that produces circe-compatible JSON on the wire. Skips circe's `Json` AST entirely — streams bytes directly to/from domain objects.
 
-## Current state
+## Open
 
-Core derivation engine is complete: products, sum types, enums, recursive types, sub-trait hierarchies, Either, non-string map keys, value enums (manual). Configured derivation supports withDefaults, discriminator, snake_case, drop-null, and arbitrary name transforms.
+### Performance
 
-**What works today**: semi-auto derivation (`deriveJsoniterCodec`, `deriveJsoniterConfiguredCodec`, `deriveJsoniterEnumCodec`) with all configuration options. Auto derivation for standard (non-configured) types.
+- [ ] **P3.8: Discriminator slow-path optimization** — When the discriminator field is not the first key in the JSON object, the decoder buffers every non-discriminator field as a raw JSON string, reconstructs a full JSON string, then reparses it. This is a full double-parse. The fast path (discriminator first) hides this because our own encoders always emit the discriminator first. Fix: buffer raw byte offsets or accept pre-read key-value pairs to avoid the reparse. Low priority for self-produced JSON; high priority if decoding external sources.
 
-**What's missing**: Migration guide for configured codebases.
+### Gap analysis vs jsoniter-scala `CodecMakerConfig`
+
+Features available in jsoniter-scala that sanely-jsoniter does not yet support. Listed for evaluation — not all are worth implementing.
+
+- [ ] **(P2) DoS protection: collection/number size limits** — jsoniter-scala has configurable `bigDecimalPrecision(34)`, `bigDecimalScaleLimit(6178)`, `bigDecimalDigitsLimit(308)`, `bigIntDigitsLimit(308)`, `mapMaxInsertNumber(1024)`, `setMaxInsertNumber(1024)`, `bitSetValueLimit(1024)`. sanely-jsoniter passes no limits to `readBigDecimal`/`readBigInt` and has no cap on collection sizes during decode. Security-relevant for services accepting untrusted JSON. circe itself has no such limits (delegates to jawn), so this would be a sanely-jsoniter-only enhancement.
+- [ ] **(P3) Strict product decoding (reject unknown fields)** — jsoniter-scala's `skipUnexpectedFields = false` errors on unknown JSON keys for products. sanely-jsoniter's `strictDecoding` only applies to sum types. circe doesn't offer this either.
+- [ ] **(P4) Per-field `@named` annotation** — jsoniter-scala supports `@named("json_key")` on individual case class fields. sanely-jsoniter only has global `transformMemberNames`. circe doesn't have this (uses deprecated `@JsonKey` from circe-generic-extras). Global transforms + `Configuration` cover most use cases.
+- [ ] **(P4) Duplicate key detection** — jsoniter-scala has `checkFieldDuplication = true` by default. sanely-jsoniter uses last-wins semantics (matching circe's behavior). Adding this would diverge from circe semantics.
+- [ ] **(P4) `isStringified` mode (numbers as JSON strings)** — jsoniter-scala can read/write numbers and booleans as JSON strings (`"123"` instead of `123`). Not relevant to circe compatibility.
+- [ ] **(P4) Built-in name transforms (camelCase, PascalCase, kebab-case)** — jsoniter-scala provides `enforce_snake_case`, `enforceCamelCase`, `EnforcePascalCase`, `enforce-kebab-case`. Users can already pass arbitrary `String => String`, so this is a convenience gap, not a capability gap.
+
+### Not optimizable (circe format constraints)
+
+Inherent costs of producing circe-compatible JSON — cannot be optimized without breaking the compatibility contract:
+
+- **External tagging overhead** — Sum types encode as `{"VariantName": {...}}` (one extra object wrapper per variant). jsoniter-scala native uses flat encoding that avoids this wrapper.
+- **Option null-writing** — `None` encodes as `null` (field present with null value). jsoniter-scala native skips the field entirely. (`dropNullValues` config already skips nulls, but the default must match circe.)
 
 ## Completed
+
+### Core features
 
 - [x] Products, sum types, enums, recursive types
 - [x] Sub-trait hierarchies (nested sealed traits, diamond dedup)
 - [x] Either codec (`{"Left": v}` / `{"Right": v}`)
 - [x] Non-string map keys via `KeyCodec[K]`
-- [x] Configured derivation: `withDefaults`
-- [x] Configured derivation: `withDiscriminator(field)`
-- [x] Configured derivation: `withSnakeCaseMemberNames`
-- [x] Configured derivation: `withDropNullValues`
-- [x] Configured derivation: `withTransformMemberNames` / `withTransformConstructorNames`
-- [x] Value enum codecs (manual `Codecs.stringValueEnum` / `Codecs.intValueEnum`)
 - [x] Enum string codec
 - [x] Scala.js support
-- [x] Cross-codec tests: products, sums, enums, either, sub-traits, maps, withDefaults, snake_case
+- [x] Value enum codecs (manual `Codecs.stringValueEnum` / `Codecs.intValueEnum`)
 
-## P0 — Blocks real-world HTTP hot path migration
+### Configured derivation
 
-Real codebases use configured derivation for the vast majority of types (defaults, discriminator, snake_case, drop-null). Auto derivation produces **wrong JSON** for these types. These items close the gap between what works today and what the HTTP hot path swap actually requires.
+- [x] `withDefaults`
+- [x] `withDiscriminator(field)`
+- [x] `withSnakeCaseMemberNames`
+- [x] `withDropNullValues`
+- [x] `withTransformMemberNames` / `withTransformConstructorNames`
+- [x] `withStrictDecoding`
 
-- [x] **Auto-configured derivation** — `sanely.jsoniter.configured.auto.given` that auto-derives `JsonValueCodec[T]` using a `given JsoniterConfiguration` in scope. Without this, every configured type needs explicit `deriveJsoniterConfiguredCodec`. Pattern: `given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults; import sanely.jsoniter.configured.auto.given`. This covers ~500+ call sites in a typical codebase that all use the same base config (withDefaults).
+### Migration & integration
 
-- [x] **Cross-codec test: discriminator** — Prove that `JsoniterConfiguration.default.withDiscriminator("type")` produces identical JSON to circe's `Configuration.default.withDiscriminator("type")`. Encode with jsoniter → decode with circe and vice versa. ~45 call sites in a typical codebase use discriminator tagging.
+- [x] **Auto-configured derivation** — `sanely.jsoniter.configured.auto.given` with a `given JsoniterConfiguration` in scope
+- [x] **Tapir integration tests** — proves HTTP codec swap works end-to-end (direct jsoniter codec, configured types, error handling, circe coexistence)
+- [x] **Migration guide** — [MIGRATION.md](MIGRATION.md): configuration mapping, semi-auto, configured auto, centralized wrapper pattern, HTTP codec swap with incremental fallback
+- [x] **`derives` support** — `JsoniterCodec`, `JsoniterCodec.WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`
+- [x] **Value enum macro derivation** — `deriveJsoniterValueEnumCodec` auto-detects String vs Int value field
 
-- [x] **Cross-codec test: drop-null** — Prove that `withDropNullValues` encoding matches circe's `.mapJsonObject(_.filter(!_._2.isNull))`. Encode with jsoniter → decode with circe. ~5+ call sites.
+### Bug fixes (from real-world migration)
 
-- [x] **Cross-codec test: combined configs** — Test the real-world combos: defaults+discriminator, defaults+snake_case+drop-null. These are the actual configuration patterns used in production wrappers.
+- [x] **(P0) Opaque type support** — `opaqueDealias` using `translucentSuperType` to resolve codecs through opaque boundaries. Fixes nullValue, read, write, and default value handling for opaque-wrapped primitives and containers. Both non-configured and configured macro paths.
+- [x] **(P0) Tuple encoding as JSON arrays** — tuples encode as `[a, b]` matching circe format, not `{"_1": a, "_2": b}`. Specialized codecs for arity 1-5, generic `Tuple.fromArray`-based codec for arity 6-22.
+- [x] **(P1) Null → default** — when `useDefaults=true` and JSON contains `"field": null` for a non-Option field with a Scala default, the default value is used instead of assigning null.
+- [x] **(P1) External Map given respected** — `Expr.summonIgnoring` checks for user-provided `JsonValueCodec[Map[K,V]]` before decomposing into key/value resolution.
+- [x] **(P3) Public primitive codecs** — `import sanely.jsoniter.Codecs.given` exposes `JsonValueCodec` for all 11 primitive types.
 
-- [x] **Fix REAL-WORLD.md migration path** — Updated Step 2 to show three paths: (a) auto for standard types, (b) semi-auto with matching config for configured types, (c) extend centralized wrapper for codebases with one. Honest about what the hot path swap requires.
+### Performance (P3: closing the gap with native jsoniter-scala)
 
-## P1 — Enables smoother adoption
+With P3.1–P3.7 complete, sanely-jsoniter **surpasses jsoniter-scala native** on both read and write on Apple Silicon.
 
-- [x] **Tapir integration tests** — Add a test module with Tapir as a dependency that proves the HTTP codec swap works end-to-end. Test cases should cover:
-  - **Direct jsoniter codec**: `sttp.tapir.Codec.json[T]` using `readFromString[T]` / `writeToString[T]` with `JsonValueCodec[T]` — no circe `Json` tree in the pipeline
-  - **Standard types**: product types, sum types (external tagging), enums — verify Tapir roundtrip (encode → decode) produces identical results to the circe-based codec
-  - **Configured types**: types with defaults (missing fields decoded correctly), discriminator tagging, snake_case field names, drop-null encoding — verify wire format matches circe's configured codec output
-  - **Error handling**: malformed JSON, type mismatches, missing required fields — verify Tapir `DecodeResult.Error` is produced (not an unhandled exception)
-  - **Fallback pattern**: a codec that uses `JsonValueCodec[T]` when available, falls back to circe `Json` tree otherwise — for incremental migration where not all types have jsoniter codecs yet
-  - **Circe coexistence**: same type has both `Encoder[T]`/`Decoder[T]` and `JsonValueCodec[T]` in scope — verify no implicit conflicts and both can be used independently
+- [x] **P3.1: Inline encode with direct field access** — `x.name` instead of `x.productElement(i)`, eliminating boxing
+- [x] **P3.2: Direct primitive write calls** — `out.writeVal(x.age)` instead of `codec.encodeValue(x.age, out)` for primitives
+- [x] **P3.3: Inline decode with typed locals** — typed local variables instead of `Array[Any]` boxing
+- [x] **P3.4: Hash-based field key dispatch** — `charBufToHashCode` + `@switch` for products with > 8 fields
+- [x] **P3.5: Direct constructor call** — `new P(_f0, _f1, ...)` with zero boxing and zero intermediate allocations (+19% read, +2% write)
+- [x] **P3.6: Char-buf sum type dispatch** — `readKeyAsCharBuf()` + hash dispatch, eliminates String allocation per sum decode
+- [x] **P3.7: Container codec cleanups** — cached delegate codecs, iterator while-loops in all container encoders (+15% read)
 
-  This is the strongest proof that the REAL-WORLD.md migration path actually works. Without it, the HTTP hot path swap is a theoretical claim.
+### Cross-codec tests
 
-- [x] **Strict decoding** — `JsoniterConfiguration.withStrictDecoding` config option exists but is not wired into the runtime. Implement: reject unknown fields during decoding. ~18 call sites in typical codebases use strict decoding via direct `ConfiguredCodec.derived`.
-
-- [x] **Migration guide for configured codebases** — [MIGRATION.md](MIGRATION.md): configuration mapping, semi-auto per-type, configured auto, centralized wrapper pattern (extend once, add one line per call site), HTTP codec swap with incremental fallback.
-
-## P2 — Polish
-
-- [x] **Value enum macro derivation** — `deriveJsoniterValueEnumCodec` auto-detects String vs Int value field from the enum's constructor parameter. Replaces manual `Codecs.stringValueEnum(values, _.value)` / `Codecs.intValueEnum(values, _.value)`.
-
-- [x] **`derives` support** — `JsoniterCodec`, `JsoniterCodec.WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`. Each extends `JsonValueCodec[A]` directly so no import conversions needed.
-
-- [x] **Performance benchmarks vs bridge** — Runtime benchmark with realistic payload (~1.4 KB: nested products, sealed trait sum types, optional fields). sanely-jsoniter: **5.7x read / 6.2x write** vs circe-jawn; bridge: **1.5x read / 0.9x write**; jsoniter-scala native: **5.5x read / 5.0x write**.
-
-## P3 — Performance (closing the gap with native jsoniter-scala)
-
-With P3.1–P3.7 complete, sanely-jsoniter **surpasses jsoniter-scala native** on both read and write. Container codec cleanups (P3.7) improved read throughput by ~15%. Remaining items are diminishing returns.
-
-**Priority order** (informed by real-world codebase with ~300 configured types, ~40 discriminator types):
-1. ~~**P3.5** — direct constructor~~ ✅ Done — biggest single win (+19% read, +2% write)
-2. ~~**P3.6** — char-buf sum dispatch~~ ✅ Done — eliminates String alloc per sum decode
-3. ~~**P3.7** — container codec cleanups~~ ✅ Done — +15% read throughput (661K → 762K ops/sec)
-4. **P3.8** — discriminator slow path: only matters when decoding third-party JSON with random field order; self-produced JSON always hits the fast path
-
-### Encoding bottlenecks
-
-- [x] **P3.1: Inline encode with direct field access** — Macro generates encode loop with direct field accessors (`x.name`, `x.age`) instead of `x.productElement(i)`, eliminating boxing.
-
-- [x] **P3.2: Direct primitive write calls** — For primitive-typed fields, emits `out.writeVal(x.age)` directly instead of going through `JsonValueCodec[Int].encodeValue`.
-
-### Decoding bottlenecks
-
-- [x] **P3.3: Inline decode with typed locals** — Macro generates typed local variables (`var _name: String = null; var _age: Int = 0`) instead of `Array[Any]` boxing.
-
-- [x] **P3.4: Hash-based field key dispatch** — For products with > 8 fields or > 64 total field name chars, generates `(in.charBufToHashCode(l): @switch) match { ... }` with compile-time pre-computed hashes. Hash collisions fall back to `isCharBufEqualsTo`. Products with ≤ 8 fields keep the linear if-else chain (hashing overhead not worth it). Matches jsoniter-scala's own strategy.
-
-- [x] **P3.5: Direct constructor call** — Replaced `mirror.fromProduct(new ArrayProduct(Array[Any](_f0, _f1, ...)))` with `Apply(Select(New(Inferred(tpe)), primaryConstructor), varRefs)` — direct `new P(_f0, _f1, ...)` with zero boxing and zero intermediate allocations. Handles case objects (singleton `Ref`) and generic types (`TypeApply` with type args). Deleted `ArrayProduct` class, removed `Mirror.ProductOf[P]` from decode function signatures. Result: **5.7x read / 6.2x write** vs circe-jawn, surpassing jsoniter-scala native on both axes.
-
-- [x] **P3.6: Char-buf sum type dispatch** — Replaced `readKeyAsString()` + `String ==` with macro-generated `readKeyAsCharBuf()` + hash/linear `isCharBufEqualsTo` dispatch (same pattern as product field matching). Moved sum decode body from runtime to macro-generated code. Eliminates String allocation per sum value decoded.
-
-- [x] **P3.7: Container codec cleanups** — Cached delegate codecs in `seq`/`indexedSeq`/`iterable` (was allocating fresh `list(inner)`/`vector(inner)` on every `decodeValue` call). Replaced `foreach` closures with iterator while-loops in `vector`, `seq`, `indexedSeq`, `iterable`, `set`, `map`, `stringMap` encoders. Result: read throughput **+15%** (661K → 762K ops/sec).
-
-- [ ] **P3.8: Discriminator slow-path optimization** — When the discriminator field is not the first key in the JSON object, `decodeWithDiscriminator` (`JsoniterRuntime.scala:322-359`) buffers every non-discriminator field as a raw JSON string into an `ArrayList`, reconstructs a full JSON string, then reparses it with `readFromString`. This is a full double-parse of the entire object. The fast path (discriminator first) hides this because our own encoders always emit the discriminator first. But if ingesting third-party JSON where field order varies, this becomes the dominant configured-ADT cost. Fix: buffer raw byte offsets or make `decodeFieldsAfterDiscriminator` accept pre-read field key-value pairs to avoid the reparse entirely. Low priority for self-produced JSON; high priority if decoding external sources.
-
-### Not optimizable (circe format constraints)
-
-These are inherent costs of producing circe-compatible JSON and cannot be optimized without breaking the compatibility contract:
-
-- **External tagging overhead** — Sum types encode as `{"VariantName": {...}}` (one extra object wrapper per variant). jsoniter-scala native uses flat `JsonCodecMaker.make` encoding that avoids this wrapper. Cannot change without breaking circe compatibility.
-
-- **Option null-writing** — `None` encodes as `null` (field present with null value). jsoniter-scala native skips the field entirely. Cannot change without breaking circe compatibility. (Note: `dropNullValues` config already skips nulls, but the default must match circe's default.)
+- [x] Products, sums, enums, either, sub-traits, maps, withDefaults, snake_case
+- [x] Discriminator tagging
+- [x] Drop-null encoding
+- [x] Combined configs (defaults+discriminator, defaults+snake_case+drop-null)
+- [x] Performance benchmarks vs bridge — **5.7x read / 6.2x write** vs circe-jawn
