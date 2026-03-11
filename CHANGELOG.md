@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.19.0] - 2026-03-11
+
+### sanely-jsoniter
+
+#### Fixed
+- **(P0) Opaque type support** — resolve codecs through opaque type boundaries using `translucentSuperType`. Fixes `nullValue`, read, write, and default value handling for opaque-wrapped primitives (e.g., `opaque type UserId = String`) and opaque containers (e.g., `opaque type Tags = List[String]`). Both non-configured and configured macro paths.
+- **(P0) Tuple encoding as JSON arrays** — tuples are now encoded as `[a, b, ...]` matching circe format, instead of `{"_1": a, "_2": b}`. Specialized codecs for arity 1-5, generic `Tuple.fromArray`-based codec for arity 6-22.
+- **(P1) Null → default** — when `useDefaults=true` and JSON contains `"field": null` for a non-Option field with a Scala default, the default value is now used instead of assigning null. Uses `isNextToken('n')` + `rollbackToken()` + `skip()` to detect and consume null tokens before the field read.
+- **(P1) External Map given respected** — user-provided `given JsonValueCodec[Map[K,V]]` is now checked via `Expr.summonIgnoring` before the macro decomposes Map into key/value resolution. Custom map codecs (e.g., array-of-pairs encoding) are correctly used in derived codecs.
+
+#### Added
+- **(P3) Public primitive codecs** — `import sanely.jsoniter.Codecs.given` puts `JsonValueCodec` instances for all 11 primitive types in scope (`Boolean`, `Byte`, `Short`, `Int`, `Long`, `Float`, `Double`, `String`, `BigDecimal`, `BigInt`, `Char`).
+
+### Docs
+- Updated jsoniter marginal compile-time cost in README (1.9x → 1.05x, reflecting cumulative perf improvements since v0.15.0)
+
 ## [0.18.0] - 2026-03-08
 
 ### sanely-jsoniter
