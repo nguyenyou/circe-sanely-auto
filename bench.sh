@@ -78,6 +78,15 @@ done
 echo "Running hyperfine benchmark..."
 echo ""
 
+# Determine output directory for persistent results
+case "$BENCH_TYPE" in
+  benchmark) RESULTS_SUBDIR="compile-auto" ;;
+  benchmark-configured) RESULTS_SUBDIR="compile-configured" ;;
+  benchmark-jsoniter) RESULTS_SUBDIR="compile-jsoniter" ;;
+esac
+RESULTS_DIR="results/$RESULTS_SUBDIR"
+mkdir -p "$RESULTS_DIR"
+
 hyperfine \
   --warmup 1 \
   --runs "$N" \
@@ -86,4 +95,5 @@ hyperfine \
   "./mill $BENCH_TYPE.$OPPONENT.compile" \
   --prepare "rm -rf out/$BENCH_TYPE/$OURS" \
   --command-name "$BENCH_TYPE.$OURS" \
-  "./mill $BENCH_TYPE.$OURS.compile"
+  "./mill $BENCH_TYPE.$OURS.compile" \
+  2>&1 | tee "$RESULTS_DIR/$RESULTS_SUBDIR.txt"

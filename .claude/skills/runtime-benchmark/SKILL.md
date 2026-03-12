@@ -66,12 +66,14 @@ statistical error reporting (99.9% CI), and built-in profiler integration.
 After running JMH, use the analysis script to produce a compact summary:
 
 ```bash
+mkdir -p results/runtime
+
 # From a saved file
-python3 scripts/analyze_jmh.py runtime.txt
+python3 scripts/analyze_jmh.py results/runtime/runtime.txt
 
 # Pipe directly from JMH run
-./mill benchmark-jmh.runJmh 2>&1 | tee runtime.txt
-python3 scripts/analyze_jmh.py runtime.txt
+./mill benchmark-jmh.runJmh 2>&1 | tee results/runtime/runtime.txt
+python3 scripts/analyze_jmh.py results/runtime/runtime.txt
 
 # Or pipe from stdin
 ./mill benchmark-jmh.runJmh 2>&1 | python3 scripts/analyze_jmh.py -
@@ -247,19 +249,21 @@ bash bench.sh --configured 5      # configured derivation via hyperfine (~230 ty
 bash bench-runtime.sh 5 5
 
 # 4. Macro profile (where macro time is spent)
+mkdir -p results/macro-profile-auto results/macro-profile-configured
 rm -rf out/benchmark/sanely
-SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/profile.txt
-python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
+SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee results/macro-profile-auto/raw.txt
+python3 .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-auto/raw.txt
 
 rm -rf out/benchmark-configured/sanely
-SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee /tmp/profile.txt
-python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
+SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee results/macro-profile-configured/raw.txt
+python3 .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-configured/raw.txt
 
 # 5. JVM profile (compiler-level bottlenecks)
+mkdir -p results/jvm-profile
 rm -rf out/benchmark/sanely
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/collapsed.txt,collapsed" \
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=results/jvm-profile/profile-collapsed.txt,collapsed" \
   ./mill --no-server benchmark.sanely.compile
-python3 .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/collapsed.txt
+python3 .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py results/jvm-profile/profile-collapsed.txt
 
 # 6. Memory profile (peak RSS + allocation pressure)
 rm -rf out/benchmark/sanely

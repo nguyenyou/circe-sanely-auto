@@ -5,6 +5,17 @@
 - **This is a purely open source project.** Never mention any company names, internal projects, proprietary codebases, or employer-related information anywhere — not in code, commit messages, PR descriptions, comments, changelogs, or documentation. All references must remain generic and public.
 - **No dead code.** When replacing an implementation, delete the old one entirely. No deprecation, no keeping old code "for backwards compatibility." The only contract that matters is 100% circe compatibility — internal APIs can change freely. Keep the codebase clean and current.
 
+## PR Workflow
+
+Always create PRs from a fresh branch off latest remote main. Never commit directly to `main`.
+
+```bash
+git checkout main && git pull          # sync with remote
+git checkout -b <branch-name>          # create feature branch
+# ... make changes, commit ...
+git push -u origin <branch-name>       # push and create PR
+```
+
 ## Project
 
 Drop-in replacement for circe's auto/semi-auto/configured derivation. Scala 3.8.2+ only. Uses the "sanely-automatic" approach — Scala 3 macros with `Expr.summonIgnoring` to derive all instances in a single macro expansion, avoiding implicit search chains.
@@ -68,34 +79,55 @@ bash bench-runtime.sh           # runtime benchmark: circe-jawn vs circe+jsonite
 ./mill benchmark-jmh.runJmh 'Write'                  # JMH write benchmarks only
 ./mill benchmark-jmh.runJmh -prof gc                  # JMH with GC allocation profiler
 ./mill benchmark-jmh.listJmhBenchmarks                # list detected JMH benchmarks
-python3 scripts/analyze_jmh.py runtime.txt            # analyze JMH output into summary tables
+python3 scripts/analyze_jmh.py results/runtime/runtime.txt  # analyze JMH output into summary tables
+python3 scripts/summarize_benchmark.py results               # summarize all results into markdown
+```
+
+All benchmark/profile output is saved to `results/` (gitignored). Structure matches `summarize_benchmark.py`:
+
+```
+results/
+  compile-auto/compile-auto.txt
+  compile-configured/compile-configured.txt
+  runtime/runtime.txt
+  peak-rss/peak-rss.txt
+  bytecode-impact/bytecode-impact.txt
+  macro-profile-auto/raw.txt
+  macro-profile-configured/raw.txt
+  jvm-profile/profile-collapsed.txt
+  jvm-profile/flamegraph.html
+  memory-profile/alloc-sanely.txt
+  memory-profile/alloc-generic.txt
 ```
 
 ### Profiling
 
 ```bash
 # Macro-level profiling (our MacroTimer)
+mkdir -p results/macro-profile-auto
 rm -rf out/benchmark/sanely
-SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/profile.txt
-python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
+SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee results/macro-profile-auto/raw.txt
+python3 .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-auto/raw.txt
 
 # Configured derivation macro profiling
+mkdir -p results/macro-profile-configured
 rm -rf out/benchmark-configured/sanely
-SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee /tmp/profile.txt
-python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
+SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee results/macro-profile-configured/raw.txt
+python3 .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-configured/raw.txt
 
 # JVM-level profiling (async-profiler, requires: brew install async-profiler)
 # Use JAVA_TOOL_OPTIONS (not JAVA_OPTS) to profile ALL JVMs including zinc worker
+mkdir -p results/jvm-profile
 rm -rf out/benchmark/sanely
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/collapsed.txt,collapsed" \
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=results/jvm-profile/profile-collapsed.txt,collapsed" \
   ./mill --no-server benchmark.sanely.compile
-python3 .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/collapsed.txt
+python3 .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py results/jvm-profile/profile-collapsed.txt
 
 # HTML flame graph (for visual inspection)
 rm -rf out/benchmark/sanely
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/flamegraph.html" \
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=results/jvm-profile/flamegraph.html" \
   ./mill --no-server benchmark.sanely.compile
-open /tmp/flamegraph.html
+open results/jvm-profile/flamegraph.html
 ```
 
 ## Modules
