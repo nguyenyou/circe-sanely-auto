@@ -103,9 +103,10 @@ def parse_runtime(text: str) -> dict | None:
     result = {"reading": {}, "writing": {}, "reading_cmp": {}, "writing_cmp": {}}
 
     # Parse JMH summary table lines
+    # Handles both raw JMH output and mill-prefixed output (e.g. "178] ReadBenchmark...")
     for line in text.splitlines():
         match = re.match(
-            r"\s*(?:runtime\.)?(\w+\.\w+)\s+thrpt\s+(\d+)\s+([\d.]+)\s*±\s*([\d.]+)\s+ops/s",
+            r"(?:\d+\]\s+)?(?:runtime\.)?(\w+\.\w+)\s+thrpt\s+(\d+)\s+([\d.]+)\s*±\s*([\d.]+)\s+ops/s",
             line,
         )
         if not match:
@@ -350,6 +351,58 @@ def build_summary(results_dir: str) -> str:
     return "\n".join(lines)
 
 
+def strip_jmh_noise(text: str) -> str:
+    """Extract only meaningful JMH output, stripping mill download/compile noise.
+
+    Keeps lines that are:
+    - JMH headers (# JMH version, # VM version, etc.)
+    - JMH progress (# Benchmark:, # Fork:, # Warmup, # Measurement)
+    - JMH results (Benchmark ... Mode ... Cnt ... Score)
+    - Result lines (thrpt, avgt, etc.)
+    - Summary table lines
+    - Blank lines between sections
+    """
+    # Strip mill task prefix (e.g. "178] ") from all lines first
+    stripped = []
+    for line in text.splitlines():
+        cleaned = re.sub(r"^\d+\]\s*", "", line)
+        stripped.append(cleaned)
+
+    # Keep only JMH-relevant lines
+    jmh_patterns = [
+        r"^# (JMH|VM|Blackhole|Benchmark|Fork|Warmup|Measurement|Threads|Run)",
+        r"^Iteration\s+\d+:",
+        r"^Result\s+\"",
+        r"^\w+Benchmark\.\w+\s+thrpt",  # summary table line
+        r"^Benchmark\s+Mode\s+Cnt",     # summary table header
+        r"^\s*$",                        # blank lines (section separators)
+        r"^[\d.]+\s*±",                  # standalone result values
+        r"^\s+N =",                      # histogram data
+        r"^\s+mean =",
+    ]
+    combined = "|".join(f"({p})" for p in jmh_patterns)
+
+    result = []
+    in_result_block = False
+    for line in stripped:
+        if re.match(r"^# Benchmark:", line):
+            in_result_block = True
+        if re.match(combined, line):
+            result.append(line)
+        elif in_result_block and line.strip():
+            result.append(line)
+        if re.match(r"^$", line) and in_result_block:
+            in_result_block = False
+
+    # Trim leading/trailing blank lines
+    while result and not result[0].strip():
+        result.pop(0)
+    while result and not result[-1].strip():
+        result.pop()
+
+    return "\n".join(result) if result else text
+
+
 def build_raw_details(results_dir: str) -> str:
     """Build the raw data details sections."""
     lines = []
@@ -367,6 +420,9 @@ def build_raw_details(results_dir: str) -> str:
     for folder, title in sections:
         text = read_file(results_dir, folder)
         if text:
+            # Strip mill noise from runtime JMH output
+            if folder == "runtime":
+                text = strip_jmh_noise(text)
             lines.append(f"<details>")
             lines.append(f"<summary>{title}</summary>")
             lines.append("")
