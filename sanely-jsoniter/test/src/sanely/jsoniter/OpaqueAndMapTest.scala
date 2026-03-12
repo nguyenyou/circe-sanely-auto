@@ -20,6 +20,13 @@ case class HasAbstractTypeMember(ns: MyNamespace, label: String)
 case class FileId(id: String) extends AnyVal
 case class HasAnyVal(fileId: FileId, name: String)
 
+// Gap 2: Subtype field with default + null
+case class HasSubtypeWithDefault(ns: MyNamespace = MyNamespace("default"), label: String)
+
+// Gap 3: AnyVal with default + null
+case class HasAnyValWithDefault(fileId: FileId = FileId("default"), name: String)
+case class DocInfo(fileId: FileId, reviewingFileId: Option[FileId] = None, start: Int = 0)
+
 // Opaque types need to be at file/object scope, not inside test blocks
 object OpaqueTypes:
   opaque type UserId = String
@@ -52,6 +59,8 @@ object OpaqueAutoTypes:
 
 class OpaqueAndMapTest extends munit.FunSuite:
   import sanely.jsoniter.semiauto.*
+
+  private def roundtrip[A: JsonValueCodec](value: A): A = readFromString[A](writeToString(value))
 
 
     // === Opaque type tests ===
@@ -225,4 +234,180 @@ class OpaqueAndMapTest extends munit.FunSuite:
       val json = writeToString(v)
       val decoded = readFromString[HasAnyVal](json)
       assert(decoded == v)
+    }
+
+    // === Gap 2: Subtype field with default + null ===
+
+    test("subtype-default - missing subtype field uses default") {
+      given JsonValueCodec[MyNamespace] = Codecs.string.asInstanceOf[JsonValueCodec[MyNamespace]]
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasSubtypeWithDefault] = deriveJsoniterConfiguredCodec
+      val json = """{"label":"test"}"""
+      val decoded = readFromString[HasSubtypeWithDefault](json)
+      assert(decoded.ns == MyNamespace("default"))
+      assert(decoded.label == "test")
+    }
+
+    test("subtype-default - null subtype field uses default") {
+      given JsonValueCodec[MyNamespace] = Codecs.string.asInstanceOf[JsonValueCodec[MyNamespace]]
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasSubtypeWithDefault] = deriveJsoniterConfiguredCodec
+      val json = """{"ns":null,"label":"test"}"""
+      val decoded = readFromString[HasSubtypeWithDefault](json)
+      assert(decoded.ns == MyNamespace("default"))
+      assert(decoded.label == "test")
+    }
+
+    test("subtype-default - provided value overrides default") {
+      given JsonValueCodec[MyNamespace] = Codecs.string.asInstanceOf[JsonValueCodec[MyNamespace]]
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasSubtypeWithDefault] = deriveJsoniterConfiguredCodec
+      val json = """{"ns":"custom","label":"test"}"""
+      val decoded = readFromString[HasSubtypeWithDefault](json)
+      assert(decoded.ns == MyNamespace("custom"))
+    }
+
+    test("subtype-default - round-trip") {
+      given JsonValueCodec[MyNamespace] = Codecs.string.asInstanceOf[JsonValueCodec[MyNamespace]]
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasSubtypeWithDefault] = deriveJsoniterConfiguredCodec
+      val v = HasSubtypeWithDefault(MyNamespace("forms"), "test")
+      val decoded = roundtrip(v)
+      assert(decoded == v)
+    }
+
+    test("subtype-default - cross-codec with circe") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Encoder, Decoder}
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given JsonValueCodec[MyNamespace] = Codecs.string.asInstanceOf[JsonValueCodec[MyNamespace]]
+
+      // circe needs Codec[MyNamespace] — it's a subtype of String
+      given io.circe.Codec[MyNamespace] = io.circe.Codec.from(
+        Decoder.decodeString.map(MyNamespace(_)),
+        Encoder.encodeString.contramap[MyNamespace](_.asInstanceOf[String])
+      )
+      given Configuration = Configuration.default.withDefaults
+      given io.circe.Codec[HasSubtypeWithDefault] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasSubtypeWithDefault] = deriveJsoniterConfiguredCodec
+
+      // null subtype field
+      val withNull = """{"ns":null,"label":"test"}"""
+      val circeNull = circeDecode[HasSubtypeWithDefault](withNull)
+      val jsoniterNull = readFromString[HasSubtypeWithDefault](withNull)
+      assert(circeNull == Right(jsoniterNull))
+      assert(jsoniterNull.ns == MyNamespace("default"))
+
+      // missing subtype field
+      val withMissing = """{"label":"test"}"""
+      val circeMissing = circeDecode[HasSubtypeWithDefault](withMissing)
+      val jsoniterMissing = readFromString[HasSubtypeWithDefault](withMissing)
+      assert(circeMissing == Right(jsoniterMissing))
+    }
+
+    // === Gap 3: AnyVal with default + null ===
+
+    test("anyval-default - missing AnyVal field uses default") {
+      given JsonValueCodec[FileId] = new JsonValueCodec[FileId]:
+        val nullValue: FileId = null.asInstanceOf[FileId]
+        def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+        def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasAnyValWithDefault] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"doc.pdf"}"""
+      val decoded = readFromString[HasAnyValWithDefault](json)
+      assert(decoded.fileId == FileId("default"))
+      assert(decoded.name == "doc.pdf")
+    }
+
+    test("anyval-default - null AnyVal field uses default") {
+      given JsonValueCodec[FileId] = new JsonValueCodec[FileId]:
+        val nullValue: FileId = null.asInstanceOf[FileId]
+        def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+        def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasAnyValWithDefault] = deriveJsoniterConfiguredCodec
+      val json = """{"fileId":null,"name":"doc.pdf"}"""
+      val decoded = readFromString[HasAnyValWithDefault](json)
+      assert(decoded.fileId == FileId("default"))
+      assert(decoded.name == "doc.pdf")
+    }
+
+    test("anyval-default - provided value overrides default") {
+      given JsonValueCodec[FileId] = new JsonValueCodec[FileId]:
+        val nullValue: FileId = null.asInstanceOf[FileId]
+        def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+        def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasAnyValWithDefault] = deriveJsoniterConfiguredCodec
+      val json = """{"fileId":"custom","name":"doc.pdf"}"""
+      val decoded = readFromString[HasAnyValWithDefault](json)
+      assert(decoded.fileId == FileId("custom"))
+    }
+
+    test("anyval-default - DocInfo: Option[AnyVal] null → None") {
+      given JsonValueCodec[FileId] = new JsonValueCodec[FileId]:
+        val nullValue: FileId = null.asInstanceOf[FileId]
+        def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+        def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[DocInfo] = deriveJsoniterConfiguredCodec
+      val json = """{"fileId":"f1","reviewingFileId":null}"""
+      val decoded = readFromString[DocInfo](json)
+      assert(decoded.reviewingFileId == None)
+      assert(decoded.start == 0)
+    }
+
+    test("anyval-default - DocInfo: missing fields use defaults") {
+      given JsonValueCodec[FileId] = new JsonValueCodec[FileId]:
+        val nullValue: FileId = null.asInstanceOf[FileId]
+        def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+        def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[DocInfo] = deriveJsoniterConfiguredCodec
+      val json = """{"fileId":"f1"}"""
+      val decoded = readFromString[DocInfo](json)
+      assert(decoded.fileId == FileId("f1"))
+      assert(decoded.reviewingFileId == None)
+      assert(decoded.start == 0)
+    }
+
+    test("anyval-default - cross-codec with circe") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Encoder, Decoder}
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given JsonValueCodec[FileId] = new JsonValueCodec[FileId] {
+        val nullValue: FileId = null.asInstanceOf[FileId]
+        def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+        def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+      }
+
+      given io.circe.Codec[FileId] = io.circe.Codec.from(
+        Decoder.decodeString.map(FileId(_)),
+        Encoder.encodeString.contramap[FileId](_.id)
+      )
+      given Configuration = Configuration.default.withDefaults
+      given io.circe.Codec[HasAnyValWithDefault] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[HasAnyValWithDefault] = deriveJsoniterConfiguredCodec
+
+      // null AnyVal field
+      val withNull = """{"fileId":null,"name":"doc.pdf"}"""
+      val circeNull = circeDecode[HasAnyValWithDefault](withNull)
+      val jsoniterNull = readFromString[HasAnyValWithDefault](withNull)
+      assert(circeNull == Right(jsoniterNull))
+      assert(jsoniterNull.fileId == FileId("default"))
+
+      // missing AnyVal field
+      val withMissing = """{"name":"doc.pdf"}"""
+      val circeMissing = circeDecode[HasAnyValWithDefault](withMissing)
+      val jsoniterMissing = readFromString[HasAnyValWithDefault](withMissing)
+      assert(circeMissing == Right(jsoniterMissing))
     }
