@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.22.0] - Unreleased
+## [0.22.0] - 2026-03-12
 
 ### sanely-jsoniter
 

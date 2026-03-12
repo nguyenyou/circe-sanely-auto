@@ -168,6 +168,11 @@ case class Profile(firstName: String, lastName: String) derives JsoniterCodec.Wi
 // Defaults + drop null
 case class Event(name: String, detail: Option[String] = None) derives JsoniterCodec.WithDefaultsDropNull
 
+// Defaults + __typename__ discriminator (flat ADT encoding)
+sealed trait Protocol derives JsoniterCodec.WithDefaultsAndTypeName
+case class Request(method: String, id: Int = 0) extends Protocol
+case class Response(result: String) extends Protocol
+
 // Enum string codec
 enum Color derives JsoniterCodec.Enum:
   case Red, Green, Blue
@@ -180,7 +185,7 @@ enum Level(val value: Int) derives JsoniterCodec.ValueEnum:
 
 Each wrapper extends `JsonValueCodec[A]` directly, so `derives` makes the codec available without any additional imports or conversions.
 
-Available wrappers: `JsoniterCodec`, `WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `Enum`, `ValueEnum`.
+Available wrappers: `JsoniterCodec`, `WithDefaults`, `WithDefaultsDropNull`, `WithSnakeCaseAndDefaults`, `WithSnakeCaseAndDefaultsDropNull`, `WithDefaultsAndTypeName`, `Enum`, `ValueEnum`.
 
 ## Supported types
 
@@ -353,6 +358,59 @@ Replace circe's tree-based encode/decode with direct jsoniter calls wherever per
 ```
 
 That's it. The JSON on the wire is identical, so no client changes are needed.
+
+## FAQ
+
+### Will `deriveJsoniterCodec` work with zio-prelude `Subtype`/`Newtype` fields?
+
+**Yes.** Fields whose types are abstract type members (e.g., `opaque type FormNamespace = Subtype[String]`) compile and decode correctly. The macro emits `null.asInstanceOf[T]` as the initial decode variable, which Scala 3 accepts for abstract types. A hand-rolled `JsonValueCodec[FormNamespace]` (3 lines) is needed to teach jsoniter how to read/write the underlying primitive:
+
+```scala
+given JsonValueCodec[FormNamespace] = new JsonValueCodec[FormNamespace]:
+  def decodeValue(in: JsonReader, default: FormNamespace): FormNamespace = FormNamespace(in.readString(null))
+  def encodeValue(x: FormNamespace, out: JsonWriter): Unit = out.writeVal(FormNamespace.unwrap(x))
+  def nullValue: FormNamespace = null.asInstanceOf[FormNamespace]
+```
+
+With that given in scope, `deriveJsoniterCodec[FormRule]` works. Tested with both semiauto and configured derivation.
+
+### Will `deriveJsoniterCodec` work with `AnyVal` case class fields?
+
+**Yes.** Same fix as abstract type members. A hand-rolled codec is needed for the AnyVal wrapper itself:
+
+```scala
+case class FileId(id: String) extends AnyVal
+
+given JsonValueCodec[FileId] = new JsonValueCodec[FileId]:
+  def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+  def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+  def nullValue: FileId = null.asInstanceOf[FileId]
+```
+
+Then `deriveJsoniterCodec[PdfCutInfo]` (where `PdfCutInfo` has a `FileId` field) compiles and round-trips correctly.
+
+### What happens when JSON has `"field": null` for a non-Option field with a default?
+
+**The default value is used**, matching circe's behavior exactly. For example:
+
+```scala
+case class SupportingFileType(blueprintMetadataMapping: String = "")
+
+// JSON: {"blueprintMetadataMapping": null}
+// Decodes as: SupportingFileType("")  — default kicks in, not a decode error
+```
+
+This works with configured derivation (`withDefaults`) for all field types: primitives, String, collections, nested case classes, abstract type members, and AnyVal wrappers. Cross-codec tests verify that circe and sanely-jsoniter produce identical results for both `null` and missing fields.
+
+### Can deeply nested decode errors silently return all-null objects?
+
+**No.** Decode errors propagate as `JsonReaderException` at every nesting level. If malformed JSON appears deep inside a nested structure, the exception bubbles up to the caller — it is never swallowed into a `nullValue` (all-null object).
+
+Tested explicitly: a 3-level nested structure (`Outer → Middle → Inner`) where the middle level receives an array instead of an object throws `JsonReaderException`. The error propagates, it does not silently return `Outer(null, null)`.
+
+The distinction:
+- `"field": null` at field level → field gets its `nullValue` or default (correct, matches circe)
+- Malformed JSON (wrong type, missing required data) → exception propagates to caller (correct, no silent corruption)
 
 ## Roadmap
 
