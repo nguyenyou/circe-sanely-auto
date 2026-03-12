@@ -12,13 +12,22 @@ object SanelyConfiguredEncoder:
   inline def derived[A](using inline conf: Configuration)(using inline m: Mirror.Of[A]): Encoder.AsObject[A] =
     ${ deriveMacro[A]('conf, 'm) }
 
+  inline def derivedStrict[A](using inline conf: Configuration)(using inline m: Mirror.Of[A]): Encoder.AsObject[A] =
+    ${ deriveMacroStrict[A]('conf, 'm) }
+
   private def deriveMacro[A: Type](conf: Expr[Configuration], mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[Encoder.AsObject[A]] =
-    val helper = new ConfiguredEncoderDerivation[A](conf)
+    val helper = new ConfiguredEncoderDerivation[A](conf, strict = false)
     val result = helper.derive(mirror)
     helper.timer.report()
     result
 
-  private class ConfiguredEncoderDerivation[A: Type](conf: Expr[Configuration])(using val quotes: Quotes):
+  private def deriveMacroStrict[A: Type](conf: Expr[Configuration], mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[Encoder.AsObject[A]] =
+    val helper = new ConfiguredEncoderDerivation[A](conf, strict = true)
+    val result = helper.derive(mirror)
+    helper.timer.report()
+    result
+
+  private class ConfiguredEncoderDerivation[A: Type](conf: Expr[Configuration], strict: Boolean)(using val quotes: Quotes):
     import quotes.reflect.*
 
     val selfType: TypeRepr = TypeRepr.of[A]
@@ -65,7 +74,7 @@ object SanelyConfiguredEncoder:
       mirror: Expr[Mirror.SumOf[S]],
       selfRef: Expr[Encoder.AsObject[A]]
     ): Expr[Encoder.AsObject[S]] =
-      val cases = resolveFields[Types, Labels](selfRef)
+      val cases = resolveFields[Types, Labels](selfRef, forVariant = true)
 
       // Only flatten sub-traits when no user-provided encoder exists
       val casesWithSubTrait = cases.map { case (label, tpe, enc) =>
@@ -90,7 +99,8 @@ object SanelyConfiguredEncoder:
       '{ SanelyRuntime.configuredSumEncoder[S]($mirror, $labelsExpr, () => $encodersArrayExpr, $isSubTraitExpr, $conf.transformConstructorNames, $conf.discriminator) }
 
     private def resolveFields[Types: Type, Labels: Type](
-      selfRef: Expr[Encoder.AsObject[A]]
+      selfRef: Expr[Encoder.AsObject[A]],
+      forVariant: Boolean = false
     ): List[(String, Type[?], Expr[Encoder[?]])] =
       (Type.of[Types], Type.of[Labels]) match
         case ('[EmptyTuple], '[EmptyTuple]) => Nil
@@ -100,12 +110,13 @@ object SanelyConfiguredEncoder:
               Type.valueOfConstant[l].getOrElse(
                 report.errorAndAbort(s"Expected literal string type")
               ).toString
-          val enc = resolveOneEncoder[t](selfRef)
-          (labelStr, Type.of[t], enc) :: resolveFields[ts, ls](selfRef)
+          val enc = resolveOneEncoder[t](selfRef, forVariant = forVariant)
+          (labelStr, Type.of[t], enc) :: resolveFields[ts, ls](selfRef, forVariant = forVariant)
         case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
 
     private def resolveOneEncoder[T: Type](
-      selfRef: Expr[Encoder.AsObject[A]]
+      selfRef: Expr[Encoder.AsObject[A]],
+      forVariant: Boolean = false
     ): Expr[Encoder[T]] =
       val tpe = TypeRepr.of[T]
 
@@ -154,17 +165,20 @@ object SanelyConfiguredEncoder:
       val resolved: Expr[Encoder[T]] = summonResult match
         case Some(enc) => enc
         case None =>
-          timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
-            case Some(mirrorExpr) =>
-              timer.time("derive") {
-                mirrorExpr match
-                  case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveProduct[T, types, labels](m, selfRef)
-                  case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveSum[T, types, labels](m, selfRef)
-              }
-            case None =>
-              report.errorAndAbort(s"Cannot derive Encoder for ${Type.show[T]}: no implicit Encoder and no Mirror available")
+          if strict && !forVariant then
+            report.errorAndAbort(s"No Encoder found for ${Type.show[T]}. In semiauto mode, all nested types must have explicit codecs.")
+          else
+            timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
+              case Some(mirrorExpr) =>
+                timer.time("derive") {
+                  mirrorExpr match
+                    case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      deriveProduct[T, types, labels](m, selfRef)
+                    case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      deriveSum[T, types, labels](m, selfRef)
+                }
+              case None =>
+                report.errorAndAbort(s"Cannot derive Encoder for ${Type.show[T]}: no implicit Encoder and no Mirror available")
       exprCache(cacheKey) = resolved
       resolved
 

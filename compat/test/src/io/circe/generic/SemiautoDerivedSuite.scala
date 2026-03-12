@@ -8,7 +8,6 @@
 //   - Replaced: Encoder.AsObject.derived / Encoder.derived -> deriveEncoder
 //   - Replaced: Codec.AsObject.derived / Codec.derived -> deriveCodec
 //   - Added: import io.circe.generic.semiauto._
-//   - Removed: 'cannot derive' tests (sanely-auto derives nested types recursively)
 //
 // DO NOT EDIT — regenerate with: python3 scripts/sync-circe-tests.py
 
@@ -54,6 +53,11 @@ object SemiautoDerivedSuite {
     given arbitrary: Arbitrary[Bar] = Arbitrary(Arbitrary.arbitrary[Box[Foo]].map(Bar(_)))
   }
 
+  case class Baz(str: String)
+
+  // We cannot derive a `Decoder` or `Encoder` for `Quux` because no instances exist for `Baz`
+  // see test below for proof that deriving instances fails to compile
+  case class Quux(baz: Box[Baz])
 
   sealed trait Adt1
   object Adt1 {
@@ -119,6 +123,15 @@ object SemiautoDerivedSuite {
     given arbitrary: Arbitrary[Adt4] = Arbitrary(Gen.oneOf(Gen.const(Class1()), Gen.const(Object1)))
   }
 
+  sealed trait Adt5
+  object Adt5 {
+    case class Nested()
+    case class Class1(nested: Nested) extends Adt5
+    case object Object1 extends Adt5
+
+    // We cannot derive a `Decoder` or `Encoder` for `Adt5` because no instances exist for `Nested`
+    // see test below for proof that deriving instances fails to compile
+  }
 }
 
 class SemiautoDerivedSuite extends CirceMunitSuite {
@@ -133,7 +146,15 @@ class SemiautoDerivedSuite extends CirceMunitSuite {
   checkAll("Codec[Adt3]", CodecTests[Adt3].codec)
   checkAll("Codec[Adt4]", CodecTests[Adt4].codec)
 
+  test("Nested case classes cannot be derived") {
+    assert(compileErrors("deriveDecoder[Quux]").nonEmpty)
+    assert(compileErrors("deriveEncoder[Quux]").nonEmpty)
+  }
 
+  test("Nested ADTs cannot be derived") {
+    assert(compileErrors("deriveDecoder[Adt5]").nonEmpty)
+    assert(compileErrors("deriveEncoder[Adt5]").nonEmpty)
+  }
 
   // Local classes use `implicit val` instead of `given` to ensure derivation is strictly evaluated
   // `given`s are desugared to `lazy val`s and part of the point of these tests is to ensure that

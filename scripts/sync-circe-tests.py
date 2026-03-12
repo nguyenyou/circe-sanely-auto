@@ -208,10 +208,6 @@ def transform_semiauto_suite(text):
     # Add semiauto import
     text = add_import(text, "import io.circe.generic.semiauto._")
 
-    # Remove "cannot derive" tests — sanely-auto CAN derive nested types
-    # via recursive macro derivation (Expr.summonIgnoring).
-    text = remove_cannot_derive_tests(text)
-
     header = make_header(
         "SemiautoDerivationSuite.scala",
         [
@@ -221,7 +217,6 @@ def transform_semiauto_suite(text):
             "Replaced: Encoder.AsObject.derived / Encoder.derived -> deriveEncoder",
             "Replaced: Codec.AsObject.derived / Codec.derived -> deriveCodec",
             "Added: import io.circe.generic.semiauto._",
-            "Removed: 'cannot derive' tests (sanely-auto derives nested types recursively)",
         ],
     )
     text = header + text

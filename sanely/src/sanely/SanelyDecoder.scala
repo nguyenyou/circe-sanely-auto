@@ -11,13 +11,22 @@ object SanelyDecoder:
   inline def derived[A](using inline m: Mirror.Of[A]): Decoder[A] =
     ${ deriveMacro[A]('m) }
 
+  inline def derivedStrict[A](using inline m: Mirror.Of[A]): Decoder[A] =
+    ${ deriveMacroStrict[A]('m) }
+
   private def deriveMacro[A: Type](mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[Decoder[A]] =
-    val helper = new DecoderDerivation[A]
+    val helper = new DecoderDerivation[A](strict = false)
     val result = helper.derive(mirror)
     helper.timer.report()
     result
 
-  private class DecoderDerivation[A: Type](using val quotes: Quotes):
+  private def deriveMacroStrict[A: Type](mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[Decoder[A]] =
+    val helper = new DecoderDerivation[A](strict = true)
+    val result = helper.derive(mirror)
+    helper.timer.report()
+    result
+
+  private class DecoderDerivation[A: Type](strict: Boolean)(using val quotes: Quotes):
     import quotes.reflect.*
 
     val selfType: TypeRepr = TypeRepr.of[A]
@@ -64,7 +73,7 @@ object SanelyDecoder:
       mirror: Expr[Mirror.SumOf[S]],
       selfRef: Expr[Decoder[A]]
     ): Expr[Decoder[S]] =
-      val cases = resolveFields[Types, Labels](selfRef)
+      val cases = resolveFields[Types, Labels](selfRef, forVariant = true)
 
       // Detect which variants are themselves sum types (sub-traits).
       // Only flatten when no user-provided decoder exists — a custom Decoder
@@ -95,7 +104,8 @@ object SanelyDecoder:
       '{ SanelyRuntime.sumDecoder[S]($allLabelsExpr, () => $decodersArrayExpr, $isSubTraitExpr, $directLabelsExpr.toSet) }
 
     private def resolveFields[Types: Type, Labels: Type](
-      selfRef: Expr[Decoder[A]]
+      selfRef: Expr[Decoder[A]],
+      forVariant: Boolean = false
     ): List[(String, Type[?], Expr[Decoder[?]])] =
       (Type.of[Types], Type.of[Labels]) match
         case ('[EmptyTuple], '[EmptyTuple]) => Nil
@@ -105,12 +115,13 @@ object SanelyDecoder:
               Type.valueOfConstant[l].getOrElse(
                 report.errorAndAbort(s"Expected literal string type")
               ).toString
-          val dec = resolveOneDecoder[t](selfRef)
-          (labelStr, Type.of[t], dec) :: resolveFields[ts, ls](selfRef)
+          val dec = resolveOneDecoder[t](selfRef, forVariant)
+          (labelStr, Type.of[t], dec) :: resolveFields[ts, ls](selfRef, forVariant)
         case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
 
     private def resolveOneDecoder[T: Type](
-      selfRef: Expr[Decoder[A]]
+      selfRef: Expr[Decoder[A]],
+      forVariant: Boolean = false
     ): Expr[Decoder[T]] =
       val tpe = TypeRepr.of[T]
 
@@ -160,17 +171,20 @@ object SanelyDecoder:
       val resolved: Expr[Decoder[T]] = summonResult match
         case Some(dec) => dec
         case None =>
-          timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
-            case Some(mirrorExpr) =>
-              timer.time("derive") {
-                mirrorExpr match
-                  case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveProduct[T, types, labels](m, selfRef)
-                  case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveSum[T, types, labels](m, selfRef)
-              }
-            case None =>
-              report.errorAndAbort(s"Cannot derive Decoder for ${Type.show[T]}: no implicit Decoder and no Mirror available")
+          if strict && !forVariant then
+            report.errorAndAbort(s"No Decoder found for ${Type.show[T]}. In semiauto mode, all nested types must have explicit codecs.")
+          else
+            timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
+              case Some(mirrorExpr) =>
+                timer.time("derive") {
+                  mirrorExpr match
+                    case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      deriveProduct[T, types, labels](m, selfRef)
+                    case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      deriveSum[T, types, labels](m, selfRef)
+                }
+              case None =>
+                report.errorAndAbort(s"Cannot derive Decoder for ${Type.show[T]}: no implicit Decoder and no Mirror available")
       exprCache(cacheKey) = resolved
       resolved
 

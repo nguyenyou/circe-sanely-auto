@@ -10,7 +10,7 @@ Drop-in jsoniter-scala codec derivation that produces circe-compatible JSON on t
 
 ### Semiauto semantics
 
-- [ ] **(P1) Semiauto must not internally derive nested types** — `deriveJsoniterCodec[Outer]` currently auto-derives inner types (e.g., `Inner`) within the macro expansion if no explicit `JsonValueCodec[Inner]` exists. This is wrong — circe's semiauto (`Decoder.derived`, `Encoder.AsObject.derived`) requires explicit instances for all nested types and fails to compile otherwise. See circe's `SemiautoDerivationSuite`: `Quux(baz: Box[Baz])` fails to derive because `Baz` has no codec; `Adt5` with `Class1(nested: Nested)` fails because `Nested` has no codec. Our `deriveJsoniterCodec` should match: if a field/variant type has no `JsonValueCodec` in implicit scope, derivation must be a compile error. Auto-derivation of nested types should only happen via `import sanely.jsoniter.auto.given`.
+- [x] **(P1) Semiauto must not internally derive nested types** — `deriveJsoniterCodec[Outer]` currently auto-derives inner types (e.g., `Inner`) within the macro expansion if no explicit `JsonValueCodec[Inner]` exists. This is wrong — circe's semiauto (`Decoder.derived`, `Encoder.AsObject.derived`) requires explicit instances for all nested types and fails to compile otherwise. See circe's `SemiautoDerivationSuite`: `Quux(baz: Box[Baz])` fails to derive because `Baz` has no codec; `Adt5` with `Class1(nested: Nested)` fails because `Nested` has no codec. Our `deriveJsoniterCodec` should match: if a field/variant type has no `JsonValueCodec` in implicit scope, derivation must be a compile error. Auto-derivation of nested types should only happen via `import sanely.jsoniter.auto.given`.
 
 ### Gap analysis vs jsoniter-scala `CodecMakerConfig`
 

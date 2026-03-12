@@ -11,11 +11,18 @@ object SanelyJsoniterConfigured:
   inline def derived[A](using inline conf: JsoniterConfiguration)(using inline m: Mirror.Of[A]): JsonValueCodec[A] =
     ${ deriveMacro[A]('conf, 'm) }
 
+  inline def derivedStrict[A](using inline conf: JsoniterConfiguration)(using inline m: Mirror.Of[A]): JsonValueCodec[A] =
+    ${ deriveMacroStrict[A]('conf, 'm) }
+
   private def deriveMacro[A: Type](conf: Expr[JsoniterConfiguration], mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[JsonValueCodec[A]] =
-    val helper = new ConfiguredCodecDerivation[A](conf)
+    val helper = new ConfiguredCodecDerivation[A](conf, strict = false)
     helper.derive(mirror)
 
-  private class ConfiguredCodecDerivation[A: Type](conf: Expr[JsoniterConfiguration])(using val quotes: Quotes):
+  private def deriveMacroStrict[A: Type](conf: Expr[JsoniterConfiguration], mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[JsonValueCodec[A]] =
+    val helper = new ConfiguredCodecDerivation[A](conf, strict = true)
+    helper.derive(mirror)
+
+  private class ConfiguredCodecDerivation[A: Type](conf: Expr[JsoniterConfiguration], strict: Boolean)(using val quotes: Quotes):
     import quotes.reflect.*
 
     val selfType: TypeRepr = TypeRepr.of[A]
@@ -681,7 +688,7 @@ object SanelyJsoniterConfigured:
       mirror: Expr[Mirror.SumOf[S]],
       selfRef: Expr[JsonValueCodec[A]]
     ): Expr[JsonValueCodec[S]] =
-      val cases = resolveFields[Types, Labels](selfRef)
+      val cases = resolveFields[Types, Labels](selfRef, forVariant = true)
 
       // Detect sub-traits
       val casesWithSubTrait = cases.map { case (label, tpe, codec) =>
@@ -770,7 +777,7 @@ object SanelyJsoniterConfigured:
           val casesForThis =
             if isNestedSub then collectLeafVariants[t](selfRef)
             else
-              val codec = resolveOneCodec[t](selfRef)
+              val codec = resolveOneCodec[t](selfRef, forVariant = true)
               List((labelStr, Type.of[t], codec))
           casesForThis ++ collectLeaves[ts, ls](selfRef)
         case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
@@ -812,7 +819,8 @@ object SanelyJsoniterConfigured:
     // === Field/variant resolution (reused from SanelyJsoniter pattern) ===
 
     private def resolveFields[Types: Type, Labels: Type](
-      selfRef: Expr[JsonValueCodec[A]]
+      selfRef: Expr[JsonValueCodec[A]],
+      forVariant: Boolean = false
     ): List[(String, Type[?], Expr[JsonValueCodec[?]])] =
       (Type.of[Types], Type.of[Labels]) match
         case ('[EmptyTuple], '[EmptyTuple]) => Nil
@@ -822,12 +830,13 @@ object SanelyJsoniterConfigured:
               Type.valueOfConstant[l].getOrElse(
                 report.errorAndAbort(s"Expected literal string type")
               ).toString
-          val codec = resolveOneCodec[t](selfRef)
-          (labelStr, Type.of[t], codec) :: resolveFields[ts, ls](selfRef)
+          val codec = resolveOneCodec[t](selfRef, forVariant)
+          (labelStr, Type.of[t], codec) :: resolveFields[ts, ls](selfRef, forVariant)
         case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
 
     private def resolveOneCodec[T: Type](
-      selfRef: Expr[JsonValueCodec[A]]
+      selfRef: Expr[JsonValueCodec[A]],
+      forVariant: Boolean = false
     ): Expr[JsonValueCodec[T]] =
       val tpe = TypeRepr.of[T]
 
@@ -861,15 +870,18 @@ object SanelyJsoniterConfigured:
             summonedKeys += cacheKey
             codec
           case None =>
-            Expr.summon[Mirror.Of[T]] match
-              case Some(mirrorExpr) =>
-                mirrorExpr match
-                  case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveProduct[T, types, labels](selfRef)
-                  case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    deriveSum[T, types, labels](m, selfRef)
-              case None =>
-                report.errorAndAbort(s"Cannot derive JsonValueCodec for ${Type.show[T]}: no implicit JsonValueCodec and no Mirror available")
+            if strict && !forVariant then
+              report.errorAndAbort(s"No JsonValueCodec found for ${Type.show[T]}. In semiauto mode, all nested types must have explicit codecs.")
+            else
+              Expr.summon[Mirror.Of[T]] match
+                case Some(mirrorExpr) =>
+                  mirrorExpr match
+                    case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      deriveProduct[T, types, labels](selfRef)
+                    case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      deriveSum[T, types, labels](m, selfRef)
+                case None =>
+                  report.errorAndAbort(s"Cannot derive JsonValueCodec for ${Type.show[T]}: no implicit JsonValueCodec and no Mirror available")
       exprCache(cacheKey) = resolved
       resolved
 
