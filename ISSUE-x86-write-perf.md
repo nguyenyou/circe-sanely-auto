@@ -75,7 +75,7 @@ Reads are dominated by field-name parsing + hash dispatch — inherently expensi
 
 Three approaches, ordered by effort/impact ratio:
 
-### Fix 1: Inline primitive container codecs (medium effort, ~5-8% write improvement)
+### Fix 1: Inline primitive container codecs (medium effort, ~5-8% write improvement) — PLANNED
 
 For `Option[primitive]` and `List[primitive]`, instead of going through `codecs(idx).encodeValue(...)`, generate the encode logic inline in the macro:
 
@@ -84,15 +84,33 @@ For `Option[primitive]` and `List[primitive]`, instead of going through `codecs(
 
 // Proposed: inline expansion for Option[String]
 x.phone match
-  case Some(v) => out.writeNonEscapedAsciiKey("phone"); out.writeVal(v)
-  case None => out.writeNonEscapedAsciiKey("phone"); out.writeNull()
+  case Some(v) => out.writeVal(v)
+  case None => out.writeNull()
+
+// Proposed: inline expansion for List[String]
+val _lst = x.tags
+if _lst == null then out.writeNull()
+else
+  out.writeArrayStart()
+  var _cur = _lst
+  while _cur.nonEmpty do out.writeVal(_cur.head); _cur = _cur.tail
+  out.writeArrayEnd()
 ```
 
 The macro already does this for leaf primitives via `tryDirectWriteTerm`. Extending it to `Option[T]` and `List[T]` where `T` is a directly-writable type eliminates virtual dispatch for the most common container patterns.
 
-**Files to modify**: `SanelyJsoniter.scala` (`generateFieldWrites`, `tryDirectWriteTerm`)
+**Scope**: `Option[prim]` and `List[prim]` writes only. Not Vector/Set (not in benchmark payload). Not read-side (reads already +2-5%). Not opaque-wrapped primitives inside containers (future work).
 
-### Fix 2: Pre-computed key byte arrays (medium effort, ~5-10% write improvement)
+**Files to modify**:
+- `SanelyJsoniter.scala` — extend `tryDirectWriteTerm` (line 284)
+- `SanelyJsoniterConfigured.scala` — extend `tryDirectWrite` (line 471) and `tryDirectWriteDropNull` (line 502)
+
+**Dispatch savings on benchmark payload**: ~8 virtual calls eliminated:
+- User: `tags: List[String]`, `phone: Option[String]`, `bio: Option[String]`
+- Order ×3: `note: Option[String]`
+- Plus inner `StringCodec.encodeValue` calls within List iteration
+
+### Fix 2: Pre-computed key byte arrays — DEFERRED
 
 jsoniter's `writeNonEscapedAsciiKey` copies char-by-char from a `String`:
 
@@ -107,11 +125,15 @@ while (i < len) {
 
 Pre-computing key bytes including quotes and colon (e.g. `,"name":` as `Array[Byte]`) and using `System.arraycopy` would let x86's `rep movsb` / ERMS instructions do this in 1-2 cycles instead of a per-char loop.
 
-This requires finding a way to write pre-computed bytes through jsoniter's `JsonWriter` API (or adding a helper method).
+**Why deferred**: JsonWriter has `writeRawVal(bs: Array[Byte])` for writing raw bytes, but it writes a JSON *value* — not a key with comma/colon/quote framing. Using it for keys would require either:
+- Coupling to JsonWriter's internal buffer layout (fragile across versions)
+- Adding a helper method upstream in jsoniter-scala
 
-**Files to modify**: `SanelyJsoniter.scala`, `JsoniterRuntime.scala`, possibly `Codecs.scala`
+The char-by-char loop in `writeNonEscapedAsciiKey` is already fast for short field names (5-15 chars). Not worth the coupling risk until Fix 1 is measured and the remaining gap is quantified.
 
-### Fix 3: Recursive inline expansion for known nested products (high effort, ~10-15% write improvement)
+**Files to modify (if revisited)**: `SanelyJsoniter.scala`, `JsoniterRuntime.scala`, possibly `Codecs.scala`
+
+### Fix 3: Recursive inline expansion for known nested products — REJECTED
 
 When the macro sees a field like `address: Address` and `Address` is being derived in the same expansion, inline its field writes directly:
 
@@ -131,7 +153,13 @@ out.writeObjectEnd()
 
 This is what jsoniter-scala's monolithic derivation achieves automatically. It would close the gap entirely but requires significant macro architecture changes to support recursive inlining with cycle detection.
 
-**Files to modify**: `SanelyJsoniter.scala` (major refactor of codec generation)
+**Why rejected**: Trades compile-time performance for runtime performance. This directly contradicts the project's identity — the whole reason this library exists is that circe-generic has slow compilation. The costs are real:
+- Macro must recursively expand nested types → larger ASTs → slower compilation
+- Bytecode duplication → Address fields in every codec that references Address
+- Zinc granularity loss → if Address changes, everything inlining it recompiles
+- Macro complexity → cycle detection, depth limits, deduplication logic
+
+**Files to modify (if revisited)**: `SanelyJsoniter.scala` (major refactor of codec generation)
 
 ## Trade-off Analysis
 
@@ -145,13 +173,14 @@ Each fix trades something different. Understanding these trade-offs matters beca
 
 No zinc incremental compilation impact — we're inlining `Option`/`List` handling for stdlib types that never change. This is the closest to a free win.
 
-### Fix 2: Pre-computed key byte arrays — near-free
+### Fix 2: Pre-computed key byte arrays — near-free but risky coupling
 
 | You trade | You get |
 |---|---|
 | Small memory increase per codec (one `Array[Byte]` per field name, allocated once at init) | Faster key writing on all platforms |
+| Coupling to JsonWriter internals or upstream dependency | Bulk copy instead of char-by-char loop |
 
-Essentially free. The byte arrays are tiny and allocated once.
+Deferred until Fix 1 results are measured. May not be needed if Fix 1 closes enough of the gap.
 
 ### Fix 3: Recursive inline expansion — real costs
 
@@ -162,22 +191,33 @@ Essentially free. The byte arrays are tiny and allocated once.
 | **Zinc granularity** — if Address changes, everything that inlines Address must recompile (today only AddressCodec recompiles) | Fewer runtime objects |
 | **Macro complexity** — cycle detection, depth limits, deduplication logic needed | Harder to maintain |
 
-Fix 3 is essentially trading **compile-time performance for runtime performance**. This directly contradicts the project's identity — the whole reason this library exists is that circe-generic has slow compilation. Making our macros do more work to generate faster runtime code undermines that.
+Rejected. The compile-time and zinc incremental compilation costs are too high relative to the project's priorities.
 
 ### ARM impact
 
-None of these fixes would regress ARM performance. On ARM, the JIT already devirtualizes the dispatch chain, so Fixes 1-2 produce code equivalent to what the JIT generates — same steady-state throughput, slightly faster warmup. Fix 3 is also neutral-to-positive on ARM but carries the compile-time costs listed above.
+None of these fixes would regress ARM performance. On ARM, the JIT already devirtualizes the dispatch chain, so Fixes 1-2 produce code equivalent to what the JIT generates — same steady-state throughput, slightly faster warmup.
 
-## Recommendation
+## Implementation Status
 
-Implement **Fix 1 + Fix 2** only. They're near-free and should close ~60-70% of the x86 gap. If x86 writes are still -3-4% after both fixes, that's an acceptable trade-off — the library's pitch is compile speed, not runtime speed.
+| Fix | Status | Expected improvement |
+|---|---|---|
+| Fix 1: Inline `Option[prim]` + `List[prim]` writes | **DONE** — v0.21.0 | +21% writes on ARM (1,195K vs 989K ops/s) |
+| Fix 2: Pre-computed key byte arrays | **DEFERRED** — measure Fix 1 first | ~5-10% write improvement |
+| Fix 3: Recursive inline expansion | **REJECTED** — violates project identity | ~10-15% write improvement |
 
-**Do not implement Fix 3** unless there's a compelling user demand for runtime parity with jsoniter-scala on x86. The compile-time and zinc incremental compilation costs are too high relative to the project's priorities.
+**Acceptable end state**: If x86 writes are still -3-4% after Fix 1, that's fine — the library's pitch is compile speed, not runtime speed.
+
+## Future Work (not planned)
+
+- Inline `Vector[prim]`, `Set[prim]` writes — not in typical payloads
+- Inline `Option[prim]` reads — reads already +2-5%, not a priority
+- Opaque-wrapped primitives inside containers (e.g. `Option[UserId]` where `UserId` is opaque over `Long`)
 
 ## Validation
 
-After each fix:
+After Fix 1:
 1. `./mill sanely.jvm.test` + `./mill compat.jvm.test` — correctness
-2. `bash bench-runtime.sh 10 10` locally — measure improvement on ARM
+2. JMH write benchmark locally — measure improvement on ARM
 3. CI benchmark run — measure improvement on x86
 4. Compare ratios, not absolute numbers
+5. If gap closed to ≤5%: done. If not: reconsider Fix 2.

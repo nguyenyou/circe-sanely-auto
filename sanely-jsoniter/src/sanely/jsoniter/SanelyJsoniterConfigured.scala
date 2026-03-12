@@ -497,7 +497,63 @@ object SanelyJsoniterConfigured:
         Some('{ val _v = ${castBigDecimal}; if _v == null then $out.writeNull() else $out.writeVal(_v) })
       else if tpe =:= TypeRepr.of[BigInt] then
         Some('{ val _v = ${castBigInt}; if _v == null then $out.writeNull() else $out.writeVal(_v) })
-      else None
+      else
+        // Inline Option[prim] and List[prim] writes to avoid virtual dispatch
+        tpe match
+          case AppliedType(tycon, List(innerArg)) =>
+            val outTerm = out.asTerm
+            val castTerm = if isOpaqueAlias(tpe0) then
+              TypeApply(Select.unique(fa.asTerm, "asInstanceOf"), List(Inferred(tpe)))
+            else fa.asTerm
+            def wv(arg: Term): Term = Select.overloaded(outTerm, "writeVal", Nil, List(arg))
+            def wn(): Term = Select.overloaded(outTerm, "writeNull", Nil, Nil)
+            def innerWriteVal(valTerm: Term): Option[Term] =
+              val ei = innerArg.dealias
+              if ei =:= TypeRepr.of[Int] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Long] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Float] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Double] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Boolean] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Short] then Some(wv(Select.unique(valTerm, "toInt")))
+              else if ei =:= TypeRepr.of[Byte] then Some(wv(Select.unique(valTerm, "toInt")))
+              else if ei =:= TypeRepr.of[Char] then Some(wv(Select.overloaded(valTerm, "toString", Nil, Nil)))
+              else if ei =:= TypeRepr.of[String] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[BigDecimal] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[BigInt] then Some(wv(valTerm))
+              else None
+            tycon.typeSymbol.fullName match
+              case "scala.Option" =>
+                val owner = Symbol.spliceOwner
+                val optSym = Symbol.newVal(owner, "_o", tpe, Flags.EmptyFlags, Symbol.noSymbol)
+                val optDef = ValDef(optSym, Some(castTerm))
+                val optRef = Ref(optSym)
+                val isDefined = Select.unique(optRef, "isDefined")
+                val get = Select.unique(optRef, "get")
+                innerWriteVal(get).map { writeTerm =>
+                  Block(List(optDef), If(isDefined, writeTerm, wn())).asExprOf[Unit]
+                }
+              case s if s.endsWith(".List") =>
+                val owner = Symbol.spliceOwner
+                val lstSym = Symbol.newVal(owner, "_l", tpe, Flags.EmptyFlags, Symbol.noSymbol)
+                val lstDef = ValDef(lstSym, Some(castTerm))
+                val lstRef = Ref(lstSym)
+                val isNull = Apply(Select.unique(lstRef, "=="), List(Literal(NullConstant())))
+                val arrStart = Select.overloaded(outTerm, "writeArrayStart", Nil, Nil)
+                val arrEnd = Select.overloaded(outTerm, "writeArrayEnd", Nil, Nil)
+                val curSym = Symbol.newVal(owner, "_c", tpe, Flags.Mutable, Symbol.noSymbol)
+                val curDef = ValDef(curSym, Some(lstRef))
+                val curRef = Ref(curSym)
+                val nonEmpty = Select.unique(curRef, "nonEmpty")
+                val head = Select.unique(curRef, "head")
+                val tail = Select.unique(curRef, "tail")
+                innerWriteVal(head).map { writeHead =>
+                  val whileBody = Block(List(writeHead), Assign(curRef, tail))
+                  val whileLoop = While(nonEmpty, whileBody)
+                  val elseBranch = Block(List(arrStart, curDef, whileLoop), arrEnd)
+                  Block(List(lstDef), If(isNull, wn(), elseBranch)).asExprOf[Unit]
+                }
+              case _ => None
+          case _ => None
 
     private def tryDirectWriteDropNull[T: Type](
       fa: Expr[T], names: Expr[Array[String]], idx: Expr[Int], out: Expr[JsonWriter]
@@ -529,7 +585,67 @@ object SanelyJsoniterConfigured:
         Some('{ val _v = ${castBigDecimal}; if _v != null then { $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(_v) } })
       else if tpe =:= TypeRepr.of[BigInt] then
         Some('{ val _v = ${castBigInt}; if _v != null then { $out.writeNonEscapedAsciiKey($names($idx)); $out.writeVal(_v) } })
-      else None
+      else
+        // Inline Option[prim] and List[prim] writes with drop-null to avoid virtual dispatch
+        tpe match
+          case AppliedType(tycon, List(innerArg)) =>
+            val outTerm = out.asTerm
+            val namesTerm = names.asTerm
+            val idxTerm = idx.asTerm
+            val castTerm = if isOpaqueAlias(tpe0) then
+              TypeApply(Select.unique(fa.asTerm, "asInstanceOf"), List(Inferred(tpe)))
+            else fa.asTerm
+            def wv(arg: Term): Term = Select.overloaded(outTerm, "writeVal", Nil, List(arg))
+            def writeKey(): Term = Select.overloaded(outTerm, "writeNonEscapedAsciiKey", Nil, List(
+              Apply(Select.unique(namesTerm, "apply"), List(idxTerm))))
+            def innerWriteVal(valTerm: Term): Option[Term] =
+              val ei = innerArg.dealias
+              if ei =:= TypeRepr.of[Int] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Long] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Float] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Double] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Boolean] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[Short] then Some(wv(Select.unique(valTerm, "toInt")))
+              else if ei =:= TypeRepr.of[Byte] then Some(wv(Select.unique(valTerm, "toInt")))
+              else if ei =:= TypeRepr.of[Char] then Some(wv(Select.overloaded(valTerm, "toString", Nil, Nil)))
+              else if ei =:= TypeRepr.of[String] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[BigDecimal] then Some(wv(valTerm))
+              else if ei =:= TypeRepr.of[BigInt] then Some(wv(valTerm))
+              else None
+            tycon.typeSymbol.fullName match
+              case "scala.Option" =>
+                val owner = Symbol.spliceOwner
+                val optSym = Symbol.newVal(owner, "_o", tpe, Flags.EmptyFlags, Symbol.noSymbol)
+                val optDef = ValDef(optSym, Some(castTerm))
+                val optRef = Ref(optSym)
+                val isDefined = Select.unique(optRef, "isDefined")
+                val get = Select.unique(optRef, "get")
+                innerWriteVal(get).map { writeTerm =>
+                  val thenBranch = Block(List(writeKey()), writeTerm)
+                  Block(List(optDef), If(isDefined, thenBranch, Literal(UnitConstant()))).asExprOf[Unit]
+                }
+              case s if s.endsWith(".List") =>
+                val owner = Symbol.spliceOwner
+                val lstSym = Symbol.newVal(owner, "_l", tpe, Flags.EmptyFlags, Symbol.noSymbol)
+                val lstDef = ValDef(lstSym, Some(castTerm))
+                val lstRef = Ref(lstSym)
+                val isNotNull = Select.unique(Apply(Select.unique(lstRef, "=="), List(Literal(NullConstant()))), "unary_!")
+                val arrStart = Select.overloaded(outTerm, "writeArrayStart", Nil, Nil)
+                val arrEnd = Select.overloaded(outTerm, "writeArrayEnd", Nil, Nil)
+                val curSym = Symbol.newVal(owner, "_c", tpe, Flags.Mutable, Symbol.noSymbol)
+                val curDef = ValDef(curSym, Some(lstRef))
+                val curRef = Ref(curSym)
+                val nonEmpty = Select.unique(curRef, "nonEmpty")
+                val head = Select.unique(curRef, "head")
+                val tail = Select.unique(curRef, "tail")
+                innerWriteVal(head).map { writeHead =>
+                  val whileBody = Block(List(writeHead), Assign(curRef, tail))
+                  val whileLoop = While(nonEmpty, whileBody)
+                  val thenBranch = Block(List(writeKey(), arrStart, curDef, whileLoop), arrEnd)
+                  Block(List(lstDef), If(isNotNull, thenBranch, Literal(UnitConstant()))).asExprOf[Unit]
+                }
+              case _ => None
+          case _ => None
 
     // === Sum derivation (configured) ===
 
