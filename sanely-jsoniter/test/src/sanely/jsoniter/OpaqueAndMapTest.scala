@@ -2,6 +2,24 @@ package sanely.jsoniter
 
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 
+// Abstract type member (zio-prelude Subtype/Newtype style)
+// NOT an opaque type — uses abstract type member with runtime asInstanceOf
+abstract class NewtypeCustom[A]:
+  type Type
+  def apply(a: A): Type = a.asInstanceOf[Type]
+
+abstract class SubtypeCustom[A] extends NewtypeCustom[A]:
+  override type Type <: A
+
+object MyNamespace extends SubtypeCustom[String]
+type MyNamespace = MyNamespace.Type
+
+case class HasAbstractTypeMember(ns: MyNamespace, label: String)
+
+// AnyVal wrapper
+case class FileId(id: String) extends AnyVal
+case class HasAnyVal(fileId: FileId, name: String)
+
 // Opaque types need to be at file/object scope, not inside test blocks
 object OpaqueTypes:
   opaque type UserId = String
@@ -155,5 +173,56 @@ class OpaqueAndMapTest extends munit.FunSuite:
       val json = writeToString(v)
       assert(json.contains("["))
       val decoded = readFromString[ConfiguredWithMap](json)
+      assert(decoded == v)
+    }
+
+    // === Abstract type member tests (zio-prelude Subtype style) ===
+
+    test("abstract type member - semiauto round-trip") {
+      given JsonValueCodec[MyNamespace] = Codecs.string.asInstanceOf[JsonValueCodec[MyNamespace]]
+      given JsonValueCodec[HasAbstractTypeMember] = deriveJsoniterCodec
+      val v = HasAbstractTypeMember(MyNamespace("forms"), "test")
+      val json = writeToString(v)
+      assert(json == """{"ns":"forms","label":"test"}""")
+      val decoded = readFromString[HasAbstractTypeMember](json)
+      assert(decoded == v)
+    }
+
+    test("abstract type member - configured round-trip") {
+      given JsonValueCodec[MyNamespace] = Codecs.string.asInstanceOf[JsonValueCodec[MyNamespace]]
+      given JsoniterConfiguration = JsoniterConfiguration.default
+      given JsonValueCodec[HasAbstractTypeMember] = deriveJsoniterConfiguredCodec
+      val v = HasAbstractTypeMember(MyNamespace("forms"), "test")
+      val json = writeToString(v)
+      val decoded = readFromString[HasAbstractTypeMember](json)
+      assert(decoded == v)
+    }
+
+    // === AnyVal tests ===
+
+    test("AnyVal - semiauto round-trip") {
+      // AnyVal types need a hand-rolled codec that unwraps/wraps the value
+      given JsonValueCodec[FileId] = new JsonValueCodec[FileId]:
+        val nullValue: FileId = null.asInstanceOf[FileId]
+        def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+        def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+      given JsonValueCodec[HasAnyVal] = deriveJsoniterCodec
+      val v = HasAnyVal(FileId("f123"), "doc.pdf")
+      val json = writeToString(v)
+      assert(json == """{"fileId":"f123","name":"doc.pdf"}""")
+      val decoded = readFromString[HasAnyVal](json)
+      assert(decoded == v)
+    }
+
+    test("AnyVal - configured round-trip") {
+      given JsonValueCodec[FileId] = new JsonValueCodec[FileId]:
+        val nullValue: FileId = null.asInstanceOf[FileId]
+        def encodeValue(x: FileId, out: JsonWriter): Unit = out.writeVal(x.id)
+        def decodeValue(in: JsonReader, default: FileId): FileId = FileId(in.readString(null))
+      given JsoniterConfiguration = JsoniterConfiguration.default
+      given JsonValueCodec[HasAnyVal] = deriveJsoniterConfiguredCodec
+      val v = HasAnyVal(FileId("f123"), "doc.pdf")
+      val json = writeToString(v)
+      val decoded = readFromString[HasAnyVal](json)
       assert(decoded == v)
     }
