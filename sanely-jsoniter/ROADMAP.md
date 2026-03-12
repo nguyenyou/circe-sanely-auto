@@ -27,12 +27,12 @@ Features available in jsoniter-scala that sanely-jsoniter does not yet support. 
 
 Patterns observed in large production codebases that are not explicitly tested:
 
-- [ ] **Mixed case objects + case classes in sealed traits** — ADTs containing both `case object Idle` and `case class Failed(message: String)` in the same hierarchy. Common for status/state machine types (e.g., `NotStarted`, `InProgress(jobId)`, `Failed(message)`, `Completed`).
-- [ ] **Sealed traits with many variants (7+)** — Real-world ADTs often have 7-10+ variants. Tests should verify hash-dispatch correctness at this scale.
-- [ ] **Collection defaults** — Fields with `tags: Seq[String] = Seq.empty`, `items: List[Item] = Nil`, `metadata: Set[String] = Set.empty`, `lookup: Map[String, Int] = Map.empty`. Current default tests only cover primitives and `Option`.
-- [ ] **`Map[String, CaseClass]` with configured derivation** — Map values that are themselves derived case classes. Common in schema/config types (e.g., `fields: Map[String, FieldConfig]`).
-- [ ] **Deeply nested derivation (3+ levels)** — `Outer` → `Middle` → `Inner` nesting where all levels are macro-derived within a single expansion.
-- [ ] **Sealed trait with discriminator + subtypes using different configs** — Parent sealed trait uses `withDiscriminator("type")` while subtypes have their own defaults. Mimics real protocol definitions.
+- [x] **Mixed case objects + case classes in sealed traits** — ADTs containing both `case object Idle` and `case class Failed(message: String)` in the same hierarchy. Common for status/state machine types (e.g., `NotStarted`, `InProgress(jobId)`, `Failed(message)`, `Completed`).
+- [x] **Sealed traits with many variants (7+)** — Real-world ADTs often have 7-10+ variants. Tests should verify hash-dispatch correctness at this scale.
+- [x] **Collection defaults** — Fields with `tags: Seq[String] = Seq.empty`, `items: List[Item] = Nil`, `metadata: Set[String] = Set.empty`, `lookup: Map[String, Int] = Map.empty`. Current default tests only cover primitives and `Option`.
+- [x] **`Map[String, CaseClass]` with configured derivation** — Map values that are themselves derived case classes. Common in schema/config types (e.g., `fields: Map[String, FieldConfig]`).
+- [x] **Deeply nested derivation (3+ levels)** — `Outer` → `Middle` → `Inner` nesting where all levels are macro-derived within a single expansion.
+- [x] **Sealed trait with discriminator + subtypes using different configs** — Parent sealed trait uses `withDiscriminator("type")` while subtypes have their own defaults. Mimics real protocol definitions.
 - [x] **Null on non-Option String field with default** — `case class SupportingFileType(blueprintMetadataMapping: String = "")` with JSON `{"blueprintMetadataMapping":null}` should decode to default `""`, not throw. Configured derivation with `withDefaults` handles this via null interception (`isNextToken('n')` → skip + keep default). Needs explicit test + cross-codec verification with circe.
 - [x] **Subtype field with default + null JSON** — `case class HasSubtypeDefault(namespace: MyNamespace, ...)` where `MyNamespace = Subtype[String]`. Var initialization uses `null.asInstanceOf[T]` which compiles for abstract type members. Needs test with configured derivation + withDefaults where the Subtype field has a Scala default and JSON sends null.
 - [x] **AnyVal wrapper with default + null JSON** — `case class DocInfo(fileId: FileId, reviewingFileId: Option[FileId])` where `FileId extends AnyVal`. Requires hand-rolled `JsonValueCodec[FileId]` (3 lines). Needs test with configured withDefaults proving null on AnyVal field keeps default.

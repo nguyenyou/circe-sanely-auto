@@ -79,6 +79,49 @@ case class QuotedFieldName(`a"b`: String, `c\\d`: String)
 // Type with backtick field names (Scala keywords)
 case class KeywordFields(`val`: Int, `type`: String, `class`: Boolean)
 
+// Gap 1: Rich mixed ADT (2 case classes + 2 case objects)
+sealed trait RichMixedADT
+case class RmProduct1(x: Int, y: String) extends RichMixedADT
+case class RmProduct2(flag: Boolean) extends RichMixedADT
+case object RmEmpty1 extends RichMixedADT
+case object RmEmpty2 extends RichMixedADT
+
+// Gap 2: 9-variant ADT (7 case classes + 2 case objects → hash dispatch)
+sealed trait BigADT
+case class BigA(a: Int) extends BigADT
+case class BigB(b: String) extends BigADT
+case class BigC(c: Boolean) extends BigADT
+case class BigD(d: Double) extends BigADT
+case class BigE(e: Long) extends BigADT
+case class BigF(f: Float) extends BigADT
+case class BigG(g: List[Int]) extends BigADT
+case object BigH extends BigADT
+case object BigI extends BigADT
+
+// Gap 3: Collection defaults
+case class CollectionDefaults(
+  tags: List[String] = Nil,
+  lookup: Map[String, Int] = Map.empty,
+  ids: Set[Int] = Set.empty,
+  label: String
+)
+
+// Gap 4: Map[String, CaseClass]
+case class MapValInner(fieldOne: String, fieldTwo: Int)
+case class WithMapOfCC(name: String, entries: Map[String, MapValInner])
+
+// Gap 5: Nested with transforms (camelCase fields → snake_case)
+case class TransNestL3(innerValue: String)
+case class TransNestL2(nestedChild: TransNestL3, middleCount: Int)
+case class TransNestL1(deepMiddle: TransNestL2, topName: String)
+
+// Gap 6: Discriminator + varying subtypes
+sealed trait Protocol
+case class Ping(timestamp: Long) extends Protocol
+case class DataMsg(payload: String, priority: Int = 0, metadata: Option[Map[String, String]] = None) extends Protocol
+case class ErrorResp(code: Int, message: String, retryable: Boolean = false, details: List[String] = Nil) extends Protocol
+case object Heartbeat extends Protocol
+
 class CompatEdgeCaseTest extends munit.FunSuite:
   import sanely.jsoniter.semiauto.*
 
@@ -1363,4 +1406,344 @@ class CompatEdgeCaseTest extends munit.FunSuite:
       val jsoniterResult = readFromString[NestOuterWithDefault](withNull)
       assert(circeResult == Right(jsoniterResult))
       assert(jsoniterResult.middle == NestMiddle(NestInner("default"), 0))
+    }
+
+    // =========================================================================
+    // 14. Mixed ADT configured (Gap 1)
+    //     2 case classes + 2 case objects in one sealed trait
+    // =========================================================================
+
+    test("rich-mixed-adt - discriminator round-trip all 4 variants") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDiscriminator("type")
+      given JsonValueCodec[RichMixedADT] = deriveJsoniterConfiguredCodec
+      val variants: List[RichMixedADT] = List(
+        RmProduct1(1, "a"), RmProduct2(true), RmEmpty1, RmEmpty2
+      )
+      for v <- variants do
+        val decoded = roundtrip(v)
+        assert(decoded == v)
+    }
+
+    test("rich-mixed-adt - external tagging case objects") {
+      given JsonValueCodec[RichMixedADT] = deriveJsoniterCodec
+      assert(writeToString[RichMixedADT](RmEmpty1) == """{"RmEmpty1":{}}""")
+      assert(writeToString[RichMixedADT](RmEmpty2) == """{"RmEmpty2":{}}""")
+      assert(readFromString[RichMixedADT]("""{"RmEmpty1":{}}""") == RmEmpty1)
+      assert(readFromString[RichMixedADT]("""{"RmEmpty2":{}}""") == RmEmpty2)
+    }
+
+    test("rich-mixed-adt - constructor transform + discriminator") {
+      given JsoniterConfiguration = JsoniterConfiguration.default
+        .withDiscriminator("type")
+        .withTransformConstructorNames(JsoniterConfiguration.snakeCase)
+      given JsonValueCodec[RichMixedADT] = deriveJsoniterConfiguredCodec
+      val json1 = writeToString[RichMixedADT](RmProduct1(1, "a"))
+      assert(json1.contains("\"type\":\"rm_product1\""))
+      val json2 = writeToString[RichMixedADT](RmEmpty2)
+      assert(json2.contains("\"type\":\"rm_empty2\""))
+      assert(roundtrip[RichMixedADT](RmProduct1(1, "a")) == RmProduct1(1, "a"))
+      assert(roundtrip[RichMixedADT](RmEmpty2) == RmEmpty2)
+    }
+
+    test("rich-mixed-adt - cross-codec discriminator all variants") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withDiscriminator("type")
+      given CirceCodec[RichMixedADT] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDiscriminator("type")
+      given JsonValueCodec[RichMixedADT] = deriveJsoniterConfiguredCodec
+
+      val variants: List[RichMixedADT] = List(
+        RmProduct1(1, "a"), RmProduct2(true), RmEmpty1, RmEmpty2
+      )
+      for v <- variants do
+        // jsoniter -> circe
+        val jJson = writeToString(v)
+        assert(circeDecode[RichMixedADT](jJson) == Right(v))
+        // circe -> jsoniter
+        val cJson = (v: RichMixedADT).asJson.noSpaces
+        assert(readFromString[RichMixedADT](cJson) == v)
+    }
+
+    // =========================================================================
+    // 15. Many variants 8+ (Gap 2)
+    //     9 variants: 7 case classes + 2 case objects → hash dispatch
+    // =========================================================================
+
+    test("big-adt - external tagging round-trip all 9") {
+      given JsonValueCodec[BigADT] = deriveJsoniterCodec
+      val variants: List[BigADT] = List(
+        BigA(1), BigB("x"), BigC(true), BigD(3.14), BigE(999L),
+        BigF(1.5f), BigG(List(1, 2)), BigH, BigI
+      )
+      for v <- variants do
+        assert(roundtrip(v) == v)
+    }
+
+    test("big-adt - discriminator round-trip all 9") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDiscriminator("kind")
+      given JsonValueCodec[BigADT] = deriveJsoniterConfiguredCodec
+      val variants: List[BigADT] = List(
+        BigA(1), BigB("x"), BigC(true), BigD(3.14), BigE(999L),
+        BigF(1.5f), BigG(List(1, 2)), BigH, BigI
+      )
+      for v <- variants do
+        val json = writeToString(v)
+        assert(json.contains("\"kind\":"))
+        assert(roundtrip(v) == v)
+    }
+
+    test("big-adt - cross-codec discriminator all 9") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withDiscriminator("kind")
+      given CirceCodec[BigADT] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDiscriminator("kind")
+      given JsonValueCodec[BigADT] = deriveJsoniterConfiguredCodec
+
+      val variants: List[BigADT] = List(
+        BigA(1), BigB("x"), BigC(true), BigD(3.14), BigE(999L),
+        BigF(1.5f), BigG(List(1, 2)), BigH, BigI
+      )
+      for v <- variants do
+        val jJson = writeToString(v)
+        assert(circeDecode[BigADT](jJson) == Right(v))
+        val cJson = (v: BigADT).asJson.noSpaces
+        assert(readFromString[BigADT](cJson) == v)
+    }
+
+    // =========================================================================
+    // 16. Collection defaults (Gap 3)
+    //     List, Map, Set fields with default empty values
+    // =========================================================================
+
+    test("collection-defaults - missing fields use defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[CollectionDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"label":"test"}"""
+      val decoded = readFromString[CollectionDefaults](json)
+      assert(decoded.tags == Nil)
+      assert(decoded.lookup == Map.empty)
+      assert(decoded.ids == Set.empty)
+      assert(decoded.label == "test")
+    }
+
+    test("collection-defaults - null fields use defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[CollectionDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"tags":null,"lookup":null,"ids":null,"label":"test"}"""
+      val decoded = readFromString[CollectionDefaults](json)
+      assert(decoded.tags == Nil)
+      assert(decoded.lookup == Map.empty)
+      assert(decoded.ids == Set.empty)
+    }
+
+    test("collection-defaults - provided values override defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[CollectionDefaults] = deriveJsoniterConfiguredCodec
+      val json = """{"tags":["a","b"],"lookup":{"k":1},"ids":[1,2,3],"label":"test"}"""
+      val decoded = readFromString[CollectionDefaults](json)
+      assert(decoded.tags == List("a", "b"))
+      assert(decoded.lookup == Map("k" -> 1))
+      assert(decoded.ids == Set(1, 2, 3))
+    }
+
+    test("collection-defaults - cross-codec missing + null match circe") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withDefaults
+      given CirceCodec[CollectionDefaults] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[CollectionDefaults] = deriveJsoniterConfiguredCodec
+
+      val missing = """{"label":"test"}"""
+      assert(circeDecode[CollectionDefaults](missing) == Right(readFromString[CollectionDefaults](missing)))
+
+      val withNull = """{"tags":null,"lookup":null,"ids":null,"label":"test"}"""
+      assert(circeDecode[CollectionDefaults](withNull) == Right(readFromString[CollectionDefaults](withNull)))
+    }
+
+    // =========================================================================
+    // 17. Map[String, CaseClass] configured (Gap 4)
+    //     Map values that are derived case classes with transforms
+    // =========================================================================
+
+    test("map-of-cc - snake_case transforms outer + inner field names") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[WithMapOfCC] = deriveJsoniterConfiguredCodec
+      val v = WithMapOfCC("test", Map("k1" -> MapValInner("hello", 42)))
+      val json = writeToString(v)
+      assert(json.contains("\"field_one\""))
+      assert(json.contains("\"field_two\""))
+      val decoded = readFromString[WithMapOfCC](json)
+      assert(decoded == v)
+    }
+
+    test("map-of-cc - defaults + snake_case round-trip") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      given JsonValueCodec[WithMapOfCC] = deriveJsoniterConfiguredCodec
+      val v = WithMapOfCC("x", Map("a" -> MapValInner("v", 1), "b" -> MapValInner("w", 2)))
+      assert(roundtrip(v) == v)
+    }
+
+    test("map-of-cc - cross-codec snake_case bidirectional") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withSnakeCaseMemberNames
+      given CirceCodec[MapValInner] = deriveConfiguredCodec
+      given CirceCodec[WithMapOfCC] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[WithMapOfCC] = deriveJsoniterConfiguredCodec
+
+      val v = WithMapOfCC("test", Map("k1" -> MapValInner("hello", 42)))
+
+      // jsoniter -> circe
+      val jJson = writeToString(v)
+      assert(circeDecode[WithMapOfCC](jJson) == Right(v))
+
+      // circe -> jsoniter
+      val cJson = (v: WithMapOfCC).asJson.noSpaces
+      assert(readFromString[WithMapOfCC](cJson) == v)
+    }
+
+    // =========================================================================
+    // 18. Nested transforms 3 levels (Gap 5)
+    //     snake_case propagated through 3 nesting levels
+    // =========================================================================
+
+    test("nested-transform - snake_case through 3 levels") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[TransNestL1] = deriveJsoniterConfiguredCodec
+      val v = TransNestL1(TransNestL2(TransNestL3("hello"), 5), "top")
+      val json = writeToString(v)
+      assert(json.contains("\"deep_middle\""))
+      assert(json.contains("\"nested_child\""))
+      assert(json.contains("\"inner_value\""))
+      assert(json.contains("\"middle_count\""))
+      assert(json.contains("\"top_name\""))
+      val decoded = readFromString[TransNestL1](json)
+      assert(decoded == v)
+    }
+
+    test("nested-transform - snake_case + defaults round-trip") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      given JsonValueCodec[TransNestL1] = deriveJsoniterConfiguredCodec
+      val v = TransNestL1(TransNestL2(TransNestL3("val"), 10), "name")
+      assert(roundtrip(v) == v)
+    }
+
+    test("nested-transform - cross-codec snake_case 3 levels bidirectional") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withSnakeCaseMemberNames
+      given CirceCodec[TransNestL3] = deriveConfiguredCodec
+      given CirceCodec[TransNestL2] = deriveConfiguredCodec
+      given CirceCodec[TransNestL1] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[TransNestL1] = deriveJsoniterConfiguredCodec
+
+      val v = TransNestL1(TransNestL2(TransNestL3("hello"), 5), "top")
+
+      // jsoniter -> circe
+      val jJson = writeToString(v)
+      assert(circeDecode[TransNestL1](jJson) == Right(v))
+
+      // circe -> jsoniter
+      val cJson = (v: TransNestL1).asJson.noSpaces
+      assert(readFromString[TransNestL1](cJson) == v)
+    }
+
+    // =========================================================================
+    // 19. Discriminator + varying subtypes (Gap 6)
+    //     Subtypes with 1-4 fields, defaults, Option, case object
+    // =========================================================================
+
+    test("protocol - discriminator round-trip all 4 variants") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withDiscriminator("type")
+      given JsonValueCodec[Protocol] = deriveJsoniterConfiguredCodec
+      val variants: List[Protocol] = List(
+        Ping(12345L),
+        DataMsg("hello", 1, Some(Map("k" -> "v"))),
+        ErrorResp(500, "fail", true, List("detail1")),
+        Heartbeat
+      )
+      for v <- variants do
+        assert(roundtrip(v) == v)
+    }
+
+    test("protocol - decode with missing default/optional fields") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withDiscriminator("type")
+      given JsonValueCodec[Protocol] = deriveJsoniterConfiguredCodec
+      // DataMsg: only payload provided, priority defaults to 0, metadata to None
+      val json1 = """{"payload":"hello","type":"DataMsg"}"""
+      val d1 = readFromString[Protocol](json1)
+      assert(d1 == DataMsg("hello"))
+      // ErrorResp: only code+message, retryable defaults to false, details to Nil
+      val json2 = """{"code":404,"message":"not found","type":"ErrorResp"}"""
+      val d2 = readFromString[Protocol](json2)
+      assert(d2 == ErrorResp(404, "not found"))
+    }
+
+    test("protocol - snake_case + discriminator + defaults") {
+      given JsoniterConfiguration = JsoniterConfiguration.default
+        .withDefaults.withSnakeCaseMemberNames.withDiscriminator("type")
+        .withTransformConstructorNames(JsoniterConfiguration.snakeCase)
+      given JsonValueCodec[Protocol] = deriveJsoniterConfiguredCodec
+      val v: Protocol = ErrorResp(500, "fail", true, List("d1"))
+      val json = writeToString(v)
+      assert(json.contains("\"type\":\"error_resp\""))
+      assert(json.contains("\"message\""))
+      assert(roundtrip(v) == v)
+    }
+
+    test("protocol - cross-codec discriminator all variants") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.syntax.*
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withDefaults.withDiscriminator("type")
+      given CirceCodec[Protocol] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withDiscriminator("type")
+      given JsonValueCodec[Protocol] = deriveJsoniterConfiguredCodec
+
+      val variants: List[Protocol] = List(
+        Ping(12345L),
+        DataMsg("hello", 1, Some(Map("k" -> "v"))),
+        ErrorResp(500, "fail", true, List("detail1")),
+        Heartbeat
+      )
+      for v <- variants do
+        // jsoniter -> circe
+        val jJson = writeToString(v)
+        assert(circeDecode[Protocol](jJson) == Right(v))
+        // circe -> jsoniter
+        val cJson = (v: Protocol).asJson.noSpaces
+        assert(readFromString[Protocol](cJson) == v)
     }
