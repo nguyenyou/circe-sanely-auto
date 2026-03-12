@@ -308,10 +308,10 @@ Adopting sanely-jsoniter is straightforward — you keep circe for everything el
 
 ```scala
 // Mill
-mvn"io.github.nguyenyou::sanely-jsoniter::0.18.0"
+mvn"io.github.nguyenyou::sanely-jsoniter::0.22.0"
 
 // sbt
-"io.github.nguyenyou" %% "sanely-jsoniter" % "0.18.0"
+"io.github.nguyenyou" %% "sanely-jsoniter" % "0.22.0"
 ```
 
 No circe dependency is pulled in — sanely-jsoniter is fully independent.
