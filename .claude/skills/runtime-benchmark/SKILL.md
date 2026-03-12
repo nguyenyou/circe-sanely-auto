@@ -61,6 +61,28 @@ Two benchmark harnesses are available:
 JMH provides: fork isolation (separate JVM per benchmark), compiler blackhole dead-code prevention,
 statistical error reporting (99.9% CI), and built-in profiler integration.
 
+### Analyzing JMH results
+
+After running JMH, use the analysis script to produce a compact summary:
+
+```bash
+# From a saved file
+python3 scripts/analyze_jmh.py runtime.txt
+
+# Pipe directly from JMH run
+./mill benchmark-jmh.runJmh 2>&1 | tee runtime.txt
+python3 scripts/analyze_jmh.py runtime.txt
+
+# Or pipe from stdin
+./mill benchmark-jmh.runJmh 2>&1 | python3 scripts/analyze_jmh.py -
+```
+
+The script handles both raw JMH output and mill-prefixed log output (e.g. CI logs with `178]` prefixes).
+It produces:
+- **At a Glance — Runtime** table with ops/sec and vs-circe ratios
+- **Key Takeaways** with sanely-jsoniter speedups vs circe and vs jsoniter-scala
+- **Detailed Results** with min/max ranges per library
+
 ### Hand-rolled harness (quick, for sanity checks)
 
 ```bash

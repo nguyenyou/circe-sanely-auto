@@ -68,6 +68,7 @@ bash bench-runtime.sh           # runtime benchmark: circe-jawn vs circe+jsonite
 ./mill benchmark-jmh.runJmh 'Write'                  # JMH write benchmarks only
 ./mill benchmark-jmh.runJmh -prof gc                  # JMH with GC allocation profiler
 ./mill benchmark-jmh.listJmhBenchmarks                # list detected JMH benchmarks
+python3 scripts/analyze_jmh.py runtime.txt            # analyze JMH output into summary tables
 ```
 
 ### Profiling
