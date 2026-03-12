@@ -64,6 +64,15 @@ case class WithArray(nums: Array[Int], words: Array[String]):
     case o: WithArray => java.util.Arrays.equals(nums, o.nums) && java.util.Arrays.equals(words.asInstanceOf[Array[AnyRef]], o.words.asInstanceOf[Array[AnyRef]])
     case _ => false
 
+// String field with default (Gap 1: null on non-Option String with default)
+case class SupportingFileType(description: String, helpText: String, blueprintMetadataMapping: String = "")
+
+// Deeply nested products (Gap 4: nested null propagation)
+case class NestInner(value: String)
+case class NestMiddle(inner: NestInner, count: Int)
+case class NestOuter(middle: NestMiddle, name: String)
+case class NestOuterWithDefault(middle: NestMiddle = NestMiddle(NestInner("default"), 0), name: String)
+
 // Field name that needs JSON escaping
 case class QuotedFieldName(`a"b`: String, `c\\d`: String)
 
@@ -1221,4 +1230,137 @@ class CompatEdgeCaseTest extends munit.FunSuite:
       val json = """{"flag":true,"count":99,"ratio":3.14,"type":"MV"}"""
       val decoded = readFromString[MixedValues](json)
       assert(decoded == MV(true, 99, 3.14))
+    }
+
+    // =========================================================================
+    // 12. Null on non-Option String field with default (Gap 1)
+    //     SupportingFileType pattern: null JSON on String with default → uses default
+    // =========================================================================
+
+    test("string-default - null on String field with default uses default") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[SupportingFileType] = deriveJsoniterConfiguredCodec
+      val json = """{"description":"desc","helpText":"help","blueprintMetadataMapping":null}"""
+      val decoded = readFromString[SupportingFileType](json)
+      assert(decoded.blueprintMetadataMapping == "")
+      assert(decoded.description == "desc")
+    }
+
+    test("string-default - missing String field uses default") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[SupportingFileType] = deriveJsoniterConfiguredCodec
+      val json = """{"description":"desc","helpText":"help"}"""
+      val decoded = readFromString[SupportingFileType](json)
+      assert(decoded.blueprintMetadataMapping == "")
+    }
+
+    test("string-default - provided value overrides default") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[SupportingFileType] = deriveJsoniterConfiguredCodec
+      val json = """{"description":"desc","helpText":"help","blueprintMetadataMapping":"custom"}"""
+      val decoded = readFromString[SupportingFileType](json)
+      assert(decoded.blueprintMetadataMapping == "custom")
+    }
+
+    test("string-default - round-trip") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[SupportingFileType] = deriveJsoniterConfiguredCodec
+      val v = SupportingFileType("desc", "help", "")
+      val decoded = roundtrip(v)
+      assert(decoded == v)
+    }
+
+    test("string-default - cross-codec with circe: null and missing both match") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withDefaults
+      given CirceCodec[SupportingFileType] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[SupportingFileType] = deriveJsoniterConfiguredCodec
+
+      // null on String field with default
+      val withNull = """{"description":"desc","helpText":"help","blueprintMetadataMapping":null}"""
+      val circeNull = circeDecode[SupportingFileType](withNull)
+      val jsoniterNull = readFromString[SupportingFileType](withNull)
+      assert(circeNull == Right(jsoniterNull))
+      assert(jsoniterNull.blueprintMetadataMapping == "")
+
+      // missing String field with default
+      val withMissing = """{"description":"desc","helpText":"help"}"""
+      val circeMissing = circeDecode[SupportingFileType](withMissing)
+      val jsoniterMissing = readFromString[SupportingFileType](withMissing)
+      assert(circeMissing == Right(jsoniterMissing))
+      assert(jsoniterMissing.blueprintMetadataMapping == "")
+    }
+
+    // =========================================================================
+    // 13. Deeply nested null propagation (Gap 4)
+    //     Configured+withDefaults: null/missing nested object → uses default,
+    //     malformed nested → exception propagates
+    // =========================================================================
+
+    test("nested-default - full valid nested round-trip") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
+      val v = NestOuterWithDefault(NestMiddle(NestInner("hello"), 5), "test")
+      val decoded = roundtrip(v)
+      assert(decoded == v)
+    }
+
+    test("nested-default - null nested object uses default") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
+      val json = """{"middle":null,"name":"test"}"""
+      val decoded = readFromString[NestOuterWithDefault](json)
+      assert(decoded.middle == NestMiddle(NestInner("default"), 0))
+      assert(decoded.name == "test")
+    }
+
+    test("nested-default - missing nested object uses default") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
+      val json = """{"name":"test"}"""
+      val decoded = readFromString[NestOuterWithDefault](json)
+      assert(decoded.middle == NestMiddle(NestInner("default"), 0))
+      assert(decoded.name == "test")
+    }
+
+    test("nested-default - malformed inner object propagates JsonReaderException") {
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
+      // inner has wrong type (array instead of object) — should propagate error
+      val json = """{"middle":{"inner":[1,2,3],"count":1},"name":"test"}"""
+      val caught =
+        try
+          readFromString[NestOuterWithDefault](json)
+          throw new RuntimeException("expected exception")
+        catch
+          case e: JsonReaderException => e
+      assert(caught.getMessage.nonEmpty)
+    }
+
+    test("nested-default - cross-codec configured: null nested with default matches circe") {
+      import io.circe.derivation.Configuration
+      import io.circe.{Codec as CirceCodec, *}
+      import io.circe.parser.decode as circeDecode
+      import io.circe.generic.semiauto.deriveConfiguredCodec
+
+      given Configuration = Configuration.default.withDefaults
+      given CirceCodec[NestInner] = deriveConfiguredCodec
+      given CirceCodec[NestMiddle] = deriveConfiguredCodec
+      given CirceCodec[NestOuterWithDefault] = deriveConfiguredCodec
+
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
+      given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
+
+      // null nested object → both use Scala default
+      val withNull = """{"middle":null,"name":"test"}"""
+      val circeResult = circeDecode[NestOuterWithDefault](withNull)
+      val jsoniterResult = readFromString[NestOuterWithDefault](withNull)
+      assert(circeResult == Right(jsoniterResult))
+      assert(jsoniterResult.middle == NestMiddle(NestInner("default"), 0))
     }
