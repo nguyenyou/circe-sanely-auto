@@ -205,7 +205,10 @@ object SanelyJsoniterConfigured:
         else if d =:= TypeRepr.of[Byte] then '{ (0: Byte) }.asTerm
         else if d =:= TypeRepr.of[Char] then '{ (0: Char) }.asTerm
         else if d <:< TypeRepr.of[Option[?]] then '{ None }.asTerm
-        else Literal(NullConstant())
+        // null.asInstanceOf[T] — always cast so it type-checks for abstract type members
+        // (e.g. zio-prelude Subtype), AnyVal wrappers, and opaque types
+        else TypeApply(Select.unique(Literal(NullConstant()), "asInstanceOf"), List(Inferred(tpe)))
+      // Cast primitive zero to the opaque type so var initialization type-checks
       if needsCast then TypeApply(Select.unique(raw, "asInstanceOf"), List(Inferred(tpe)))
       else raw
 

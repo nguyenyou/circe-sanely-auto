@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.22.0] - 2026-03-12
+
+### sanely-jsoniter
+
+#### Fixed
+- **Abstract type member fields** (e.g. zio-prelude `Subtype`/`Newtype`) — `deriveJsoniterCodec` and `deriveJsoniterConfiguredCodec` now compile for case classes containing fields whose types are abstract type members. Previously, the macro emitted bare `null` as the initial value for mutable decode vars, which Scala 3 rejected with `Found: Null, Required: T`. Now emits `null.asInstanceOf[T]`. This affects zio-prelude's `Subtype[String]`, `Newtype[Int]`, and any other library using abstract type members for zero-cost wrappers.
+- **AnyVal case class fields** (e.g. `case class FileId(id: String) extends AnyVal`) — same root cause and fix. Fields of AnyVal wrapper types no longer produce compile errors during codec derivation.
+
+#### Added
+- 4 new tests: abstract type member round-trip (semiauto + configured), AnyVal round-trip (semiauto + configured)
+
 ## [0.21.0] - 2026-03-12
 
 ### sanely-jsoniter
