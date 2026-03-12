@@ -6,6 +6,540 @@ Automated benchmarks run on `ubuntu-latest` (GitHub Actions shared runners) afte
 
 <!-- BENCHMARK ENTRIES -->
 
+## v0.21.0
+
+**Date:** 2026-03-12 02:12:49 UTC | **SHA:** `62f1420`
+
+### At a Glance — Compile Time
+
+| Metric | sanely-auto | circe-generic | Delta |
+|--------|-------------|---------------|-------|
+| Compile (auto, ~300 types) | 6.3s ± 0.18s | 23.3s ± 1.34s | **3.7x faster** |
+| Compile (configured, ~230 types) | 3.2s ± 0.14s | 7.4s ± 1.31s | **2.3x faster** |
+| Peak RSS (auto) | 896 MB | 1135 MB | **-21%** |
+| Peak RSS (configured) | 710 MB | 777 MB | **-9%** |
+| Bytecode (auto) | 2.5 MB | 3.2 MB | **-22%** |
+| Bytecode (configured) | 2.6 MB | 3.0 MB | **-10%** |
+
+### At a Glance — Runtime (JMH)
+
+| Benchmark | ops/sec | vs circe |
+|-----------|---------|----------|
+| Read: circe-jawn | 92k ± 752 | 1.0x |
+| Read: circe+jsoniter | 115k ± 580 | **1.3x** |
+| Read: jsoniter-scala | 393k ± 2k | **4.3x** |
+| Read: sanely-jsoniter | 397k ± 2k | **4.3x** |
+| Write: circe+jsoniter | 78k ± 504 | **1.2x** |
+| Write: circe-printer | 65k ± 909 | 1.0x |
+| Write: jsoniter-scala | 611k ± 6k | **9.4x** |
+| Write: sanely-jsoniter | 559k ± 2k | **8.6x** |
+
+<details>
+<summary>Compile Time — Auto Derivation</summary>
+
+```
+Compile-time benchmark: circe-sanely-auto vs circe-generic (N=10)
+Benchmark suite: benchmark
+Method: Mill daemon, hyperfine with --warmup 1, --runs 10
+================================================================
+Warming up Mill daemon and source dependencies...
+Running hyperfine benchmark...
+
+Benchmark 1: benchmark.generic
+  Time (mean ± σ):     23.342 s ±  1.344 s    [User: 0.138 s, System: 0.276 s]
+  Range (min … max):   22.391 s … 26.747 s    10 runs
+ 
+  Warning: The first benchmarking run for this command was significantly slower than the rest (26.747 s). This could be caused by (filesystem) caches that were not filled until after the first run. You are already using both the '--warmup' option as well as the '--prepare' option. Consider re-running the benchmark on a quiet system. Maybe it was a random outlier. Alternatively, consider increasing the warmup count.
+ 
+Benchmark 2: benchmark.sanely
+  Time (mean ± σ):      6.273 s ±  0.176 s    [User: 0.047 s, System: 0.093 s]
+  Range (min … max):    6.125 s …  6.680 s    10 runs
+ 
+Summary
+  benchmark.sanely ran
+    3.72 ± 0.24 times faster than benchmark.generic
+```
+</details>
+
+<details>
+<summary>Compile Time — Configured Derivation</summary>
+
+```
+Compile-time benchmark: circe-sanely-auto vs circe-core configured derivation (N=10)
+Benchmark suite: benchmark-configured
+Method: Mill daemon, hyperfine with --warmup 1, --runs 10
+================================================================
+Warming up Mill daemon and source dependencies...
+Running hyperfine benchmark...
+
+Benchmark 1: benchmark-configured.generic
+  Time (mean ± σ):      7.382 s ±  1.310 s    [User: 0.057 s, System: 0.105 s]
+  Range (min … max):    6.508 s … 10.850 s    10 runs
+ 
+Benchmark 2: benchmark-configured.sanely
+  Time (mean ± σ):      3.173 s ±  0.135 s    [User: 0.036 s, System: 0.062 s]
+  Range (min … max):    2.976 s …  3.459 s    10 runs
+ 
+Summary
+  benchmark-configured.sanely ran
+    2.33 ± 0.42 times faster than benchmark-configured.generic
+```
+</details>
+
+<details>
+<summary>Runtime Performance</summary>
+
+```
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.ReadBenchmark.circeJawn
+
+# Run progress: 0.00% complete, ETA 00:02:40
+# Fork: 1 of 1
+# Warmup Iteration   1: 57872.649 ops/s
+# Warmup Iteration   2: 89640.199 ops/s
+# Warmup Iteration   3: 89616.813 ops/s
+# Warmup Iteration   4: 91911.556 ops/s
+# Warmup Iteration   5: 91688.107 ops/s
+# Warmup Iteration   6: 91094.006 ops/s
+# Warmup Iteration   7: 91339.823 ops/s
+# Warmup Iteration   8: 91357.277 ops/s
+# Warmup Iteration   9: 91832.344 ops/s
+# Warmup Iteration  10: 91506.232 ops/s
+Iteration   1: 91788.161 ops/s
+Iteration   2: 91682.547 ops/s
+Iteration   3: 92089.655 ops/s
+Iteration   4: 91741.176 ops/s
+Iteration   5: 91954.788 ops/s
+Iteration   6: 90484.799 ops/s
+Iteration   7: 91898.943 ops/s
+Iteration   8: 91546.985 ops/s
+Iteration   9: 91638.362 ops/s
+Iteration  10: 90917.097 ops/s
+
+
+Result "runtime.ReadBenchmark.circeJawn":
+91574.251 ±(99.9%) 751.690 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.ReadBenchmark.circeJsoniterBridge
+
+# Run progress: 12.50% complete, ETA 00:02:24
+# Fork: 1 of 1
+# Warmup Iteration   1: 78545.477 ops/s
+# Warmup Iteration   2: 116722.544 ops/s
+# Warmup Iteration   3: 114684.356 ops/s
+# Warmup Iteration   4: 114632.115 ops/s
+# Warmup Iteration   5: 115164.797 ops/s
+# Warmup Iteration   6: 114712.530 ops/s
+# Warmup Iteration   7: 115006.162 ops/s
+# Warmup Iteration   8: 114488.501 ops/s
+# Warmup Iteration   9: 113497.878 ops/s
+# Warmup Iteration  10: 114748.242 ops/s
+Iteration   1: 113862.814 ops/s
+Iteration   2: 114974.253 ops/s
+Iteration   3: 115052.672 ops/s
+Iteration   4: 114787.881 ops/s
+Iteration   5: 115138.030 ops/s
+Iteration   6: 114755.413 ops/s
+Iteration   7: 114926.402 ops/s
+Iteration   8: 114699.257 ops/s
+Iteration   9: 114289.601 ops/s
+Iteration  10: 114633.653 ops/s
+
+
+Result "runtime.ReadBenchmark.circeJsoniterBridge":
+114711.998 ±(99.9%) 580.265 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.ReadBenchmark.jsoniterScala
+
+# Run progress: 25.00% complete, ETA 00:02:03
+# Fork: 1 of 1
+# Warmup Iteration   1: 271079.567 ops/s
+# Warmup Iteration   2: 384276.350 ops/s
+# Warmup Iteration   3: 393099.604 ops/s
+# Warmup Iteration   4: 391055.561 ops/s
+# Warmup Iteration   5: 391053.856 ops/s
+# Warmup Iteration   6: 391983.740 ops/s
+# Warmup Iteration   7: 391605.788 ops/s
+# Warmup Iteration   8: 390648.428 ops/s
+# Warmup Iteration   9: 392268.088 ops/s
+# Warmup Iteration  10: 393822.348 ops/s
+Iteration   1: 391652.139 ops/s
+Iteration   2: 394344.276 ops/s
+Iteration   3: 391402.980 ops/s
+Iteration   4: 393611.121 ops/s
+Iteration   5: 392028.885 ops/s
+Iteration   6: 394796.474 ops/s
+Iteration   7: 389590.072 ops/s
+Iteration   8: 392685.584 ops/s
+Iteration   9: 393174.009 ops/s
+Iteration  10: 392122.089 ops/s
+
+
+Result "runtime.ReadBenchmark.jsoniterScala":
+392540.763 ±(99.9%) 2316.900 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.ReadBenchmark.sanelyJsoniter
+
+# Run progress: 37.50% complete, ETA 00:01:42
+# Fork: 1 of 1
+# Warmup Iteration   1: 301103.265 ops/s
+# Warmup Iteration   2: 394185.603 ops/s
+# Warmup Iteration   3: 394472.392 ops/s
+# Warmup Iteration   4: 397317.358 ops/s
+# Warmup Iteration   5: 396005.289 ops/s
+# Warmup Iteration   6: 399372.003 ops/s
+# Warmup Iteration   7: 396587.641 ops/s
+# Warmup Iteration   8: 395983.395 ops/s
+# Warmup Iteration   9: 397354.485 ops/s
+# Warmup Iteration  10: 397878.646 ops/s
+Iteration   1: 396990.698 ops/s
+Iteration   2: 397089.646 ops/s
+Iteration   3: 398615.010 ops/s
+Iteration   4: 394968.280 ops/s
+Iteration   5: 395459.044 ops/s
+Iteration   6: 399664.624 ops/s
+Iteration   7: 397386.856 ops/s
+Iteration   8: 398582.708 ops/s
+Iteration   9: 399208.738 ops/s
+Iteration  10: 395999.883 ops/s
+
+
+Result "runtime.ReadBenchmark.sanelyJsoniter":
+397396.549 ±(99.9%) 2426.305 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.WriteBenchmark.circeJsoniterBridge
+
+# Run progress: 50.00% complete, ETA 00:01:22
+# Fork: 1 of 1
+# Warmup Iteration   1: 50532.646 ops/s
+# Warmup Iteration   2: 75898.176 ops/s
+# Warmup Iteration   3: 76459.831 ops/s
+# Warmup Iteration   4: 77357.971 ops/s
+# Warmup Iteration   5: 77460.674 ops/s
+# Warmup Iteration   6: 77548.931 ops/s
+# Warmup Iteration   7: 78088.193 ops/s
+# Warmup Iteration   8: 77868.539 ops/s
+# Warmup Iteration   9: 77886.148 ops/s
+# Warmup Iteration  10: 78282.480 ops/s
+Iteration   1: 77127.706 ops/s
+Iteration   2: 78000.552 ops/s
+Iteration   3: 77875.714 ops/s
+Iteration   4: 77486.866 ops/s
+Iteration   5: 77562.870 ops/s
+Iteration   6: 77228.891 ops/s
+Iteration   7: 77881.008 ops/s
+Iteration   8: 78018.714 ops/s
+Iteration   9: 77480.811 ops/s
+Iteration  10: 78008.470 ops/s
+
+
+Result "runtime.WriteBenchmark.circeJsoniterBridge":
+77667.160 ±(99.9%) 504.370 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.WriteBenchmark.circePrinter
+
+# Run progress: 62.50% complete, ETA 00:01:01
+# Fork: 1 of 1
+# Warmup Iteration   1: 46175.243 ops/s
+# Warmup Iteration   2: 64001.633 ops/s
+# Warmup Iteration   3: 64193.247 ops/s
+# Warmup Iteration   4: 64624.404 ops/s
+# Warmup Iteration   5: 65354.684 ops/s
+# Warmup Iteration   6: 65058.316 ops/s
+# Warmup Iteration   7: 65025.037 ops/s
+# Warmup Iteration   8: 65490.995 ops/s
+# Warmup Iteration   9: 64696.453 ops/s
+# Warmup Iteration  10: 63816.824 ops/s
+Iteration   1: 64871.803 ops/s
+Iteration   2: 65209.787 ops/s
+Iteration   3: 64934.040 ops/s
+Iteration   4: 65153.158 ops/s
+Iteration   5: 65361.713 ops/s
+Iteration   6: 65143.757 ops/s
+Iteration   7: 65011.660 ops/s
+Iteration   8: 65003.165 ops/s
+Iteration   9: 64602.460 ops/s
+Iteration  10: 63248.198 ops/s
+
+
+Result "runtime.WriteBenchmark.circePrinter":
+64853.974 ±(99.9%) 909.004 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.WriteBenchmark.jsoniterScala
+
+# Run progress: 75.00% complete, ETA 00:00:41
+# Fork: 1 of 1
+# Warmup Iteration   1: 365317.651 ops/s
+# Warmup Iteration   2: 613368.322 ops/s
+# Warmup Iteration   3: 610487.834 ops/s
+# Warmup Iteration   4: 613817.271 ops/s
+# Warmup Iteration   5: 611195.038 ops/s
+# Warmup Iteration   6: 615306.633 ops/s
+# Warmup Iteration   7: 603519.707 ops/s
+# Warmup Iteration   8: 613112.051 ops/s
+# Warmup Iteration   9: 613385.907 ops/s
+# Warmup Iteration  10: 597898.504 ops/s
+Iteration   1: 610736.008 ops/s
+Iteration   2: 614790.944 ops/s
+Iteration   3: 599977.436 ops/s
+Iteration   4: 612532.028 ops/s
+Iteration   5: 611854.629 ops/s
+Iteration   6: 612953.699 ops/s
+Iteration   7: 613663.795 ops/s
+Iteration   8: 612750.669 ops/s
+Iteration   9: 608741.792 ops/s
+Iteration  10: 609246.925 ops/s
+
+
+Result "runtime.WriteBenchmark.jsoniterScala":
+610724.792 ±(99.9%) 6382.679 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.WriteBenchmark.sanelyJsoniter
+
+# Run progress: 87.50% complete, ETA 00:00:20
+# Fork: 1 of 1
+# Warmup Iteration   1: 399713.687 ops/s
+# Warmup Iteration   2: 549356.018 ops/s
+# Warmup Iteration   3: 552205.490 ops/s
+# Warmup Iteration   4: 555746.829 ops/s
+# Warmup Iteration   5: 551398.955 ops/s
+# Warmup Iteration   6: 556019.152 ops/s
+# Warmup Iteration   7: 554085.488 ops/s
+# Warmup Iteration   8: 556752.362 ops/s
+# Warmup Iteration   9: 554150.964 ops/s
+# Warmup Iteration  10: 555656.593 ops/s
+Iteration   1: 557781.472 ops/s
+Iteration   2: 559502.752 ops/s
+Iteration   3: 558149.911 ops/s
+Iteration   4: 558503.690 ops/s
+Iteration   5: 557669.955 ops/s
+Iteration   6: 557661.462 ops/s
+Iteration   7: 559264.687 ops/s
+Iteration   8: 561229.182 ops/s
+Iteration   9: 558645.432 ops/s
+Iteration  10: 561515.316 ops/s
+
+
+Result "runtime.WriteBenchmark.sanelyJsoniter":
+558992.386 ±(99.9%) 2123.698 ops/s [Average]
+
+
+# Run complete. Total time: 00:02:44
+
+
+
+Benchmark                            Mode  Cnt       Score      Error  Units
+ReadBenchmark.circeJawn             thrpt   10   91574.251 ±  751.690  ops/s
+ReadBenchmark.circeJsoniterBridge   thrpt   10  114711.998 ±  580.265  ops/s
+ReadBenchmark.jsoniterScala         thrpt   10  392540.763 ± 2316.900  ops/s
+ReadBenchmark.sanelyJsoniter        thrpt   10  397396.549 ± 2426.305  ops/s
+WriteBenchmark.circeJsoniterBridge  thrpt   10   77667.160 ±  504.370  ops/s
+WriteBenchmark.circePrinter         thrpt   10   64853.974 ±  909.004  ops/s
+WriteBenchmark.jsoniterScala        thrpt   10  610724.792 ± 6382.679  ops/s
+WriteBenchmark.sanelyJsoniter       thrpt   10  558992.386 ± 2123.698  ops/s
+```
+</details>
+
+<details>
+<summary>Peak RSS</summary>
+
+```
+sanely-auto (auto): 917592 KB
+circe-generic (auto): 1162408 KB
+sanely-auto (configured): 727016 KB
+circe-generic (configured): 795540 KB
+```
+</details>
+
+<details>
+<summary>Bytecode Impact</summary>
+
+```
+sanely-auto (auto): 2634732 bytes (2573.0 KB)
+circe-generic (auto): 3384133 bytes (3304.8 KB)
+sanely-auto (configured): 2775933 bytes (2710.9 KB)
+circe-generic (configured): 3097489 bytes (3024.9 KB)
+```
+</details>
+
+<details>
+<summary>Macro Profile — Auto</summary>
+
+```
+======================================================================
+SANELY MACRO PROFILE (398 expansions, 6980ms total)
+======================================================================
+
+--- By Kind ---
+  Decoder          187 expansions    3279.7ms  avg 17.54ms
+  Encoder          211 expansions    3700.0ms  avg 17.54ms
+
+--- Category Breakdown ---
+  summonIgnoring         2989.6ms ( 42.8%)     894 calls  avg 3.34ms
+  derive                 2909.2ms ( 41.7%)     920 calls  avg 3.16ms
+  tryBuiltin              418.8ms (  6.0%)    1943 calls  avg 0.22ms
+  summonMirror            331.6ms (  4.8%)     920 calls  avg 0.36ms
+  subTraitDetect          160.9ms (  2.3%)     336 calls  avg 0.48ms
+  cheapTypeKey             14.1ms (  0.2%)    4342 calls  avg 0.00ms
+  builtinHit                0.0ms (  0.0%)     907 calls  avg 0.00ms
+  cacheHit                           2399 hits
+  constructorNegHit         0.0ms (  0.0%)     142 calls  avg 0.00ms
+  overhead                155.5ms (  2.2%)  (type checks, AST, etc)
+
+--- Top 15 Slowest (total time) ---
+   1. Encoder[MixedReport]: total=160.8ms  summonIgnoring=88.8ms(16x) derive=60.3ms(21x) tryBuiltin=37.5ms(29x) summonMirror=4.8ms(21x) cheapTypeKey=0.6ms(75x) builtinHit=0.0ms(5x) cacheHit=0.0ms(46x) constructorNegHit=0.0ms(8x)
+   2. Encoder[Ticket]: total=160.0ms  summonIgnoring=95.2ms(27x) derive=85.7ms(22x) summonMirror=11.2ms(22x) tryBuiltin=10.5ms(31x) subTraitDetect=8.0ms(18x) cheapTypeKey=0.3ms(66x) builtinHit=0.0ms(4x) cacheHit=0.0ms(35x)
+   3. Decoder[Article]: total=151.4ms  summonIgnoring=107.8ms(14x) derive=43.6ms(12x) tryBuiltin=6.2ms(18x) summonMirror=5.0ms(12x) subTraitDetect=2.1ms(6x) cheapTypeKey=0.2ms(48x) builtinHit=0.0ms(4x) cacheHit=0.0ms(30x)
+   4. Decoder[Ticket]: total=150.2ms  summonIgnoring=90.5ms(27x) derive=80.7ms(22x) tryBuiltin=10.4ms(31x) summonMirror=8.7ms(22x) subTraitDetect=5.4ms(18x) cheapTypeKey=0.3ms(66x) builtinHit=0.0ms(4x) cacheHit=0.0ms(35x)
+   5. Encoder[Article]: total=126.3ms  summonIgnoring=81.8ms(14x) derive=49.5ms(12x) summonMirror=7.1ms(12x) tryBuiltin=4.1ms(18x) subTraitDetect=4.1ms(6x) cheapTypeKey=0.2ms(48x) builtinHit=0.0ms(4x) cacheHit=0.0ms(30x)
+   6. Encoder[AnalyticsView]: total=117.5ms  derive=86.8ms(12x) summonIgnoring=85.3ms(11x) tryBuiltin=7.9ms(21x) summonMirror=4.3ms(12x) cheapTypeKey=0.2ms(51x) builtinHit=0.0ms(3x) cacheHit=0.0ms(30x) constructorNegHit=0.0ms(7x)
+   7. Encoder[HttpMethod]: total=114.2ms  summonIgnoring=73.2ms(5x) derive=11.0ms(5x) subTraitDetect=5.4ms(5x) summonMirror=4.2ms(5x) tryBuiltin=0.6ms(6x) cheapTypeKey=0.1ms(10x) builtinHit=0.0ms(1x) cacheHit=0.0ms(4x)
+   8. Encoder[Sprint]: total=110.9ms  summonIgnoring=105.2ms(1x) tryBuiltin=2.0ms(3x) cheapTypeKey=0.0ms(6x) builtinHit=0.0ms(2x) cacheHit=0.0ms(3x)
+   9. Encoder[UserReport]: total=103.1ms  derive=74.3ms(6x) summonIgnoring=73.9ms(7x) tryBuiltin=13.8ms(13x) summonMirror=2.8ms(6x) cheapTypeKey=0.2ms(36x) builtinHit=0.0ms(1x) cacheHit=0.0ms(23x) constructorNegHit=0.0ms(5x)
+  10. Encoder[AlertInstance]: total=101.0ms  derive=144.1ms(19x) summonIgnoring=39.3ms(20x) summonMirror=12.1ms(19x) subTraitDetect=6.8ms(13x) tryBuiltin=2.3ms(26x) cheapTypeKey=0.1ms(53x) builtinHit=0.0ms(6x) cacheHit=0.0ms(27x)
+  11. Decoder[Sprint]: total=100.6ms  summonIgnoring=96.2ms(1x) tryBuiltin=0.9ms(3x) cheapTypeKey=0.0ms(6x) builtinHit=0.0ms(2x) cacheHit=0.0ms(3x)
+  12. Decoder[AlertInstance]: total=99.4ms  derive=142.3ms(19x) summonIgnoring=40.6ms(20x) summonMirror=9.0ms(19x) subTraitDetect=4.9ms(13x) tryBuiltin=2.2ms(26x) cheapTypeKey=0.2ms(53x) builtinHit=0.0ms(6x) cacheHit=0.0ms(27x)
+  13. Encoder[Wide22A]: total=97.9ms  tryBuiltin=2.1ms(4x) cheapTypeKey=0.2ms(22x) builtinHit=0.0ms(4x) cacheHit=0.0ms(18x)
+  14. Encoder[NotifChannel]: total=96.8ms  summonIgnoring=67.7ms(5x) derive=13.2ms(5x) summonMirror=4.3ms(5x) subTraitDetect=3.8ms(5x) tryBuiltin=0.6ms(7x) cheapTypeKey=0.0ms(14x) builtinHit=0.0ms(2x) cacheHit=0.0ms(7x)
+  15. Decoder[AnalyticsView]: total=94.3ms  derive=81.0ms(12x) summonIgnoring=64.6ms(11x) tryBuiltin=7.3ms(21x) summonMirror=2.7ms(12x) cheapTypeKey=0.2ms(51x) builtinHit=0.0ms(3x) cacheHit=0.0ms(30x) constructorNegHit=0.0ms(7x)
+
+--- Hot Types (>50ms) ---
+  Encoder[MixedReport]: 161ms
+  Encoder[Ticket]: 160ms
+  Decoder[Article]: 151ms
+  Decoder[Ticket]: 150ms
+  Encoder[Article]: 126ms
+======================================================================
+```
+</details>
+
+<details>
+<summary>Macro Profile — Configured</summary>
+
+```
+======================================================================
+SANELY MACRO PROFILE (230 expansions, 2544ms total)
+======================================================================
+
+--- By Kind ---
+  CfgCodec         230 expansions    2544.5ms  avg 11.06ms
+
+--- Category Breakdown ---
+  topDerive              2511.9ms ( 98.7%)     230 calls  avg 10.92ms
+  tryBuiltin              469.8ms ( 18.5%)     493 calls  avg 0.95ms
+  summonIgnoring          257.9ms ( 10.1%)     118 calls  avg 2.19ms
+  resolveDefaults          35.2ms (  1.4%)     214 calls  avg 0.16ms
+  subTraitDetect           10.4ms (  0.4%)      69 calls  avg 0.15ms
+  cheapTypeKey              4.8ms (  0.2%)     820 calls  avg 0.01ms
+  builtinHit                0.0ms (  0.0%)     375 calls  avg 0.00ms
+  cacheHit                            327 hits
+  codecHit                  0.0ms (  0.0%)     118 calls  avg 0.00ms
+  overhead               -745.5ms (-29.3%)  (type checks, AST, etc)
+
+--- Top 15 Slowest (total time) ---
+   1. CfgCodec[Role]: total=90.2ms  topDerive=88.6ms(1x) tryBuiltin=75.7ms(2x) cheapTypeKey=0.9ms(4x) resolveDefaults=0.2ms(1x) builtinHit=0.0ms(2x) cacheHit=0.0ms(2x)
+   2. CfgCodec[UserId]: total=84.0ms  topDerive=81.5ms(1x) resolveDefaults=2.1ms(1x) tryBuiltin=0.7ms(1x) cheapTypeKey=0.1ms(1x) builtinHit=0.0ms(1x)
+   3. CfgCodec[Article]: total=63.8ms  topDerive=63.6ms(1x) tryBuiltin=21.3ms(8x) summonIgnoring=20.1ms(5x) resolveDefaults=0.7ms(1x) cheapTypeKey=0.1ms(11x) codecHit=0.0ms(5x) builtinHit=0.0ms(3x) cacheHit=0.0ms(3x)
+   4. CfgCodec[AuthEvent]: total=51.9ms  topDerive=50.9ms(1x) summonIgnoring=12.0ms(5x) subTraitDetect=1.2ms(5x) tryBuiltin=1.0ms(5x) cheapTypeKey=0.1ms(5x) codecHit=0.0ms(5x)
+   5. CfgCodec[ShipStock]: total=49.0ms  topDerive=48.9ms(1x) tryBuiltin=0.2ms(2x) resolveDefaults=0.1ms(1x) cheapTypeKey=0.0ms(3x) builtinHit=0.0ms(2x) cacheHit=0.0ms(1x)
+   6. CfgCodec[ChatMessage]: total=38.9ms  topDerive=38.8ms(1x) tryBuiltin=22.2ms(7x) summonIgnoring=7.4ms(3x) cheapTypeKey=0.1ms(8x) resolveDefaults=0.1ms(1x) codecHit=0.0ms(3x) builtinHit=0.0ms(4x) cacheHit=0.0ms(1x)
+   7. CfgCodec[Invoice]: total=38.4ms  topDerive=38.1ms(1x) tryBuiltin=21.8ms(6x) summonIgnoring=2.4ms(2x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.1ms(11x) builtinHit=0.0ms(4x) cacheHit=0.0ms(5x) codecHit=0.0ms(2x)
+   8. CfgCodec[Product]: total=35.6ms  topDerive=35.4ms(1x) tryBuiltin=15.9ms(10x) summonIgnoring=10.0ms(6x) cheapTypeKey=0.1ms(10x) resolveDefaults=0.1ms(1x) builtinHit=0.0ms(4x) codecHit=0.0ms(6x)
+   9. CfgCodec[CommentThread]: total=32.9ms  topDerive=32.8ms(1x) tryBuiltin=22.5ms(3x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.0ms(3x) builtinHit=0.0ms(3x)
+  10. CfgCodec[CustomerRecord]: total=32.7ms  topDerive=32.5ms(1x) tryBuiltin=12.7ms(7x) summonIgnoring=10.0ms(5x) resolveDefaults=0.1ms(1x) cheapTypeKey=0.0ms(8x) codecHit=0.0ms(5x) builtinHit=0.0ms(2x) cacheHit=0.0ms(1x)
+  11. CfgCodec[ArticleBody]: total=32.4ms  topDerive=32.3ms(1x) tryBuiltin=0.2ms(2x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.0ms(3x) builtinHit=0.0ms(2x) cacheHit=0.0ms(1x)
+  12. CfgCodec[MetricSeries]: total=29.8ms  topDerive=29.6ms(1x) tryBuiltin=15.8ms(4x) summonIgnoring=3.7ms(1x) resolveDefaults=0.3ms(1x) cheapTypeKey=0.1ms(4x) codecHit=0.0ms(1x) builtinHit=0.0ms(3x)
+  13. CfgCodec[WorkflowStep]: total=27.9ms  topDerive=27.8ms(1x) tryBuiltin=15.5ms(6x) summonIgnoring=5.0ms(2x) cheapTypeKey=0.1ms(7x) resolveDefaults=0.1ms(1x) codecHit=0.0ms(2x) builtinHit=0.0ms(4x) cacheHit=0.0ms(1x)
+  14. CfgCodec[Report]: total=27.5ms  topDerive=27.3ms(1x) tryBuiltin=13.8ms(4x) summonIgnoring=3.0ms(1x) cheapTypeKey=0.1ms(6x) resolveDefaults=0.1ms(1x) builtinHit=0.0ms(3x) cacheHit=0.0ms(2x) codecHit=0.0ms(1x)
+  15. CfgCodec[SecurityConfig]: total=27.1ms  topDerive=26.9ms(1x) tryBuiltin=14.8ms(3x) resolveDefaults=0.2ms(1x) cheapTypeKey=0.1ms(4x) builtinHit=0.0ms(3x) cacheHit=0.0ms(1x)
+
+--- Hot Types (>50ms) ---
+  CfgCodec[Role]: 90ms
+  CfgCodec[UserId]: 84ms
+  CfgCodec[Article]: 64ms
+  CfgCodec[AuthEvent]: 52ms
+======================================================================
+```
+</details>
+
+
 ## v0.20.0
 
 **Date:** 2026-03-11 16:41:21 UTC | **SHA:** `7f1053e`
