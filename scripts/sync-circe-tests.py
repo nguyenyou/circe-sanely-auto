@@ -12,10 +12,13 @@ Transformations per file:
     - Remove all `derives` clauses (auto-derivation via import)
     - Add `import io.circe.generic.auto._`
 
+  DerivesSuite.scala → SemiautoDerivesSuite.scala
+    - Replace `derives` clauses with explicit givens using deriveDecoder/deriveEncoder/deriveCodec
+    - Add `import io.circe.generic.semiauto.*`
+
   SemiautoDerivationSuite.scala → SemiautoDerivedSuite.scala
     - Replace Decoder.derived → deriveDecoder, etc.
     - Add `import io.circe.generic.semiauto._`
-    - Remove "cannot derive" tests (sanely-auto CAN derive nested types)
 
   ConfiguredDerivesSuite.scala → ConfiguredDerivesSuite.scala
     - Replace Codec.AsObject.derivedConfigured → deriveConfiguredCodec, etc.
@@ -182,6 +185,209 @@ def transform_derives_suite(text):
 
 
 # ---------------------------------------------------------------------------
+# DerivesSuite → SemiautoDerivesSuite
+# ---------------------------------------------------------------------------
+
+
+def extract_derives_info(text):
+    """Extract (type_name, type_params, derives_list) for each type with a derives clause.
+
+    Scans the raw upstream text BEFORE derives clauses are removed.
+    Handles single-line and multi-line derives patterns.
+    """
+    results = []
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # Try to find a derives clause on this line or spanning two lines
+        derives_raw = None
+
+        # Case 1: multi-line derives ending with comma → next line has the rest
+        # Must check BEFORE single-line to avoid partial capture (e.g. "derives Encoder.AsObject,")
+        if re.search(r"derives\s+[\w.]+\s*,\s*$", line) and i + 1 < len(lines):
+            combined = line.rstrip() + " " + lines[i + 1].strip()
+            m = re.search(r"derives\s+([\w.]+(?:\s*,\s*[\w.]+)*)", combined)
+            if m:
+                derives_raw = m.group(1)
+                i += 1  # skip the continuation line
+        # Case 2: derives on same line (single-line, no trailing comma)
+        elif re.search(r"derives\s+([\w.]+(?:\s*,\s*[\w.]+)*)", line):
+            m = re.search(r"derives\s+([\w.]+(?:\s*,\s*[\w.]+)*)", line)
+            derives_raw = m.group(1)
+
+        if derives_raw:
+            derives_list = [d.strip() for d in derives_raw.split(",")]
+            # Search backwards to find the associated type definition
+            for j in range(i, max(i - 50, -1), -1):
+                tm = re.search(
+                    r"(?:case\s+class|sealed\s+trait|enum|class)\s+(\w+)(?:\[([^\]]+)\])?",
+                    lines[j],
+                )
+                if tm:
+                    results.append((tm.group(1), tm.group(2), derives_list))
+                    break
+        i += 1
+    return results
+
+
+def generate_given_lines(type_name, type_params, derives_list):
+    """Generate explicit given definition strings for a type's derives clause."""
+    givens = []
+    if type_params:
+        full_type = f"{type_name}[{type_params}]"
+        # Parse type param names (strip any bounds)
+        params = [p.strip().split(":")[0].strip() for p in type_params.split(",")]
+    else:
+        full_type = type_name
+        params = []
+
+    for trait in derives_list:
+        if trait in ("Codec", "Codec.AsObject"):
+            if params:
+                bounds = ", ".join(f"{p}: Encoder.AsObject : Decoder" for p in params)
+                givens.append(
+                    f"given [{bounds}]: Codec.AsObject[{full_type}] = deriveCodec"
+                )
+            else:
+                givens.append(f"given Codec.AsObject[{type_name}] = deriveCodec")
+        elif trait in ("Encoder", "Encoder.AsObject"):
+            if params:
+                bounds = ", ".join(f"{p}: Encoder" for p in params)
+                givens.append(
+                    f"given [{bounds}]: Encoder.AsObject[{full_type}] = deriveEncoder"
+                )
+            else:
+                givens.append(f"given Encoder.AsObject[{type_name}] = deriveEncoder")
+        elif trait == "Decoder":
+            if params:
+                bounds = ", ".join(f"{p}: Decoder" for p in params)
+                givens.append(
+                    f"given [{bounds}]: Decoder[{full_type}] = deriveDecoder"
+                )
+            else:
+                givens.append(f"given Decoder[{type_name}] = deriveDecoder")
+    return givens
+
+
+def insert_semiauto_givens(text, derives_info):
+    """Insert explicit semiauto givens into companion objects (or create them).
+
+    For types with existing companions: inserts givens at the start of the companion body.
+    For types without companions: creates a minimal companion object after the type def.
+    """
+    # Build a map: type_name -> list of given strings
+    givens_map = {}
+    for type_name, type_params, derives_list in derives_info:
+        given_lines = generate_given_lines(type_name, type_params, derives_list)
+        if given_lines:
+            givens_map[type_name] = given_lines
+
+    if not givens_map:
+        return text
+
+    lines = text.split("\n")
+
+    # First pass: find which types have companion objects
+    has_companion = set()
+    for line in lines:
+        m = re.match(r"\s*object\s+(\w+)\s*[:{]", line)
+        if m and m.group(1) in givens_map:
+            has_companion.add(m.group(1))
+
+    needs_companion = set(givens_map.keys()) - has_companion
+
+    # Second pass: insert givens
+    result = []
+    inserted = set()
+
+    for i, line in enumerate(lines):
+        handled = False
+
+        # Check if this line opens a companion for a type that needs givens
+        m = re.match(r"(\s*)object\s+(\w+)\s*([:{])", line)
+        if m and m.group(2) in givens_map and m.group(2) not in inserted:
+            type_name = m.group(2)
+            indent = m.group(1)
+            result.append(line)
+            for g in givens_map[type_name]:
+                result.append(f"{indent}  {g}")
+            inserted.add(type_name)
+            handled = True
+
+        if not handled:
+            # Check if this is a type def that needs a NEW companion
+            for type_name in list(needs_companion):
+                if type_name in inserted:
+                    continue
+                # Match the type definition line
+                if re.match(
+                    rf"\s*(?:case\s+class|class)\s+{re.escape(type_name)}\b", line
+                ):
+                    indent = re.match(r"(\s*)", line).group(1)
+                    result.append(line)
+                    result.append(f"{indent}object {type_name}:")
+                    for g in givens_map[type_name]:
+                        result.append(f"{indent}  {g}")
+                    inserted.add(type_name)
+                    needs_companion.discard(type_name)
+                    handled = True
+                    break
+
+        if not handled:
+            result.append(line)
+
+    return "\n".join(result)
+
+
+def transform_derives_suite_semiauto(text):
+    """Transform DerivesSuite into a semiauto version with explicit givens.
+
+    Instead of using `import auto._`, replaces each `derives` clause with
+    explicit `given` definitions using deriveDecoder/deriveEncoder/deriveCodec.
+    This tests our semiauto path with the full range of DerivesSuite types:
+    recursive ADTs, enums, custom variant instances, large types, etc.
+    """
+    # Extract derives info BEFORE removing clauses
+    derives_info = extract_derives_info(text)
+
+    text = strip_license_header(text)
+
+    # Package
+    text = text.replace("package io.circe\n", "package io.circe.generic\n")
+
+    # Rename
+    text = text.replace("DerivesSuite", "SemiautoDerivesSuite")
+
+    # Remove all derives clauses
+    text = remove_derives_clauses(text)
+
+    # Fix Scala 3 deprecation: `String with Tag` → `String & Tag`
+    text = text.replace("String with Tag", "String & Tag")
+
+    # Add semiauto import
+    text = add_import(text, "import io.circe.generic.semiauto.*")
+
+    # Insert explicit givens based on extracted derives info
+    text = insert_semiauto_givens(text, derives_info)
+
+    # Add header
+    header = make_header(
+        "DerivesSuite.scala",
+        [
+            "Package: io.circe -> io.circe.generic",
+            "Renamed: DerivesSuite -> SemiautoDerivesSuite",
+            "Replaced `derives` clauses with explicit givens using deriveDecoder/deriveEncoder/deriveCodec",
+            "Fixed: `String with Tag` -> `String & Tag` (Scala 3 intersection syntax)",
+            "Added: import io.circe.generic.semiauto.*",
+        ],
+    )
+    text = header + text
+    return text
+
+
+# ---------------------------------------------------------------------------
 # SemiautoDerivationSuite → SemiautoDerivedSuite
 # ---------------------------------------------------------------------------
 
@@ -220,48 +426,6 @@ def transform_semiauto_suite(text):
         ],
     )
     text = header + text
-    return text
-
-
-def remove_cannot_derive_tests(text):
-    """Remove test blocks and types that assert derivation should fail to compile.
-
-    sanely-auto can derive nested types that lack explicit instances
-    (via Expr.summonIgnoring). Circe's semiauto derivation cannot.
-    """
-    # Remove: Baz, Quux, and their comments (lines 57-61 in original)
-    text = re.sub(
-        r"\n  case class Baz\(str: String\)"
-        r"\n"
-        r"\n  // We cannot derive.*?\n  // see test below.*?\n"
-        r"  case class Quux\(baz: Box\[Baz\]\)\n",
-        "\n",
-        text,
-        flags=re.DOTALL,
-    )
-
-    # Remove: Adt5 block (sealed trait + object with comment)
-    text = re.sub(
-        r"\n  sealed trait Adt5\n  object Adt5 \{.*?\n  \}\n",
-        "\n",
-        text,
-        flags=re.DOTALL,
-    )
-
-    # Remove the two "cannot derive" test blocks
-    text = re.sub(
-        r'\n  test\("Nested case classes cannot be derived"\) \{.*?\n  \}\n',
-        "\n",
-        text,
-        flags=re.DOTALL,
-    )
-    text = re.sub(
-        r'\n  test\("Nested ADTs cannot be derived"\) \{.*?\n  \}\n',
-        "\n",
-        text,
-        flags=re.DOTALL,
-    )
-
     return text
 
 
@@ -484,25 +648,31 @@ def main():
     print(f"Syncing circe tests from upstream ({version})...")
     print()
 
-    # 1. DerivesSuite → AutoDerivedSuite
+    # 1. DerivesSuite → AutoDerivedSuite (auto derivation via import)
     print("DerivesSuite.scala → AutoDerivedSuite.scala")
     text = read_upstream("DerivesSuite.scala")
     text = transform_derives_suite(text)
     write_output("AutoDerivedSuite.scala", text)
 
-    # 2. SemiautoDerivationSuite → SemiautoDerivedSuite
+    # 2. DerivesSuite → SemiautoDerivesSuite (explicit givens via semiauto)
+    print("DerivesSuite.scala → SemiautoDerivesSuite.scala")
+    text = read_upstream("DerivesSuite.scala")
+    text = transform_derives_suite_semiauto(text)
+    write_output("SemiautoDerivesSuite.scala", text)
+
+    # 3. SemiautoDerivationSuite → SemiautoDerivedSuite
     print("SemiautoDerivationSuite.scala → SemiautoDerivedSuite.scala")
     text = read_upstream("SemiautoDerivationSuite.scala")
     text = transform_semiauto_suite(text)
     write_output("SemiautoDerivedSuite.scala", text)
 
-    # 3. ConfiguredDerivesSuite
+    # 4. ConfiguredDerivesSuite
     print("ConfiguredDerivesSuite.scala → ConfiguredDerivesSuite.scala")
     text = read_upstream("ConfiguredDerivesSuite.scala")
     text = transform_configured_suite(text)
     write_output("ConfiguredDerivesSuite.scala", text)
 
-    # 4. ConfiguredEnumDerivesSuites
+    # 5. ConfiguredEnumDerivesSuites
     print("ConfiguredEnumDerivesSuites.scala → ConfiguredEnumDerivesSuites.scala")
     text = read_upstream("ConfiguredEnumDerivesSuites.scala")
     text = transform_enum_suite(text)
