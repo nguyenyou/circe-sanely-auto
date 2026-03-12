@@ -14,10 +14,10 @@ import scala.deriving.Mirror
   */
 object semiauto:
   inline def deriveJsoniterCodec[A](using inline m: Mirror.Of[A]): JsonValueCodec[A] =
-    SanelyJsoniter.derived[A]
+    SanelyJsoniter.derivedStrict[A]
 
   inline def deriveJsoniterConfiguredCodec[A](using inline conf: JsoniterConfiguration)(using inline m: Mirror.Of[A]): JsonValueCodec[A] =
-    SanelyJsoniterConfigured.derived[A]
+    SanelyJsoniterConfigured.derivedStrict[A]
 
   inline def deriveJsoniterEnumCodec[A](using inline m: Mirror.SumOf[A]): JsonValueCodec[A] =
     SanelyJsoniterEnum.derived[A]

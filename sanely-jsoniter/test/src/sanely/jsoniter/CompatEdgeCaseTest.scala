@@ -1215,6 +1215,7 @@ class CompatEdgeCaseTest extends munit.FunSuite:
       sealed trait WithNested
       case class NestedVar(inner: Inner, extra: Boolean) extends WithNested
 
+      given JsonValueCodec[Inner] = deriveJsoniterCodec
       given JsoniterConfiguration = JsoniterConfiguration.default.withDiscriminator("type")
       given JsonValueCodec[WithNested] = deriveJsoniterConfiguredCodec
 
@@ -1347,6 +1348,8 @@ class CompatEdgeCaseTest extends munit.FunSuite:
     // =========================================================================
 
     test("nested-default - full valid nested round-trip") {
+      given JsonValueCodec[NestInner] = deriveJsoniterCodec
+      given JsonValueCodec[NestMiddle] = deriveJsoniterCodec
       given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
       given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
       val v = NestOuterWithDefault(NestMiddle(NestInner("hello"), 5), "test")
@@ -1355,6 +1358,8 @@ class CompatEdgeCaseTest extends munit.FunSuite:
     }
 
     test("nested-default - null nested object uses default") {
+      given JsonValueCodec[NestInner] = deriveJsoniterCodec
+      given JsonValueCodec[NestMiddle] = deriveJsoniterCodec
       given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
       given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
       val json = """{"middle":null,"name":"test"}"""
@@ -1364,6 +1369,8 @@ class CompatEdgeCaseTest extends munit.FunSuite:
     }
 
     test("nested-default - missing nested object uses default") {
+      given JsonValueCodec[NestInner] = deriveJsoniterCodec
+      given JsonValueCodec[NestMiddle] = deriveJsoniterCodec
       given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
       given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
       val json = """{"name":"test"}"""
@@ -1373,6 +1380,8 @@ class CompatEdgeCaseTest extends munit.FunSuite:
     }
 
     test("nested-default - malformed inner object propagates JsonReaderException") {
+      given JsonValueCodec[NestInner] = deriveJsoniterCodec
+      given JsonValueCodec[NestMiddle] = deriveJsoniterCodec
       given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
       given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
       // inner has wrong type (array instead of object) — should propagate error
@@ -1397,6 +1406,8 @@ class CompatEdgeCaseTest extends munit.FunSuite:
       given CirceCodec[NestMiddle] = deriveConfiguredCodec
       given CirceCodec[NestOuterWithDefault] = deriveConfiguredCodec
 
+      given JsonValueCodec[NestInner] = deriveJsoniterCodec
+      given JsonValueCodec[NestMiddle] = deriveJsoniterCodec
       given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults
       given JsonValueCodec[NestOuterWithDefault] = deriveJsoniterConfiguredCodec
 
@@ -1584,6 +1595,7 @@ class CompatEdgeCaseTest extends munit.FunSuite:
 
     test("map-of-cc - snake_case transforms outer + inner field names") {
       given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[MapValInner] = deriveJsoniterConfiguredCodec
       given JsonValueCodec[WithMapOfCC] = deriveJsoniterConfiguredCodec
       val v = WithMapOfCC("test", Map("k1" -> MapValInner("hello", 42)))
       val json = writeToString(v)
@@ -1595,6 +1607,7 @@ class CompatEdgeCaseTest extends munit.FunSuite:
 
     test("map-of-cc - defaults + snake_case round-trip") {
       given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      given JsonValueCodec[MapValInner] = deriveJsoniterConfiguredCodec
       given JsonValueCodec[WithMapOfCC] = deriveJsoniterConfiguredCodec
       val v = WithMapOfCC("x", Map("a" -> MapValInner("v", 1), "b" -> MapValInner("w", 2)))
       assert(roundtrip(v) == v)
@@ -1612,6 +1625,7 @@ class CompatEdgeCaseTest extends munit.FunSuite:
       given CirceCodec[WithMapOfCC] = deriveConfiguredCodec
 
       given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[MapValInner] = deriveJsoniterConfiguredCodec
       given JsonValueCodec[WithMapOfCC] = deriveJsoniterConfiguredCodec
 
       val v = WithMapOfCC("test", Map("k1" -> MapValInner("hello", 42)))
@@ -1632,6 +1646,8 @@ class CompatEdgeCaseTest extends munit.FunSuite:
 
     test("nested-transform - snake_case through 3 levels") {
       given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[TransNestL3] = deriveJsoniterConfiguredCodec
+      given JsonValueCodec[TransNestL2] = deriveJsoniterConfiguredCodec
       given JsonValueCodec[TransNestL1] = deriveJsoniterConfiguredCodec
       val v = TransNestL1(TransNestL2(TransNestL3("hello"), 5), "top")
       val json = writeToString(v)
@@ -1646,6 +1662,8 @@ class CompatEdgeCaseTest extends munit.FunSuite:
 
     test("nested-transform - snake_case + defaults round-trip") {
       given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames
+      given JsonValueCodec[TransNestL3] = deriveJsoniterConfiguredCodec
+      given JsonValueCodec[TransNestL2] = deriveJsoniterConfiguredCodec
       given JsonValueCodec[TransNestL1] = deriveJsoniterConfiguredCodec
       val v = TransNestL1(TransNestL2(TransNestL3("val"), 10), "name")
       assert(roundtrip(v) == v)
@@ -1664,6 +1682,8 @@ class CompatEdgeCaseTest extends munit.FunSuite:
       given CirceCodec[TransNestL1] = deriveConfiguredCodec
 
       given JsoniterConfiguration = JsoniterConfiguration.default.withSnakeCaseMemberNames
+      given JsonValueCodec[TransNestL3] = deriveJsoniterConfiguredCodec
+      given JsonValueCodec[TransNestL2] = deriveJsoniterConfiguredCodec
       given JsonValueCodec[TransNestL1] = deriveJsoniterConfiguredCodec
 
       val v = TransNestL1(TransNestL2(TransNestL3("hello"), 5), "top")

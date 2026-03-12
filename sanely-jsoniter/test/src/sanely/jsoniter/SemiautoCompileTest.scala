@@ -29,26 +29,29 @@ class SemiautoCompileTest extends munit.FunSuite:
     assertEquals(decoded, inner)
   }
 
-  test("semiauto: deriving Outer internally derives Inner but does not expose Inner as given") {
-    // Outer derives fine — macro handles Inner internally
+  test("semiauto: deriving Outer without Inner codec must not compile") {
+    assert(compileErrors("deriveJsoniterCodec[SemiOuter]").nonEmpty)
+  }
+
+  test("semiauto: deriving Outer with explicit Inner codec works") {
+    given JsonValueCodec[SemiInner] = deriveJsoniterCodec
     given JsonValueCodec[SemiOuter] = deriveJsoniterCodec
     val outer = SemiOuter(SemiInner(42, "test"), true)
     val json = writeToString(outer)
     val decoded = readFromString[SemiOuter](json)
     assertEquals(decoded, outer)
-
-    // But Inner is NOT available as a standalone given
-    assert(compileErrors("summon[JsonValueCodec[SemiInner]]").nonEmpty)
   }
 
-  test("semiauto: deriving sum type does not expose variant codecs") {
+  test("semiauto: sum type derives variants internally (matching circe semiauto)") {
+    // circe's semiauto derives variant codecs internally for sum types —
+    // only nested field types of products must have explicit codecs
     given JsonValueCodec[SemiAnimal] = deriveJsoniterCodec
     val dog: SemiAnimal = SemiDog("Rex")
     val json = writeToString(dog)
     val decoded = readFromString[SemiAnimal](json)
     assertEquals(decoded, dog)
 
-    // Variants are NOT available as standalone givens
+    // But variants are NOT available as standalone givens
     assert(compileErrors("summon[JsonValueCodec[SemiDog]]").nonEmpty)
     assert(compileErrors("summon[JsonValueCodec[SemiCat]]").nonEmpty)
   }

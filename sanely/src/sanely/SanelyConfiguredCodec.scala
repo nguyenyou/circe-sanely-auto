@@ -12,13 +12,22 @@ object SanelyConfiguredCodec:
   inline def derived[A](using inline conf: Configuration)(using inline m: Mirror.Of[A]): Codec.AsObject[A] =
     ${ deriveMacro[A]('conf, 'm) }
 
+  inline def derivedStrict[A](using inline conf: Configuration)(using inline m: Mirror.Of[A]): Codec.AsObject[A] =
+    ${ deriveMacroStrict[A]('conf, 'm) }
+
   private def deriveMacro[A: Type](conf: Expr[Configuration], mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[Codec.AsObject[A]] =
-    val helper = new ConfiguredCodecDerivation[A](conf)
+    val helper = new ConfiguredCodecDerivation[A](conf, strict = false)
     val result = helper.derive(mirror)
     helper.timer.report()
     result
 
-  private class ConfiguredCodecDerivation[A: Type](conf: Expr[Configuration])(using val quotes: Quotes):
+  private def deriveMacroStrict[A: Type](conf: Expr[Configuration], mirror: Expr[Mirror.Of[A]])(using Quotes): Expr[Codec.AsObject[A]] =
+    val helper = new ConfiguredCodecDerivation[A](conf, strict = true)
+    val result = helper.derive(mirror)
+    helper.timer.report()
+    result
+
+  private class ConfiguredCodecDerivation[A: Type](conf: Expr[Configuration], strict: Boolean)(using val quotes: Quotes):
     import quotes.reflect.*
 
     val selfType: TypeRepr = TypeRepr.of[A]
@@ -118,7 +127,7 @@ object SanelyConfiguredCodec:
       selfEncRef: Expr[Encoder.AsObject[A]],
       selfDecRef: Expr[Decoder[A]]
     ): Expr[Codec.AsObject[S]] =
-      val cases = resolveFields[Types, Labels](selfEncRef, selfDecRef)
+      val cases = resolveFields[Types, Labels](selfEncRef, selfDecRef, forVariant = true)
       val sumTypeName = Expr(TypeRepr.of[S].typeSymbol.name)
 
       val casesWithSubTrait = cases.map { case (label, tpe, enc, dec) =>
@@ -218,7 +227,7 @@ object SanelyConfiguredCodec:
       selfEncRef: Expr[Encoder.AsObject[A]],
       selfDecRef: Expr[Decoder[A]]
     ): (Expr[Encoder.AsObject[S]], Expr[Decoder[S]]) =
-      val cases = resolveFields[Types, Labels](selfEncRef, selfDecRef)
+      val cases = resolveFields[Types, Labels](selfEncRef, selfDecRef, forVariant = true)
 
       val casesWithSubTrait = cases.map { case (label, tpe, enc, dec) =>
         val isSub = timer.time("subTraitDetect") {
@@ -261,7 +270,8 @@ object SanelyConfiguredCodec:
 
     private def resolveFields[Types: Type, Labels: Type](
       selfEncRef: Expr[Encoder.AsObject[A]],
-      selfDecRef: Expr[Decoder[A]]
+      selfDecRef: Expr[Decoder[A]],
+      forVariant: Boolean = false
     ): List[(String, Type[?], Expr[Encoder[?]], Expr[Decoder[?]])] =
       (Type.of[Types], Type.of[Labels]) match
         case ('[EmptyTuple], '[EmptyTuple]) => Nil
@@ -271,8 +281,8 @@ object SanelyConfiguredCodec:
               Type.valueOfConstant[l].getOrElse(
                 report.errorAndAbort(s"Expected literal string type")
               ).toString
-          val (enc, dec) = resolveOneCodec[t](selfEncRef, selfDecRef)
-          (labelStr, Type.of[t], enc, dec) :: resolveFields[ts, ls](selfEncRef, selfDecRef)
+          val (enc, dec) = resolveOneCodec[t](selfEncRef, selfDecRef, forVariant)
+          (labelStr, Type.of[t], enc, dec) :: resolveFields[ts, ls](selfEncRef, selfDecRef, forVariant)
         case _ => report.errorAndAbort("Mismatched Types and Labels tuple lengths")
 
     private def resolveDefaults[P: Type]: List[Option[Expr[Any]]] =
@@ -309,7 +319,8 @@ object SanelyConfiguredCodec:
 
     private def resolveOneCodec[T: Type](
       selfEncRef: Expr[Encoder.AsObject[A]],
-      selfDecRef: Expr[Decoder[A]]
+      selfDecRef: Expr[Decoder[A]],
+      forVariant: Boolean = false
     ): (Expr[Encoder[T]], Expr[Decoder[T]]) =
       val tpe = TypeRepr.of[T]
 
@@ -371,19 +382,22 @@ object SanelyConfiguredCodec:
       val resolved: (Expr[Encoder[T]], Expr[Decoder[T]]) = (summonedEnc, summonedDec) match
         case (Some(enc), Some(dec)) => (enc, dec)
         case _ =>
-          timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
-            case Some(mirrorExpr) =>
-              timer.time("derive") {
-                mirrorExpr match
-                  case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    val (derivedEnc, derivedDec) = deriveProductPair[T, types, labels](m, selfEncRef, selfDecRef)
-                    (summonedEnc.getOrElse(derivedEnc), summonedDec.getOrElse(derivedDec))
-                  case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
-                    val (derivedEnc, derivedDec) = deriveSumPair[T, types, labels](m, selfEncRef, selfDecRef)
-                    (summonedEnc.getOrElse(derivedEnc), summonedDec.getOrElse(derivedDec))
-              }
-            case None =>
-              report.errorAndAbort(s"Cannot derive codec for ${Type.show[T]}: no implicit Encoder/Decoder and no Mirror available")
+          if strict && !forVariant then
+            report.errorAndAbort(s"No Encoder/Decoder found for ${Type.show[T]}. In semiauto mode, all nested types must have explicit codecs.")
+          else
+            timer.time("summonMirror")(Expr.summon[Mirror.Of[T]]) match
+              case Some(mirrorExpr) =>
+                timer.time("derive") {
+                  mirrorExpr match
+                    case '{ $m: Mirror.ProductOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      val (derivedEnc, derivedDec) = deriveProductPair[T, types, labels](m, selfEncRef, selfDecRef)
+                      (summonedEnc.getOrElse(derivedEnc), summonedDec.getOrElse(derivedDec))
+                    case '{ $m: Mirror.SumOf[T] { type MirroredElemTypes = types; type MirroredElemLabels = labels } } =>
+                      val (derivedEnc, derivedDec) = deriveSumPair[T, types, labels](m, selfEncRef, selfDecRef)
+                      (summonedEnc.getOrElse(derivedEnc), summonedDec.getOrElse(derivedDec))
+                }
+              case None =>
+                report.errorAndAbort(s"Cannot derive codec for ${Type.show[T]}: no implicit Encoder/Decoder and no Mirror available")
       exprCache(cacheKey) = resolved
       resolved
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.23.0] - 2026-03-12
+
+### Changed
+- **Strict semiauto semantics** — `deriveEncoder`, `deriveDecoder`, `deriveCodec`, `deriveConfiguredEncoder`, `deriveConfiguredDecoder`, `deriveConfiguredCodec` now match circe's semiauto contract: all nested product field types must have explicit codec instances in scope. Auto-deriving nested types is no longer allowed in semiauto; use `import io.circe.generic.auto.given` for that behavior. Sum type variants are still derived internally (matching circe). This is a **breaking change** for code that relied on semiauto silently deriving nested types.
+
+### sanely-jsoniter
+
+#### Changed
+- **Strict semiauto semantics** — `deriveJsoniterCodec` and `deriveJsoniterConfiguredCodec` now enforce the same strict contract: nested product field types must have explicit `JsonValueCodec` instances. Sum type variants are still derived internally. Use `import sanely.jsoniter.auto.given` for auto-derivation. The `derives` wrappers (`JsoniterCodec`, `JsoniterCodec.WithDefaults`, etc.) are unchanged and still use auto behavior.
+
+#### Fixed
+- Compat test sync script now preserves circe's "cannot derive" compile-error tests (`SemiautoDerivationSuite`), which were previously stripped. These tests now pass thanks to strict semiauto.
+
 ## [0.22.0] - 2026-03-12
 
 ### sanely-jsoniter
