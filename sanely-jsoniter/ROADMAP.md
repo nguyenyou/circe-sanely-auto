@@ -19,6 +19,25 @@ Features available in jsoniter-scala that sanely-jsoniter does not yet support. 
 - [ ] **(P4) `isStringified` mode (numbers as JSON strings)** — jsoniter-scala can read/write numbers and booleans as JSON strings (`"123"` instead of `123`). Not relevant to circe compatibility.
 - [ ] **(P4) Built-in name transforms (camelCase, PascalCase, kebab-case)** — jsoniter-scala provides `enforce_snake_case`, `enforceCamelCase`, `EnforcePascalCase`, `enforce-kebab-case`. Users can already pass arbitrary `String => String`, so this is a convenience gap, not a capability gap.
 
+### `derives` wrapper gap
+
+- [ ] **`WithDefaultsAndTypeName` wrapper** — `derives JsoniterCodec.WithDefaultsAndTypeName` for sealed traits using `withDefaults + withDiscriminator("__typename__")`. This is a common pattern in large codebases where ADTs need flat discriminator encoding. The configured derivation already supports this via manual `JsoniterConfiguration`, but there is no convenience wrapper for `derives` syntax.
+
+### Test coverage gaps (real-world patterns)
+
+Patterns observed in large production codebases that are not explicitly tested:
+
+- [ ] **Mixed case objects + case classes in sealed traits** — ADTs containing both `case object Idle` and `case class Failed(message: String)` in the same hierarchy. Common for status/state machine types (e.g., `NotStarted`, `InProgress(jobId)`, `Failed(message)`, `Completed`).
+- [ ] **Sealed traits with many variants (7+)** — Real-world ADTs often have 7-10+ variants. Tests should verify hash-dispatch correctness at this scale.
+- [ ] **Collection defaults** — Fields with `tags: Seq[String] = Seq.empty`, `items: List[Item] = Nil`, `metadata: Set[String] = Set.empty`, `lookup: Map[String, Int] = Map.empty`. Current default tests only cover primitives and `Option`.
+- [ ] **`Map[String, CaseClass]` with configured derivation** — Map values that are themselves derived case classes. Common in schema/config types (e.g., `fields: Map[String, FieldConfig]`).
+- [ ] **Deeply nested derivation (3+ levels)** — `Outer` → `Middle` → `Inner` nesting where all levels are macro-derived within a single expansion.
+- [ ] **Sealed trait with discriminator + subtypes using different configs** — Parent sealed trait uses `withDiscriminator("type")` while subtypes have their own defaults. Mimics real protocol definitions.
+- [ ] **Null on non-Option String field with default (SupportingFileType pattern)** — `case class SupportingFileType(blueprintMetadataMapping: String = "")` with JSON `{"blueprintMetadataMapping":null}` should decode to default `""`, not throw. Configured derivation with `withDefaults` handles this via null interception (`isNextToken('n')` → skip + keep default). Needs explicit test + cross-codec verification with circe.
+- [ ] **Subtype field with default + null JSON (FormNamespace pattern)** — `case class FormRule(defaultNamespace: FormNamespace, ...)` where `FormNamespace = Subtype[String]`. Var initialization uses `null.asInstanceOf[T]` which compiles for abstract type members. Needs test with configured derivation + withDefaults where the Subtype field has a Scala default and JSON sends null.
+- [ ] **AnyVal in configured derivation with defaults + null JSON (FileId pattern)** — `case class PdfCutInfo(fileId: FileId, reviewingFileId: Option[FileId])` where `FileId extends AnyVal`. Requires hand-rolled `JsonValueCodec[FileId]` (3 lines). Needs test with configured withDefaults proving null on AnyVal field keeps default.
+- [ ] **Deeply nested null propagation (FormData/GaiaState pattern)** — Verify that a decode error deep in a nested structure (3+ levels) propagates as an exception, not silently returning nullValue (all-null object). Tests should prove: (a) `null` at field level → field gets nullValue (correct), (b) malformed JSON at nested level → exception propagates to caller, (c) no silent data corruption.
+
 ### Not optimizable (circe format constraints)
 
 Inherent costs of producing circe-compatible JSON — cannot be optimized without breaking the compatibility contract:
