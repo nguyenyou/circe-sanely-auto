@@ -9,6 +9,10 @@ case class DConfig(host: String, port: Int = 8080, debug: Boolean = false) deriv
 case class DProfile(firstName: String, lastName: String, isActive: Boolean = true) derives JsoniterCodec.WithSnakeCaseAndDefaults
 case class DEvent(name: String, detail: Option[String] = None, count: Int = 0) derives JsoniterCodec.WithDefaultsDropNull
 case class DApiResp(requestId: String, errorMsg: Option[String] = None, retryCount: Int = 0) derives JsoniterCodec.WithSnakeCaseAndDefaultsDropNull
+sealed trait DProtocol derives JsoniterCodec.WithDefaultsAndTypeName
+case class DRequest(method: String, id: Int = 0) extends DProtocol
+case class DResponse(result: String, ok: Boolean = true) extends DProtocol
+case object DHeartbeat extends DProtocol
 enum DColor derives JsoniterCodec.Enum:
   case Red, Green, Blue
 enum DLevel(val value: Int) derives JsoniterCodec.ValueEnum:
@@ -65,6 +69,33 @@ class DerivesTest extends munit.FunSuite:
       val json = writeToString(DLevel.High: DLevel)
       assert(json == "3")
       assert(readFromString[DLevel](json) == DLevel.High)
+    }
+
+    test("derives WithDefaultsAndTypeName - case class round-trip") {
+      val req = DRequest("invoke", 42): DProtocol
+      val json = writeToString(req)
+      val decoded = readFromString[DProtocol](json)
+      assert(decoded == DRequest("invoke", 42))
+    }
+
+    test("derives WithDefaultsAndTypeName - case object round-trip") {
+      val hb = DHeartbeat: DProtocol
+      val json = writeToString(hb)
+      val decoded = readFromString[DProtocol](json)
+      assert(decoded == DHeartbeat)
+    }
+
+    test("derives WithDefaultsAndTypeName - __typename__ discriminator in JSON") {
+      val resp = DResponse("ok"): DProtocol
+      val json = writeToString(resp)
+      assert(json.contains("\"__typename__\""))
+      assert(json.contains("\"__typename__\":\"DResponse\""))
+    }
+
+    test("derives WithDefaultsAndTypeName - defaults used when fields missing") {
+      val json = """{"__typename__":"DRequest","method":"ping"}"""
+      val decoded = readFromString[DProtocol](json)
+      assert(decoded == DRequest("ping", 0))
     }
 
     test("derives - codec is JsonValueCodec subtype") {

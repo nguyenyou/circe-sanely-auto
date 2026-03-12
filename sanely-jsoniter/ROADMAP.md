@@ -21,7 +21,7 @@ Features available in jsoniter-scala that sanely-jsoniter does not yet support. 
 
 ### `derives` wrapper gap
 
-- [ ] **`WithDefaultsAndTypeName` wrapper** — `derives JsoniterCodec.WithDefaultsAndTypeName` for sealed traits using `withDefaults + withDiscriminator("__typename__")`. This is a common pattern in large codebases where ADTs need flat discriminator encoding. The configured derivation already supports this via manual `JsoniterConfiguration`, but there is no convenience wrapper for `derives` syntax.
+- [x] **`WithDefaultsAndTypeName` wrapper** — `derives JsoniterCodec.WithDefaultsAndTypeName` for sealed traits using `withDefaults + withDiscriminator("__typename__")`. This is a common pattern in large codebases where ADTs need flat discriminator encoding. The configured derivation already supports this via manual `JsoniterConfiguration`, but there is no convenience wrapper for `derives` syntax.
 
 ### Test coverage gaps (real-world patterns)
 
