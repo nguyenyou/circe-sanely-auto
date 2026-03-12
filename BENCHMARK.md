@@ -21,6 +21,19 @@ Automated benchmarks run on `ubuntu-latest` (GitHub Actions shared runners) afte
 | Bytecode (auto) | 2.5 MB | 3.2 MB | **-22%** |
 | Bytecode (configured) | 2.6 MB | 3.0 MB | **-10%** |
 
+### At a Glance — Runtime (JMH)
+
+| Benchmark | ops/sec | vs circe |
+|-----------|---------|----------|
+| Read: circe-jawn | 90k ± 1k | 1.0x |
+| Read: circe+jsoniter | 117k ± 832 | **1.3x** |
+| Read: sanely-jsoniter | 384k ± 3k | **4.3x** |
+| Read: jsoniter-scala | 387k ± 2k | **4.3x** |
+| Write: circe-printer | 65k ± 437 | 1.0x |
+| Write: circe+jsoniter | 76k ± 363 | **1.2x** |
+| Write: sanely-jsoniter | 533k ± 3k | **8.2x** |
+| Write: jsoniter-scala | 606k ± 3k | **9.4x** |
+
 <details>
 <summary>Compile Time — Auto Derivation</summary>
 
@@ -77,1064 +90,330 @@ Summary
 <summary>Runtime Performance</summary>
 
 ```
-Downloading mill 1.1.2 from https://repo1.maven.org/maven2/com/lihaoyi/mill-dist-native-linux-amd64/1.1.2/mill-dist-native-linux-amd64-1.1.2.exe ...
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.ReadBenchmark.circeJawn
 
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-100 58.8M  100 58.8M    0     0   233M      0 --:--:-- --:--:-- --:--:--  233M
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-daemon_3/1.1.2/mill-runner-daemon_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-daemon_3/1.1.2/mill-runner-daemon_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-launcher_3/1.1.2/mill-runner-launcher_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-meta_3/1.1.2/mill-runner-meta_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/fansi_3/0.5.1/fansi_3-0.5.1.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala-library/3.8.1/scala-library-3.8.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-server_3/1.1.2/mill-runner-server_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-tabcomplete_3/1.1.2/mill-libs-tabcomplete_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-launcher_3/1.1.2/mill-runner-launcher_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala3-compiler_3/3.8.1/scala3-compiler_3-3.8.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-server_3/1.1.2/mill-runner-server_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mainargs_3/0.7.8/mainargs_3-0.7.8.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala3-compiler_3/3.8.1/scala3-compiler_3-3.8.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-bsp-worker_3/1.1.2/mill-runner-bsp-worker_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala-library/3.8.1/scala-library-3.8.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-eval_3/1.1.2/mill-core-eval_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-tabcomplete_3/1.1.2/mill-libs-tabcomplete_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-moduledefs_3/0.13.1/mill-moduledefs_3-0.13.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-meta_3/1.1.2/mill-runner-meta_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/pprint_3/0.9.6/pprint_3-0.9.6.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/fansi_3/0.5.1/fansi_3-0.5.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/os-lib_3/0.11.8/os-lib_3-0.11.8.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mainargs_3/0.7.8/mainargs_3-0.7.8.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-eclipse_3/1.1.2/mill-runner-eclipse_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-bsp-worker_3/1.1.2/mill-runner-bsp-worker_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/os-lib-watch_3/0.11.8/os-lib-watch_3-0.11.8.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-moduledefs_3/0.13.1/mill-moduledefs_3-0.13.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/sourcecode_3/0.4.4/sourcecode_3-0.4.4.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-eval_3/1.1.2/mill-core-eval_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-init_3/1.1.2/mill-libs-init_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/pprint_3/0.9.6/pprint_3-0.9.6.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-script_3/1.1.2/mill-libs-script_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/os-lib_3/0.11.8/os-lib_3-0.11.8.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upickle_3/4.4.2/upickle_3-4.4.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/os-lib-watch_3/0.11.8/os-lib-watch_3-0.11.8.pom
-Downloading https://repo1.maven.org/maven2/org/scala-sbt/compiler-interface/2.0.0-M13/compiler-interface-2.0.0-M13.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-eclipse_3/1.1.2/mill-runner-eclipse_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/unroll-annotation_3/0.2.0/unroll-annotation_3-0.2.0.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/sourcecode_3/0.4.4/sourcecode_3-0.4.4.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-bsp_3/1.1.2/mill-runner-bsp_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-sbt/compiler-interface/2.0.0-M13/compiler-interface-2.0.0-M13.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-init_3/1.1.2/mill-libs-init_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-idea_3/1.1.2/mill-runner-idea_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-script_3/1.1.2/mill-libs-script_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upickle_3/4.4.2/upickle_3-4.4.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-bsp_3/1.1.2/mill-runner-bsp_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-idea_3/1.1.2/mill-runner-idea_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/unroll-annotation_3/0.2.0/unroll-annotation_3-0.2.0.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala3-library_3/3.8.1/scala3-library_3-3.8.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upickle-implicits_3/4.4.2/upickle-implicits_3-4.4.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/ujson_3/4.4.2/ujson_3-4.4.2.pom
-Downloading https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.5.27/logback-classic-1.5.27.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-resolve_3/1.1.2/mill-core-resolve_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-daemon-server_3/1.1.2/mill-libs-daemon-server_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala3-library_3/3.8.1/scala3-library_3-3.8.1.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-jvm_2.13/2.1.25-M23/coursier-jvm_2.13-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.5.27/logback-classic-1.5.27.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib_3/1.1.2/mill-libs-kotlinlib_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-resolve_3/1.1.2/mill-core-resolve_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-asm/9.9.0-scala-1/scala-asm-9.9.0-scala-1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/ujson_3/4.4.2/ujson_3-4.4.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upickle-implicits_3/4.4.2/upickle-implicits_3-4.4.2.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-collection-compat_3/2.12.0/scala-collection-compat_3-2.12.0.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/jgit/org.eclipse.jgit/6.10.1.202505221210-r/org.eclipse.jgit-6.10.1.202505221210-r.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-daemon-server_3/1.1.2/mill-libs-daemon-server_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/org/scala-sbt/test-interface/1.0/test-interface-1.0.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-jvm_2.13/2.1.25-M23/coursier-jvm_2.13-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/org/scala-sbt/util-interface/2.0.0-RC8/util-interface-2.0.0-RC8.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib_3/1.1.2/mill-libs-kotlinlib_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-rpc_3/1.1.2/mill-libs-rpc_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-collection-compat_3/2.12.0/scala-collection-compat_3-2.12.0.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-util_3/1.1.2/mill-libs-util_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-asm/9.9.0-scala-1/scala-asm-9.9.0-scala-1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api_3/1.1.2/mill-core-api_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-sbt/test-interface/1.0/test-interface-1.0.pom
-Downloading https://repo1.maven.org/maven2/io/github/alexarchambault/native-terminal/native-terminal-no-ffm/0.0.9.1/native-terminal-no-ffm-0.0.9.1.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/jgit/org.eclipse.jgit/6.10.1.202505221210-r/org.eclipse.jgit-6.10.1.202505221210-r.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-scalalib_3/1.1.2/mill-libs-scalalib_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-util_3/1.1.2/mill-libs-util_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api-daemon_3/1.1.2/mill-core-api-daemon_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-sbt/util-interface/2.0.0-RC8/util-interface-2.0.0-RC8.pom
-Downloading https://repo1.maven.org/maven2/com/google/code/gson/gson/2.13.2/gson-2.13.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-rpc_3/1.1.2/mill-libs-rpc_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala3-interfaces/3.8.1/scala3-interfaces-3.8.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api_3/1.1.2/mill-core-api_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-exec_3/1.1.2/mill-core-exec_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api-daemon_3/1.1.2/mill-core-api-daemon_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upack_3/4.4.2/upack_3-4.4.2.pom
-Downloaded https://repo1.maven.org/maven2/io/github/alexarchambault/native-terminal/native-terminal-no-ffm/0.0.9.1/native-terminal-no-ffm-0.0.9.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/geny_3/1.1.1/geny_3-1.1.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-scalalib_3/1.1.2/mill-libs-scalalib_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/ch/epfl/scala/bsp4j/2.2.0-M2/bsp4j-2.2.0-M2.pom
-Downloaded https://repo1.maven.org/maven2/com/google/code/gson/gson/2.13.2/gson-2.13.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-internal_3/1.1.2/mill-core-internal_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala3-interfaces/3.8.1/scala3-interfaces-3.8.1.pom
-Downloading https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.15.0/jna-5.15.0.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upack_3/4.4.2/upack_3-4.4.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-codesig_3/1.1.2/mill-runner-codesig_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/ch/epfl/scala/bsp4j/2.2.0-M2/bsp4j-2.2.0-M2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-groovylib_3/1.1.2/mill-libs-groovylib_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-internal_3/1.1.2/mill-core-internal_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/geny_3/1.1.1/geny_3-1.1.1.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-xml_3/2.4.0/scala-xml_3-2.4.0.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/os-zip/0.11.8/os-zip-0.11.8.pom
-Downloaded https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.15.0/jna-5.15.0.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/tasty-core_3/3.8.1/tasty-core_3-3.8.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-codesig_3/1.1.2/mill-runner-codesig_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-exec_3/1.1.2/mill-core-exec_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/tasty-core_3/3.8.1/tasty-core_3-3.8.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-groovylib_3/1.1.2/mill-libs-groovylib_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/os-zip/0.11.8/os-zip-0.11.8.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-xml_3/2.4.0/scala-xml_3-2.4.0.pom
-Downloading https://repo1.maven.org/maven2/ch/qos/logback/logback-parent/1.5.27/logback-parent-1.5.27.pom
-Downloading https://repo1.maven.org/maven2/com/google/code/gson/gson-parent/2.13.2/gson-parent-2.13.2.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/jgit/org.eclipse.jgit-parent/6.10.1.202505221210-r/org.eclipse.jgit-parent-6.10.1.202505221210-r.pom
-Downloaded https://repo1.maven.org/maven2/ch/qos/logback/logback-parent/1.5.27/logback-parent-1.5.27.pom
-Downloaded https://repo1.maven.org/maven2/com/google/code/gson/gson-parent/2.13.2/gson-parent-2.13.2.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/jgit/org.eclipse.jgit-parent/6.10.1.202505221210-r/org.eclipse.jgit-parent-6.10.1.202505221210-r.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier_2.13/2.1.25-M23/coursier_2.13-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/org/jline/jline/3.30.6/jline-3.30.6.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-daemon-client_3/1.1.2/mill-libs-daemon-client_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib-api_3/1.1.2/mill-libs-kotlinlib-api_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upickle-implicits-named-tuples_3/4.4.2/upickle-implicits-named-tuples_3-4.4.2.pom
-Downloading https://repo1.maven.org/maven2/io/github/alexarchambault/is-terminal/0.1.2/is-terminal-0.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/jline/jline/3.30.6/jline-3.30.6.pom
-Downloading https://repo1.maven.org/maven2/com/github/plokhotnyuk/jsoniter-scala/jsoniter-scala-core_2.13/2.13.5/jsoniter-scala-core_2.13-2.13.5.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upickle-implicits-named-tuples_3/4.4.2/upickle-implicits-named-tuples_3-4.4.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-groovylib-api_3/1.1.2/mill-libs-groovylib-api_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-daemon-client_3/1.1.2/mill-libs-daemon-client_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-cache_2.13/2.1.25-M23/coursier-cache_2.13-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib-api_3/1.1.2/mill-libs-kotlinlib-api_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib_3/1.1.2/mill-libs-javalib_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/io/github/alexarchambault/is-terminal/0.1.2/is-terminal-0.1.2.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/versions_2.13/0.5.1/versions_2.13-0.5.1.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier_2.13/2.1.25-M23/coursier_2.13-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-util_2.13/2.1.25-M23/coursier-util_2.13-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib_3/1.1.2/mill-libs-javalib_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.generator/0.20.1/org.eclipse.lsp4j.generator-0.20.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-groovylib-api_3/1.1.2/mill-libs-groovylib-api_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/9.9.1/asm-tree-9.9.1.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-cache_2.13/2.1.25-M23/coursier-cache_2.13-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/commons-codec/commons-codec/1.17.0/commons-codec-1.17.0.pom
-Downloaded https://repo1.maven.org/maven2/com/github/plokhotnyuk/jsoniter-scala/jsoniter-scala-core_2.13/2.13.5/jsoniter-scala-core_2.13-2.13.5.pom
-Downloading https://repo1.maven.org/maven2/org/jgrapht/jgrapht-core/1.4.0/jgrapht-core-1.4.0.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/versions_2.13/0.5.1/versions_2.13-0.5.1.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.jsonrpc/0.20.1/org.eclipse.lsp4j.jsonrpc-0.20.1.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-util_2.13/2.1.25-M23/coursier-util_2.13-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.pom
-Downloaded https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/9.9.1/asm-tree-9.9.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-constants/1.1.2/mill-core-constants-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.generator/0.20.1/org.eclipse.lsp4j.generator-0.20.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-testrunner_3/1.1.2/mill-libs-javalib-testrunner_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/commons-codec/commons-codec/1.17.0/commons-codec-1.17.0.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-env_2.13/2.1.25-M23/coursier-env_2.13-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.pom
-Downloading https://repo1.maven.org/maven2/org/snakeyaml/snakeyaml-engine/3.0.1/snakeyaml-engine-3.0.1.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.jsonrpc/0.20.1/org.eclipse.lsp4j.jsonrpc-0.20.1.pom
-Downloading https://repo1.maven.org/maven2/org/jline/jline-native/3.29.0/jline-native-3.29.0.pom
-Downloaded https://repo1.maven.org/maven2/org/jgrapht/jgrapht-core/1.4.0/jgrapht-core-1.4.0.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-exec/2.1.25-M23/coursier-exec-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-constants/1.1.2/mill-core-constants-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upickle-core_3/4.4.2/upickle-core_3-4.4.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-testrunner_3/1.1.2/mill-libs-javalib-testrunner_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/guru/nidi/graphviz-java-min-deps/0.18.1/graphviz-java-min-deps-0.18.1.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-env_2.13/2.1.25-M23/coursier-env_2.13-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib-ksp2-api_3/1.1.2/mill-libs-kotlinlib-ksp2-api_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/snakeyaml/snakeyaml-engine/3.0.1/snakeyaml-engine-3.0.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api-java11_3/1.1.2/mill-core-api-java11_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/jline/jline-native/3.29.0/jline-native-3.29.0.pom
-Downloading https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.5.27/logback-core-1.5.27.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upickle-core_3/4.4.2/upickle-core_3-4.4.2.pom
-Downloading https://repo1.maven.org/maven2/com/googlecode/javaewah/JavaEWAH/1.2.3/JavaEWAH-1.2.3.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-exec/2.1.25-M23/coursier-exec-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/fastparse_3/3.1.1/fastparse_3-3.1.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib-ksp2-api_3/1.1.2/mill-libs-kotlinlib-ksp2-api_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-internal-cli_3/1.1.2/mill-core-internal-cli_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/guru/nidi/graphviz-java-min-deps/0.18.1/graphviz-java-min-deps-0.18.1.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-paths/2.1.25-M23/coursier-paths-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/com/googlecode/javaewah/JavaEWAH/1.2.3/JavaEWAH-1.2.3.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala-reflect/2.13.18/scala-reflect-2.13.18.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-internal-cli_3/1.1.2/mill-core-internal-cli_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-archive-cache_2.13/2.1.25-M23/coursier-archive-cache_2.13-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.5.27/logback-core-1.5.27.pom
-Downloading https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-requests_3/0.6.0/sonatype-central-client-requests_3-0.6.0.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api-java11_3/1.1.2/mill-core-api-java11_3-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/requests_3/0.9.3/requests_3-0.9.3.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/fastparse_3/3.1.1/fastparse_3-3.1.1.pom
-Downloading https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-paths/2.1.25-M23/coursier-paths-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-core_2.13/2.1.25-M23/coursier-core_2.13-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala-reflect/2.13.18/scala-reflect-2.13.18.pom
-Downloaded https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-requests_3/0.6.0/sonatype-central-client-requests_3-0.6.0.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/requests_3/0.9.3/requests_3-0.9.3.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-archive-cache_2.13/2.1.25-M23/coursier-archive-cache_2.13-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-core_2.13/2.1.25-M23/coursier-core_2.13-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.pom
-Downloading https://repo1.maven.org/maven2/org/ow2/ow2/1.5.1/ow2-1.5.1.pom
-Downloading https://repo1.maven.org/maven2/org/sonatype/oss/oss-parent/5/oss-parent-5.pom
-Downloading https://repo1.maven.org/maven2/org/apache/commons/commons-parent/69/commons-parent-69.pom
-Downloading https://repo1.maven.org/maven2/com/google/errorprone/error_prone_parent/2.41.0/error_prone_parent-2.41.0.pom
-Downloading https://repo1.maven.org/maven2/org/jgrapht/jgrapht/1.4.0/jgrapht-1.4.0.pom
-Downloading https://repo1.maven.org/maven2/org/jline/jline-parent/3.29.0/jline-parent-3.29.0.pom
-Downloaded https://repo1.maven.org/maven2/org/jgrapht/jgrapht/1.4.0/jgrapht-1.4.0.pom
-Downloading https://repo1.maven.org/maven2/org/slf4j/slf4j-parent/2.0.17/slf4j-parent-2.0.17.pom
-Downloaded https://repo1.maven.org/maven2/org/sonatype/oss/oss-parent/5/oss-parent-5.pom
-Downloading https://repo1.maven.org/maven2/guru/nidi/graphviz-java-parent/0.18.1/graphviz-java-parent-0.18.1.pom
-Downloaded https://repo1.maven.org/maven2/com/google/errorprone/error_prone_parent/2.41.0/error_prone_parent-2.41.0.pom
-Downloaded https://repo1.maven.org/maven2/org/ow2/ow2/1.5.1/ow2-1.5.1.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/commons/commons-parent/69/commons-parent-69.pom
-Downloaded https://repo1.maven.org/maven2/org/jline/jline-parent/3.29.0/jline-parent-3.29.0.pom
-Downloaded https://repo1.maven.org/maven2/org/slf4j/slf4j-parent/2.0.17/slf4j-parent-2.0.17.pom
-Downloaded https://repo1.maven.org/maven2/guru/nidi/graphviz-java-parent/0.18.1/graphviz-java-parent-0.18.1.pom
-Downloading https://repo1.maven.org/maven2/org/sonatype/oss/oss-parent/7/oss-parent-7.pom
-Downloading https://repo1.maven.org/maven2/org/slf4j/slf4j-bom/2.0.17/slf4j-bom-2.0.17.pom
-Downloading https://repo1.maven.org/maven2/guru/nidi/guru-nidi-parent-pom/1.1.36/guru-nidi-parent-pom-1.1.36.pom
-Downloading https://repo1.maven.org/maven2/org/apache/apache/31/apache-31.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/apache/31/apache-31.pom
-Downloaded https://repo1.maven.org/maven2/org/slf4j/slf4j-bom/2.0.17/slf4j-bom-2.0.17.pom
-Downloaded https://repo1.maven.org/maven2/org/sonatype/oss/oss-parent/7/oss-parent-7.pom
-Downloaded https://repo1.maven.org/maven2/guru/nidi/guru-nidi-parent-pom/1.1.36/guru-nidi-parent-pom-1.1.36.pom
-Downloading https://repo1.maven.org/maven2/org/junit/junit-bom/5.10.2/junit-bom-5.10.2.pom
-Downloaded https://repo1.maven.org/maven2/org/junit/junit-bom/5.10.2/junit-bom-5.10.2.pom
-Downloading https://repo1.maven.org/maven2/org/jheaps/jheaps/0.11/jheaps-0.11.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-proxy-setup/2.1.25-M23/coursier-proxy-setup-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/org/ow2/asm/asm/9.9.1/asm-9.9.1.pom
-Downloading https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.17.0/jna-5.17.0.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-testrunner-entrypoint/1.1.2/mill-libs-javalib-testrunner-entrypoint-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/dependency_2.13/0.3.2/dependency_2.13-0.3.2.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-proxy-setup/2.1.25-M23/coursier-proxy-setup-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/com/github/luben/zstd-jni/1.5.7-4/zstd-jni-1.5.7-4.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/dependency_2.13/0.3.2/dependency_2.13-0.3.2.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-container-default/2.1.1/plexus-container-default-2.1.1.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-testrunner-entrypoint/1.1.2/mill-libs-javalib-testrunner-entrypoint-1.1.2.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/jniutils/windows-jni-utils/0.3.3/windows-jni-utils-0.3.3.pom
-Downloaded https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.17.0/jna-5.17.0.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib/2.28.0/org.eclipse.xtend.lib-2.28.0.pom
-Downloaded https://repo1.maven.org/maven2/org/ow2/asm/asm/9.9.1/asm-9.9.1.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-archiver/4.10.1/plexus-archiver-4.10.1.pom
-Downloaded https://repo1.maven.org/maven2/org/jheaps/jheaps/0.11/jheaps-0.11.pom
-Downloading https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-upickle_3/0.6.0/sonatype-central-client-upickle_3-0.6.0.pom
-Downloaded https://repo1.maven.org/maven2/com/github/luben/zstd-jni/1.5.7-4/zstd-jni-1.5.7-4.pom
-Downloading https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-core_3/0.6.0/sonatype-central-client-core_3-0.6.0.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-container-default/2.1.1/plexus-container-default-2.1.1.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-util-java11_3/1.1.2/mill-libs-util-java11_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/jniutils/windows-jni-utils/0.3.3/windows-jni-utils-0.3.3.pom
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-api_3/1.1.2/mill-libs-javalib-api_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib/2.28.0/org.eclipse.xtend.lib-2.28.0.pom
-Downloading https://repo1.maven.org/maven2/org/apache/tika/tika-core/3.2.3/tika-core-3.2.3.pom
-Downloaded https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-upickle_3/0.6.0/sonatype-central-client-upickle_3-0.6.0.pom
-Downloading https://repo1.maven.org/maven2/guru/nidi/graphviz-java/0.18.1/graphviz-java-0.18.1.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-archiver/4.10.1/plexus-archiver-4.10.1.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-collection-compat_2.13/2.13.0/scala-collection-compat_2.13-2.13.0.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-util-java11_3/1.1.2/mill-libs-util-java11_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-core_3/0.6.0/sonatype-central-client-core_3-0.6.0.pom
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-api_3/1.1.2/mill-libs-javalib-api_3-1.1.2.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/tika/tika-core/3.2.3/tika-core-3.2.3.pom
-Downloaded https://repo1.maven.org/maven2/guru/nidi/graphviz-java/0.18.1/graphviz-java-0.18.1.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-collection-compat_2.13/2.13.0/scala-collection-compat_2.13-2.13.0.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus/23/plexus-23.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-containers/2.1.1/plexus-containers-2.1.1.pom
-Downloading https://repo1.maven.org/maven2/org/apache/tika/tika-parent/3.2.3/tika-parent-3.2.3.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/xtext/xtext-dev-bom/2.28.0/xtext-dev-bom-2.28.0.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/xtext/xtext-dev-bom/2.28.0/xtext-dev-bom-2.28.0.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-containers/2.1.1/plexus-containers-2.1.1.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus/23/plexus-23.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/tika/tika-parent/3.2.3/tika-parent-3.2.3.pom
-Downloading https://repo1.maven.org/maven2/org/apache/apache/35/apache-35.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus/6.5/plexus-6.5.pom
-Downloading https://repo1.maven.org/maven2/org/junit/junit-bom/5.13.4/junit-bom-5.13.4.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus/6.5/plexus-6.5.pom
-Downloaded https://repo1.maven.org/maven2/org/junit/junit-bom/5.13.4/junit-bom-5.13.4.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/apache/35/apache-35.pom
-Downloading https://repo1.maven.org/maven2/software/amazon/awssdk/bom/2.33.4/bom-2.33.4.pom
-Downloading https://repo1.maven.org/maven2/org/testcontainers/testcontainers-bom/1.21.3/testcontainers-bom-1.21.3.pom
-Downloading https://repo1.maven.org/maven2/io/netty/netty-bom/4.2.6.Final/netty-bom-4.2.6.Final.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/jetty/jetty-bom/11.0.26/jetty-bom-11.0.26.pom
-Downloading https://repo1.maven.org/maven2/org/apache/cxf/cxf-bom/4.0.9/cxf-bom-4.0.9.pom
-Downloading https://repo1.maven.org/maven2/com/fasterxml/jackson/jackson-bom/2.20.0/jackson-bom-2.20.0.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/cxf/cxf-bom/4.0.9/cxf-bom-4.0.9.pom
-Downloading https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bom/1.12.791/aws-java-sdk-bom-1.12.791.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/jetty/jetty-bom/11.0.26/jetty-bom-11.0.26.pom
-Downloading https://repo1.maven.org/maven2/org/apache/logging/log4j/log4j-bom/2.25.1/log4j-bom-2.25.1.pom
-Downloaded https://repo1.maven.org/maven2/org/testcontainers/testcontainers-bom/1.21.3/testcontainers-bom-1.21.3.pom
-Downloaded https://repo1.maven.org/maven2/io/netty/netty-bom/4.2.6.Final/netty-bom-4.2.6.Final.pom
-Downloaded https://repo1.maven.org/maven2/com/fasterxml/jackson/jackson-bom/2.20.0/jackson-bom-2.20.0.pom
-Downloaded https://repo1.maven.org/maven2/software/amazon/awssdk/bom/2.33.4/bom-2.33.4.pom
-Downloaded https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bom/1.12.791/aws-java-sdk-bom-1.12.791.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/logging/log4j/log4j-bom/2.25.1/log4j-bom-2.25.1.pom
-Downloading https://repo1.maven.org/maven2/com/fasterxml/jackson/jackson-parent/2.20/jackson-parent-2.20.pom
-Downloading https://repo1.maven.org/maven2/org/apache/cxf/cxf/4.0.9/cxf-4.0.9.pom
-Downloading https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-pom/1.12.791/aws-java-sdk-pom-1.12.791.pom
-Downloading https://repo1.maven.org/maven2/software/amazon/awssdk/aws-sdk-java-pom/2.33.4/aws-sdk-java-pom-2.33.4.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/cxf/cxf/4.0.9/cxf-4.0.9.pom
-Downloaded https://repo1.maven.org/maven2/com/fasterxml/jackson/jackson-parent/2.20/jackson-parent-2.20.pom
-Downloaded https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-pom/1.12.791/aws-java-sdk-pom-1.12.791.pom
-Downloaded https://repo1.maven.org/maven2/software/amazon/awssdk/aws-sdk-java-pom/2.33.4/aws-sdk-java-pom-2.33.4.pom
-Downloading https://repo1.maven.org/maven2/com/fasterxml/oss-parent/70/oss-parent-70.pom
-Downloaded https://repo1.maven.org/maven2/com/fasterxml/oss-parent/70/oss-parent-70.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-classworlds/2.6.0/plexus-classworlds-2.6.0.pom
-Downloading https://repo1.maven.org/maven2/commons-io/commons-io/2.20.0/commons-io-2.20.0.pom
-Downloading https://repo1.maven.org/maven2/io/github/alexarchambault/concurrent-reference-hash-map/1.1.0/concurrent-reference-hash-map-1.1.0.pom
-Downloading https://repo1.maven.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-utils/4.0.2/plexus-utils-4.0.2.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/cache-util/2.1.25-M23/cache-util-2.1.25-M23.pom
-Downloaded https://repo1.maven.org/maven2/io/github/alexarchambault/concurrent-reference-hash-map/1.1.0/concurrent-reference-hash-map-1.1.0.pom
-Downloading https://repo1.maven.org/maven2/org/slf4j/jcl-over-slf4j/1.7.30/jcl-over-slf4j-1.7.30.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-classworlds/2.6.0/plexus-classworlds-2.6.0.pom
-Downloading https://repo1.maven.org/maven2/org/tukaani/xz/1.10/xz-1.10.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-utils/4.0.2/plexus-utils-4.0.2.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.28.0/org.eclipse.xtext.xbase.lib-2.28.0.pom
-Downloaded https://repo1.maven.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.pom
-Downloading https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/cache-util/2.1.25-M23/cache-util-2.1.25-M23.pom
-Downloading https://repo1.maven.org/maven2/org/slf4j/jul-to-slf4j/1.7.30/jul-to-slf4j-1.7.30.pom
-Downloaded https://repo1.maven.org/maven2/commons-io/commons-io/2.20.0/commons-io-2.20.0.pom
-Downloading https://repo1.maven.org/maven2/org/virtuslab/scala-cli/config_3/1.9.1/config_3-1.9.1.pom
-Downloaded https://repo1.maven.org/maven2/org/slf4j/jcl-over-slf4j/1.7.30/jcl-over-slf4j-1.7.30.pom
-Downloading https://repo1.maven.org/maven2/javax/inject/javax.inject/1/javax.inject-1.pom
-Downloaded https://repo1.maven.org/maven2/org/slf4j/jul-to-slf4j/1.7.30/jul-to-slf4j-1.7.30.pom
-Downloading https://repo1.maven.org/maven2/io/github/alexarchambault/windows-ansi/windows-ansi/0.0.6/windows-ansi-0.0.6.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.28.0/org.eclipse.xtext.xbase.lib-2.28.0.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib.macro/2.28.0/org.eclipse.xtend.lib.macro-2.28.0.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.pom
-Downloading https://repo1.maven.org/maven2/org/apache/xbean/xbean-reflect/3.7/xbean-reflect-3.7.pom
-Downloaded https://repo1.maven.org/maven2/org/tukaani/xz/1.10/xz-1.10.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-io/3.5.1/plexus-io-3.5.1.pom
-Downloaded https://repo1.maven.org/maven2/org/virtuslab/scala-cli/config_3/1.9.1/config_3-1.9.1.pom
-Downloading https://repo1.maven.org/maven2/io/airlift/aircompressor/0.27/aircompressor-0.27.pom
-Downloaded https://repo1.maven.org/maven2/io/github/alexarchambault/windows-ansi/windows-ansi/0.0.6/windows-ansi-0.0.6.pom
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-xml_2.13/2.4.0/scala-xml_2.13-2.4.0.pom
-Downloaded https://repo1.maven.org/maven2/javax/inject/javax.inject/1/javax.inject-1.pom
-Downloaded https://repo1.maven.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib.macro/2.28.0/org.eclipse.xtend.lib.macro-2.28.0.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/xbean/xbean-reflect/3.7/xbean-reflect-3.7.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-io/3.5.1/plexus-io-3.5.1.pom
-Downloaded https://repo1.maven.org/maven2/io/airlift/aircompressor/0.27/aircompressor-0.27.pom
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-xml_2.13/2.4.0/scala-xml_2.13-2.4.0.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus/18/plexus-18.pom
-Downloading https://repo1.maven.org/maven2/org/slf4j/slf4j-parent/1.7.30/slf4j-parent-1.7.30.pom
-Downloading https://repo1.maven.org/maven2/org/apache/xbean/xbean/3.7/xbean-3.7.pom
-Downloading https://repo1.maven.org/maven2/io/airlift/airbase/112/airbase-112.pom
-Downloading https://repo1.maven.org/maven2/org/apache/commons/commons-parent/85/commons-parent-85.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus/18/plexus-18.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/xbean/xbean/3.7/xbean-3.7.pom
-Downloaded https://repo1.maven.org/maven2/org/slf4j/slf4j-parent/1.7.30/slf4j-parent-1.7.30.pom
-Downloaded https://repo1.maven.org/maven2/io/airlift/airbase/112/airbase-112.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/commons/commons-parent/85/commons-parent-85.pom
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus/5.1/plexus-5.1.pom
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus/5.1/plexus-5.1.pom
-Downloading https://repo1.maven.org/maven2/org/apache/geronimo/genesis/genesis-java5-flava/2.0/genesis-java5-flava-2.0.pom
-Downloading https://repo1.maven.org/maven2/org/junit/junit-bom/5.13.1/junit-bom-5.13.1.pom
-Downloaded https://repo1.maven.org/maven2/org/junit/junit-bom/5.13.1/junit-bom-5.13.1.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/geronimo/genesis/genesis-java5-flava/2.0/genesis-java5-flava-2.0.pom
-Downloading https://repo1.maven.org/maven2/org/junit/junit-bom/5.8.0-M1/junit-bom-5.8.0-M1.pom
-Downloaded https://repo1.maven.org/maven2/org/junit/junit-bom/5.8.0-M1/junit-bom-5.8.0-M1.pom
-Downloading https://repo1.maven.org/maven2/org/apache/geronimo/genesis/genesis-default-flava/2.0/genesis-default-flava-2.0.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/geronimo/genesis/genesis-default-flava/2.0/genesis-default-flava-2.0.pom
-Downloading https://repo1.maven.org/maven2/org/apache/geronimo/genesis/genesis/2.0/genesis-2.0.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/geronimo/genesis/genesis/2.0/genesis-2.0.pom
-Downloading https://repo1.maven.org/maven2/org/apache/apache/6/apache-6.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/apache/6/apache-6.pom
-Downloading https://repo1.maven.org/maven2/org/fusesource/jansi/jansi/2.4.1/jansi-2.4.1.pom
-Downloading https://repo1.maven.org/maven2/commons-codec/commons-codec/1.19.0/commons-codec-1.19.0.pom
-Downloading https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.18.0/commons-lang3-3.18.0.pom
-Downloading https://repo1.maven.org/maven2/com/google/guava/guava/30.1-jre/guava-30.1-jre.pom
-Downloading https://repo1.maven.org/maven2/org/virtuslab/scala-cli/specification-level_3/1.9.1/specification-level_3-1.9.1.pom
-Downloaded https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.18.0/commons-lang3-3.18.0.pom
-Downloaded https://repo1.maven.org/maven2/org/virtuslab/scala-cli/specification-level_3/1.9.1/specification-level_3-1.9.1.pom
-Downloaded https://repo1.maven.org/maven2/org/fusesource/jansi/jansi/2.4.1/jansi-2.4.1.pom
-Downloaded https://repo1.maven.org/maven2/commons-codec/commons-codec/1.19.0/commons-codec-1.19.0.pom
-Downloaded https://repo1.maven.org/maven2/com/google/guava/guava/30.1-jre/guava-30.1-jre.pom
-Downloading https://repo1.maven.org/maven2/com/google/guava/guava-parent/30.1-jre/guava-parent-30.1-jre.pom
-Downloading https://repo1.maven.org/maven2/org/fusesource/fusesource-pom/1.12/fusesource-pom-1.12.pom
-Downloaded https://repo1.maven.org/maven2/com/google/guava/guava-parent/30.1-jre/guava-parent-30.1-jre.pom
-Downloaded https://repo1.maven.org/maven2/org/fusesource/fusesource-pom/1.12/fusesource-pom-1.12.pom
-Downloading https://repo1.maven.org/maven2/com/google/j2objc/j2objc-annotations/1.3/j2objc-annotations-1.3.pom
-Downloading https://repo1.maven.org/maven2/org/checkerframework/checker-qual/3.5.0/checker-qual-3.5.0.pom
-Downloading https://repo1.maven.org/maven2/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.pom
-Downloading https://repo1.maven.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.pom
-Downloaded https://repo1.maven.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.pom
-Downloaded https://repo1.maven.org/maven2/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.pom
-Downloaded https://repo1.maven.org/maven2/com/google/j2objc/j2objc-annotations/1.3/j2objc-annotations-1.3.pom
-Downloaded https://repo1.maven.org/maven2/org/checkerframework/checker-qual/3.5.0/checker-qual-3.5.0.pom
-Downloading https://repo1.maven.org/maven2/com/google/guava/guava-parent/26.0-android/guava-parent-26.0-android.pom
-Downloaded https://repo1.maven.org/maven2/com/google/guava/guava-parent/26.0-android/guava-parent-26.0-android.pom
-Downloading https://repo1.maven.org/maven2/org/sonatype/oss/oss-parent/9/oss-parent-9.pom
-Downloaded https://repo1.maven.org/maven2/org/sonatype/oss/oss-parent/9/oss-parent-9.pom
-Downloading https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.jsonrpc/0.20.1/org.eclipse.lsp4j.jsonrpc-0.20.1.jar
-Downloading https://repo1.maven.org/maven2/org/scala-sbt/test-interface/1.0/test-interface-1.0.jar
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-classworlds/2.6.0/plexus-classworlds-2.6.0.jar
-Downloading https://repo1.maven.org/maven2/commons-codec/commons-codec/1.19.0/commons-codec-1.19.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib_3/1.1.2/mill-libs-kotlinlib_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/io/airlift/aircompressor/0.27/aircompressor-0.27.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-sbt/test-interface/1.0/test-interface-1.0.jar
-Downloading https://repo1.maven.org/maven2/io/github/alexarchambault/is-terminal/0.1.2/is-terminal-0.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-classworlds/2.6.0/plexus-classworlds-2.6.0.jar
-Downloading https://repo1.maven.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar
-Downloaded https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.jsonrpc/0.20.1/org.eclipse.lsp4j.jsonrpc-0.20.1.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-cache_2.13/2.1.25-M23/coursier-cache_2.13-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/commons-codec/commons-codec/1.19.0/commons-codec-1.19.0.jar
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-io/3.5.1/plexus-io-3.5.1.jar
-Downloaded https://repo1.maven.org/maven2/io/airlift/aircompressor/0.27/aircompressor-0.27.jar
-Downloading https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.generator/0.20.1/org.eclipse.lsp4j.generator-0.20.1.jar
-Downloaded https://repo1.maven.org/maven2/io/github/alexarchambault/is-terminal/0.1.2/is-terminal-0.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala-reflect/2.13.18/scala-reflect-2.13.18.jar
-Downloaded https://repo1.maven.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar
-Downloading https://repo1.maven.org/maven2/org/jline/jline/3.30.6/jline-3.30.6.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib_3/1.1.2/mill-libs-kotlinlib_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-xml_3/2.4.0/scala-xml_3-2.4.0.jar
-Downloaded https://repo1.maven.org/maven2/org/eclipse/lsp4j/org.eclipse.lsp4j.generator/0.20.1/org.eclipse.lsp4j.generator-0.20.1.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/jniutils/windows-jni-utils/0.3.3/windows-jni-utils-0.3.3.jar
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-io/3.5.1/plexus-io-3.5.1.jar
-Downloading https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/jniutils/windows-jni-utils/0.3.3/windows-jni-utils-0.3.3.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-constants/1.1.2/mill-core-constants-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-cache_2.13/2.1.25-M23/coursier-cache_2.13-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/dependency_2.13/0.3.2/dependency_2.13-0.3.2.jar
-Downloaded https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar
-Downloading https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-upickle_3/0.6.0/sonatype-central-client-upickle_3-0.6.0.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-xml_3/2.4.0/scala-xml_3-2.4.0.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-proxy-setup/2.1.25-M23/coursier-proxy-setup-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/dependency_2.13/0.3.2/dependency_2.13-0.3.2.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-collection-compat_2.13/2.13.0/scala-collection-compat_2.13-2.13.0.jar
-Downloaded https://repo1.maven.org/maven2/org/jline/jline/3.30.6/jline-3.30.6.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/cache-util/2.1.25-M23/cache-util-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-constants/1.1.2/mill-core-constants-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-exec/2.1.25-M23/coursier-exec-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-upickle_3/0.6.0/sonatype-central-client-upickle_3-0.6.0.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/versions_2.13/0.5.1/versions_2.13-0.5.1.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-proxy-setup/2.1.25-M23/coursier-proxy-setup-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mainargs_3/0.7.8/mainargs_3-0.7.8.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-collection-compat_2.13/2.13.0/scala-collection-compat_2.13-2.13.0.jar
-Downloading https://repo1.maven.org/maven2/org/scala-sbt/compiler-interface/2.0.0-M13/compiler-interface-2.0.0-M13.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/cache-util/2.1.25-M23/cache-util-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/versions_2.13/0.5.1/versions_2.13-0.5.1.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-exec/2.1.25-M23/coursier-exec-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/org/slf4j/jul-to-slf4j/1.7.30/jul-to-slf4j-1.7.30.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-archive-cache_2.13/2.1.25-M23/coursier-archive-cache_2.13-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mainargs_3/0.7.8/mainargs_3-0.7.8.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upack_3/4.4.2/upack_3-4.4.2.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-sbt/compiler-interface/2.0.0-M13/compiler-interface-2.0.0-M13.jar
-Downloading https://repo1.maven.org/maven2/org/virtuslab/scala-cli/config_3/1.9.1/config_3-1.9.1.jar
-Downloaded https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/os-zip/0.11.8/os-zip-0.11.8.jar
-Downloaded https://repo1.maven.org/maven2/org/slf4j/jul-to-slf4j/1.7.30/jul-to-slf4j-1.7.30.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-groovylib_3/1.1.2/mill-libs-groovylib_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/os-zip/0.11.8/os-zip-0.11.8.jar
-Downloading https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-core_3/0.6.0/sonatype-central-client-core_3-0.6.0.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-archive-cache_2.13/2.1.25-M23/coursier-archive-cache_2.13-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api-java11_3/1.1.2/mill-core-api-java11_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upack_3/4.4.2/upack_3-4.4.2.jar
-Downloading https://repo1.maven.org/maven2/com/github/luben/zstd-jni/1.5.7-4/zstd-jni-1.5.7-4.jar
-Downloaded https://repo1.maven.org/maven2/org/virtuslab/scala-cli/config_3/1.9.1/config_3-1.9.1.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala3-compiler_3/3.8.1/scala3-compiler_3-3.8.1.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala-reflect/2.13.18/scala-reflect-2.13.18.jar
-Downloading https://repo1.maven.org/maven2/io/github/alexarchambault/native-terminal/native-terminal-no-ffm/0.0.9.1/native-terminal-no-ffm-0.0.9.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-core_3/0.6.0/sonatype-central-client-core_3-0.6.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api_3/1.1.2/mill-core-api_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-groovylib_3/1.1.2/mill-libs-groovylib_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/jgrapht/jgrapht-core/1.4.0/jgrapht-core-1.4.0.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api-java11_3/1.1.2/mill-core-api-java11_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-bsp-worker_3/1.1.2/mill-runner-bsp-worker_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/io/github/alexarchambault/native-terminal/native-terminal-no-ffm/0.0.9.1/native-terminal-no-ffm-0.0.9.1.jar
-Downloading https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api_3/1.1.2/mill-core-api_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/ow2/asm/asm/9.9.1/asm-9.9.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-bsp-worker_3/1.1.2/mill-runner-bsp-worker_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api-daemon_3/1.1.2/mill-core-api-daemon_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/jgrapht/jgrapht-core/1.4.0/jgrapht-core-1.4.0.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-xml_2.13/2.4.0/scala-xml_2.13-2.4.0.jar
-Downloaded https://repo1.maven.org/maven2/org/ow2/asm/asm/9.9.1/asm-9.9.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-testrunner_3/1.1.2/mill-libs-javalib-testrunner_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-api-daemon_3/1.1.2/mill-core-api-daemon_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/googlecode/javaewah/JavaEWAH/1.2.3/JavaEWAH-1.2.3.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-testrunner_3/1.1.2/mill-libs-javalib-testrunner_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/unroll-annotation_3/0.2.0/unroll-annotation_3-0.2.0.jar
-Downloaded https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-util_3/1.1.2/mill-libs-util_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/googlecode/javaewah/JavaEWAH/1.2.3/JavaEWAH-1.2.3.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/ujson_3/4.4.2/ujson_3-4.4.2.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-xml_2.13/2.4.0/scala-xml_2.13-2.4.0.jar
-Downloading https://repo1.maven.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/unroll-annotation_3/0.2.0/unroll-annotation_3-0.2.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-internal-cli_3/1.1.2/mill-core-internal-cli_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-internal-cli_3/1.1.2/mill-core-internal-cli_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upickle-implicits-named-tuples_3/4.4.2/upickle-implicits-named-tuples_3-4.4.2.jar
-Downloaded https://repo1.maven.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-rpc_3/1.1.2/mill-libs-rpc_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-util_3/1.1.2/mill-libs-util_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/ujson_3/4.4.2/ujson_3-4.4.2.jar
-Downloading https://repo1.maven.org/maven2/guru/nidi/graphviz-java/0.18.1/graphviz-java-0.18.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upickle-implicits-named-tuples_3/4.4.2/upickle-implicits-named-tuples_3-4.4.2.jar
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-utils/4.0.2/plexus-utils-4.0.2.jar
-Downloaded https://repo1.maven.org/maven2/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-script_3/1.1.2/mill-libs-script_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-rpc_3/1.1.2/mill-libs-rpc_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-daemon-client_3/1.1.2/mill-libs-daemon-client_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/guru/nidi/graphviz-java/0.18.1/graphviz-java-0.18.1.jar
-Downloading https://repo1.maven.org/maven2/ch/epfl/scala/bsp4j/2.2.0-M2/bsp4j-2.2.0-M2.jar
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-utils/4.0.2/plexus-utils-4.0.2.jar
-Downloading https://repo1.maven.org/maven2/org/jheaps/jheaps/0.11/jheaps-0.11.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-script_3/1.1.2/mill-libs-script_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib-ksp2-api_3/1.1.2/mill-libs-kotlinlib-ksp2-api_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-daemon-client_3/1.1.2/mill-libs-daemon-client_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-tabcomplete_3/1.1.2/mill-libs-tabcomplete_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/ch/epfl/scala/bsp4j/2.2.0-M2/bsp4j-2.2.0-M2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-bsp_3/1.1.2/mill-runner-bsp_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib-ksp2-api_3/1.1.2/mill-libs-kotlinlib-ksp2-api_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-init_3/1.1.2/mill-libs-init_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/jheaps/jheaps/0.11/jheaps-0.11.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-testrunner-entrypoint/1.1.2/mill-libs-javalib-testrunner-entrypoint-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-tabcomplete_3/1.1.2/mill-libs-tabcomplete_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upickle-core_3/4.4.2/upickle-core_3-4.4.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-bsp_3/1.1.2/mill-runner-bsp_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala-library/3.8.1/scala-library-3.8.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-testrunner-entrypoint/1.1.2/mill-libs-javalib-testrunner-entrypoint-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-scalalib_3/1.1.2/mill-libs-scalalib_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-init_3/1.1.2/mill-libs-init_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-codesig_3/1.1.2/mill-runner-codesig_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/github/luben/zstd-jni/1.5.7-4/zstd-jni-1.5.7-4.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/sourcecode_3/0.4.4/sourcecode_3-0.4.4.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upickle-core_3/4.4.2/upickle-core_3-4.4.2.jar
-Downloading https://repo1.maven.org/maven2/org/checkerframework/checker-qual/3.5.0/checker-qual-3.5.0.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-scalalib_3/1.1.2/mill-libs-scalalib_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.18.0/commons-lang3-3.18.0.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/sourcecode_3/0.4.4/sourcecode_3-0.4.4.jar
-Downloading https://repo1.maven.org/maven2/org/tukaani/xz/1.10/xz-1.10.jar
-Downloaded https://repo1.maven.org/maven2/org/checkerframework/checker-qual/3.5.0/checker-qual-3.5.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upickle-implicits_3/4.4.2/upickle-implicits_3-4.4.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-codesig_3/1.1.2/mill-runner-codesig_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib_3/1.1.2/mill-libs-javalib_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/tukaani/xz/1.10/xz-1.10.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-daemon_3/1.1.2/mill-runner-daemon_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upickle-implicits_3/4.4.2/upickle-implicits_3-4.4.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-moduledefs_3/0.13.1/mill-moduledefs_3-0.13.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-daemon_3/1.1.2/mill-runner-daemon_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/javax/inject/javax.inject/1/javax.inject-1.jar
-Downloaded https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.18.0/commons-lang3-3.18.0.jar
-Downloading https://repo1.maven.org/maven2/org/snakeyaml/snakeyaml-engine/3.0.1/snakeyaml-engine-3.0.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-moduledefs_3/0.13.1/mill-moduledefs_3-0.13.1.jar
-Downloading https://repo1.maven.org/maven2/com/google/j2objc/j2objc-annotations/1.3/j2objc-annotations-1.3.jar
-Downloaded https://repo1.maven.org/maven2/javax/inject/javax.inject/1/javax.inject-1.jar
-Downloading https://repo1.maven.org/maven2/org/scala-sbt/util-interface/2.0.0-RC8/util-interface-2.0.0-RC8.jar
-Downloaded https://repo1.maven.org/maven2/org/snakeyaml/snakeyaml-engine/3.0.1/snakeyaml-engine-3.0.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/os-lib_3/0.11.8/os-lib_3-0.11.8.jar
-Downloaded https://repo1.maven.org/maven2/com/google/j2objc/j2objc-annotations/1.3/j2objc-annotations-1.3.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-sbt/util-interface/2.0.0-RC8/util-interface-2.0.0-RC8.jar
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-container-default/2.1.1/plexus-container-default-2.1.1.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala3-interfaces/3.8.1/scala3-interfaces-3.8.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/os-lib_3/0.11.8/os-lib_3-0.11.8.jar
-Downloading https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/9.9.1/asm-tree-9.9.1.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala3-interfaces/3.8.1/scala3-interfaces-3.8.1.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-core_2.13/2.1.25-M23/coursier-core_2.13-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib_3/1.1.2/mill-libs-javalib_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-jvm_2.13/2.1.25-M23/coursier-jvm_2.13-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-container-default/2.1.1/plexus-container-default-2.1.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-exec_3/1.1.2/mill-core-exec_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/9.9.1/asm-tree-9.9.1.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier_2.13/2.1.25-M23/coursier_2.13-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-exec_3/1.1.2/mill-core-exec_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/virtuslab/scala-cli/specification-level_3/1.9.1/specification-level_3-1.9.1.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-jvm_2.13/2.1.25-M23/coursier-jvm_2.13-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/commons-io/commons-io/2.20.0/commons-io-2.20.0.jar
-Downloaded https://repo1.maven.org/maven2/org/virtuslab/scala-cli/specification-level_3/1.9.1/specification-level_3-1.9.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/pprint_3/0.9.6/pprint_3-0.9.6.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/pprint_3/0.9.6/pprint_3-0.9.6.jar
-Downloading https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-requests_3/0.6.0/sonatype-central-client-requests_3-0.6.0.jar
-Downloaded https://repo1.maven.org/maven2/commons-io/commons-io/2.20.0/commons-io-2.20.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-server_3/1.1.2/mill-runner-server_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier_2.13/2.1.25-M23/coursier_2.13-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-paths/2.1.25-M23/coursier-paths-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/com/lumidion/sonatype-central-client-requests_3/0.6.0/sonatype-central-client-requests_3-0.6.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib-api_3/1.1.2/mill-libs-kotlinlib-api_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-core_2.13/2.1.25-M23/coursier-core_2.13-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/org/jline/jline-native/3.29.0/jline-native-3.29.0.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-paths/2.1.25-M23/coursier-paths-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/com/github/plokhotnyuk/jsoniter-scala/jsoniter-scala-core_2.13/2.13.5/jsoniter-scala-core_2.13-2.13.5.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-server_3/1.1.2/mill-runner-server_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-internal_3/1.1.2/mill-core-internal_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-kotlinlib-api_3/1.1.2/mill-libs-kotlinlib-api_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar
-Downloaded https://repo1.maven.org/maven2/org/jline/jline-native/3.29.0/jline-native-3.29.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/fansi_3/0.5.1/fansi_3-0.5.1.jar
-Downloaded https://repo1.maven.org/maven2/com/github/plokhotnyuk/jsoniter-scala/jsoniter-scala-core_2.13/2.13.5/jsoniter-scala-core_2.13-2.13.5.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-env_2.13/2.1.25-M23/coursier-env_2.13-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-internal_3/1.1.2/mill-core-internal_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.5.27/logback-classic-1.5.27.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/fansi_3/0.5.1/fansi_3-0.5.1.jar
-Downloading https://repo1.maven.org/maven2/org/fusesource/jansi/jansi/2.4.1/jansi-2.4.1.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-env_2.13/2.1.25-M23/coursier-env_2.13-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/upickle_3/4.4.2/upickle_3-4.4.2.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala-library/3.8.1/scala-library-3.8.1.jar
-Downloading https://repo1.maven.org/maven2/org/apache/xbean/xbean-reflect/3.7/xbean-reflect-3.7.jar
-Downloaded https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.5.27/logback-classic-1.5.27.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-eval_3/1.1.2/mill-core-eval_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/upickle_3/4.4.2/upickle_3-4.4.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-groovylib-api_3/1.1.2/mill-libs-groovylib-api_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/fusesource/jansi/jansi/2.4.1/jansi-2.4.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-eclipse_3/1.1.2/mill-runner-eclipse_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/apache/xbean/xbean-reflect/3.7/xbean-reflect-3.7.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-asm/9.9.0-scala-1/scala-asm-9.9.0-scala-1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-groovylib-api_3/1.1.2/mill-libs-groovylib-api_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/io/github/alexarchambault/windows-ansi/windows-ansi/0.0.6/windows-ansi-0.0.6.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-eval_3/1.1.2/mill-core-eval_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/tasty-core_3/3.8.1/tasty-core_3-3.8.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-eclipse_3/1.1.2/mill-runner-eclipse_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib.macro/2.28.0/org.eclipse.xtend.lib.macro-2.28.0.jar
-Downloaded https://repo1.maven.org/maven2/io/github/alexarchambault/windows-ansi/windows-ansi/0.0.6/windows-ansi-0.0.6.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/os-lib-watch_3/0.11.8/os-lib-watch_3-0.11.8.jar
-Downloaded https://repo1.maven.org/maven2/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-util-java11_3/1.1.2/mill-libs-util-java11_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-asm/9.9.0-scala-1/scala-asm-9.9.0-scala-1.jar
-Downloading https://repo1.maven.org/maven2/com/google/guava/guava/30.1-jre/guava-30.1-jre.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/tasty-core_3/3.8.1/tasty-core_3-3.8.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/requests_3/0.9.3/requests_3-0.9.3.jar
-Downloaded https://repo1.maven.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib.macro/2.28.0/org.eclipse.xtend.lib.macro-2.28.0.jar
-Downloading https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-archiver/4.10.1/plexus-archiver-4.10.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/os-lib-watch_3/0.11.8/os-lib-watch_3-0.11.8.jar
-Downloading https://repo1.maven.org/maven2/org/apache/tika/tika-core/3.2.3/tika-core-3.2.3.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-util-java11_3/1.1.2/mill-libs-util-java11_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/scala3-library_3/3.8.1/scala3-library_3-3.8.1.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala3-library_3/3.8.1/scala3-library_3-3.8.1.jar
-Downloading https://repo1.maven.org/maven2/guru/nidi/graphviz-java-min-deps/0.18.1/graphviz-java-min-deps-0.18.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/requests_3/0.9.3/requests_3-0.9.3.jar
-Downloading https://repo1.maven.org/maven2/org/slf4j/jcl-over-slf4j/1.7.30/jcl-over-slf4j-1.7.30.jar
-Downloaded https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-archiver/4.10.1/plexus-archiver-4.10.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-meta_3/1.1.2/mill-runner-meta_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/guru/nidi/graphviz-java-min-deps/0.18.1/graphviz-java-min-deps-0.18.1.jar
-Downloading https://repo1.maven.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib/2.28.0/org.eclipse.xtend.lib-2.28.0.jar
-Downloaded https://repo1.maven.org/maven2/org/slf4j/jcl-over-slf4j/1.7.30/jcl-over-slf4j-1.7.30.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/fastparse_3/3.1.1/fastparse_3-3.1.1.jar
-Downloaded https://repo1.maven.org/maven2/org/apache/tika/tika-core/3.2.3/tika-core-3.2.3.jar
-Downloading https://repo1.maven.org/maven2/org/eclipse/jgit/org.eclipse.jgit/6.10.1.202505221210-r/org.eclipse.jgit-6.10.1.202505221210-r.jar
-Downloaded https://repo1.maven.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib/2.28.0/org.eclipse.xtend.lib-2.28.0.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-core-resolve_3/1.1.2/mill-core-resolve_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-meta_3/1.1.2/mill-runner-meta_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/org/scala-lang/modules/scala-collection-compat_3/2.12.0/scala-collection-compat_3-2.12.0.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/fastparse_3/3.1.1/fastparse_3-3.1.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-api_3/1.1.2/mill-libs-javalib-api_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-core-resolve_3/1.1.2/mill-core-resolve_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-launcher_3/1.1.2/mill-runner-launcher_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/modules/scala-collection-compat_3/2.12.0/scala-collection-compat_3-2.12.0.jar
-Downloading https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.5.27/logback-core-1.5.27.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-javalib-api_3/1.1.2/mill-libs-javalib-api_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-idea_3/1.1.2/mill-runner-idea_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-launcher_3/1.1.2/mill-runner-launcher_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-daemon-server_3/1.1.2/mill-libs-daemon-server_3-1.1.2.jar
-Downloaded https://repo1.maven.org/maven2/com/google/guava/guava/30.1-jre/guava-30.1-jre.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/coursier-util_2.13/2.1.25-M23/coursier-util_2.13-2.1.25-M23.jar
-Downloaded https://repo1.maven.org/maven2/org/scala-lang/scala3-compiler_3/3.8.1/scala3-compiler_3-3.8.1.jar
-Downloading https://repo1.maven.org/maven2/com/lihaoyi/geny_3/1.1.1/geny_3-1.1.1.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-runner-idea_3/1.1.2/mill-runner-idea_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/io/github/alexarchambault/concurrent-reference-hash-map/1.1.0/concurrent-reference-hash-map-1.1.0.jar
-Downloaded https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.5.27/logback-core-1.5.27.jar
-Downloading https://repo1.maven.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.28.0/org.eclipse.xtext.xbase.lib-2.28.0.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/mill-libs-daemon-server_3/1.1.2/mill-libs-daemon-server_3-1.1.2.jar
-Downloading https://repo1.maven.org/maven2/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar
-Downloaded https://repo1.maven.org/maven2/com/lihaoyi/geny_3/1.1.1/geny_3-1.1.1.jar
-Downloaded https://repo1.maven.org/maven2/io/github/alexarchambault/concurrent-reference-hash-map/1.1.0/concurrent-reference-hash-map-1.1.0.jar
-Downloaded https://repo1.maven.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.28.0/org.eclipse.xtext.xbase.lib-2.28.0.jar
-Downloaded https://repo1.maven.org/maven2/org/eclipse/jgit/org.eclipse.jgit/6.10.1.202505221210-r/org.eclipse.jgit-6.10.1.202505221210-r.jar
-Downloaded https://repo1.maven.org/maven2/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/coursier-util_2.13/2.1.25-M23/coursier-util_2.13-2.1.25-M23.jar
-Downloading https://repo1.maven.org/maven2/io/get-coursier/jvm/indices/index-linux-amd64/0.0.4-125-77e06d/index-linux-amd64-0.0.4-125-77e06d.pom
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/jvm/indices/index-linux-amd64/0.0.4-125-77e06d/index-linux-amd64-0.0.4-125-77e06d.pom
-Downloading https://repo1.maven.org/maven2/io/get-coursier/jvm/indices/index-linux-amd64/0.0.4-125-77e06d/index-linux-amd64-0.0.4-125-77e06d.jar
-Downloaded https://repo1.maven.org/maven2/io/get-coursier/jvm/indices/index-linux-amd64/0.0.4-125-77e06d/index-linux-amd64-0.0.4-125-77e06d.jar
-Downloading https://cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz
-Still downloading:
-https://cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz (97.76 %, 209042816 / 213821807)
+# Run progress: 0.00% complete, ETA 00:02:40
+# Fork: 1 of 1
+# Warmup Iteration   1: 56723.437 ops/s
+# Warmup Iteration   2: 86551.936 ops/s
+# Warmup Iteration   3: 87195.959 ops/s
+# Warmup Iteration   4: 89131.244 ops/s
+# Warmup Iteration   5: 89961.488 ops/s
+# Warmup Iteration   6: 87969.937 ops/s
+# Warmup Iteration   7: 89984.486 ops/s
+# Warmup Iteration   8: 87481.636 ops/s
+# Warmup Iteration   9: 90101.937 ops/s
+# Warmup Iteration  10: 89805.328 ops/s
+Iteration   1: 89850.899 ops/s
+Iteration   2: 90254.950 ops/s
+Iteration   3: 89696.069 ops/s
+Iteration   4: 89767.046 ops/s
+Iteration   5: 90066.430 ops/s
+Iteration   6: 90547.872 ops/s
+Iteration   7: 90234.766 ops/s
+Iteration   8: 87655.421 ops/s
+Iteration   9: 90086.386 ops/s
+Iteration  10: 90409.003 ops/s
 
-Downloaded https://cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz
-./mill benchmark-jmh.runJmh -wi 10 -i 10 -f 1 -r 1 -w 1
-build.mill-68] compile compiling 25 Scala sources to out/mill-build/compile.dest/classes ...
-build.mill-68] done compiling
-162] sanely.jvm.compile compiling 13 Scala sources to out/sanely/jvm/compile.dest/classes ...
-163] sanely-jsoniter.jvm.compile
-163] compiling 12 Scala sources to out/sanely-jsoniter/jvm/compile.dest/classes ...
-163] done compiling
-162] done compiling
-170] benchmark-jmh.compile compiling 1 Scala source to out/benchmark-jmh/compile.dest/classes ...
-170] done compiling
-176] benchmark-jmh.generateBenchmarkSources
-176] Processing 29 classes from /home/runner/work/circe-sanely-auto/circe-sanely-auto/out/benchmark-jmh/compile.dest/classes with "reflection" generator
-176] Writing out Java source to /home/runner/work/circe-sanely-auto/circe-sanely-auto/out/benchmark-jmh/generateBenchmarkSources.dest/jmh_sources and resources to /home/runner/work/circe-sanely-auto/circe-sanely-auto/out/benchmark-jmh/generateBenchmarkSources.dest/jmh_resources
-178] benchmark-jmh.runJmh # JMH version: 1.37
-178] # VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
-178] # VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
-178] # VM options: -Xms512m -Xmx512m
-178] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
-178] # Warmup: 10 iterations, 1 s each
-178] # Measurement: 10 iterations, 1 s each
-178] # Timeout: 10 min per iteration
-178] # Threads: 1 thread, will synchronize iterations
-178] # Benchmark mode: Throughput, ops/time
-178] # Benchmark: runtime.ReadBenchmark.circeJawn
-178] 
-178] # Run progress: 0.00% complete, ETA 00:02:40
-178] # Fork: 1 of 1
-178] # Warmup Iteration   1: 56723.437 ops/s
-178] # Warmup Iteration   2: 86551.936 ops/s
-178] # Warmup Iteration   3: 87195.959 ops/s
-178] # Warmup Iteration   4: 89131.244 ops/s
-178] # Warmup Iteration   5: 89961.488 ops/s
-178] # Warmup Iteration   6: 87969.937 ops/s
-178] # Warmup Iteration   7: 89984.486 ops/s
-178] # Warmup Iteration   8: 87481.636 ops/s
-178] # Warmup Iteration   9: 90101.937 ops/s
-178] # Warmup Iteration  10: 89805.328 ops/s
-178] Iteration   1: 89850.899 ops/s
-178] Iteration   2: 90254.950 ops/s
-177/178] ./mill benchmark-jmh.runJmh -wi 10 -i 10 -f 1 -r 1 -w 1 60s
-178] benchmark-jmh.runJmh 13s
-178] Iteration   3: 89696.069 ops/s
-178] Iteration   4: 89767.046 ops/s
-178] Iteration   5: 90066.430 ops/s
-178] Iteration   6: 90547.872 ops/s
-178] Iteration   7: 90234.766 ops/s
-178] Iteration   8: 87655.421 ops/s
-178] Iteration   9: 90086.386 ops/s
-178] Iteration  10: 90409.003 ops/s
-178] 
-178] 
-178] Result "runtime.ReadBenchmark.circeJawn":
-178]   89856.884 ±(99.9%) 1240.638 ops/s [Average]
-178]   (min, avg, max) = (87655.421, 89856.884, 90547.872), stdev = 820.606
-178]   CI (99.9%): [88616.246, 91097.523] (assumes normal distribution)
-178] 
-178] 
-178] # JMH version: 1.37
-178] # VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
-178] # VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
-178] # VM options: -Xms512m -Xmx512m
-178] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
-178] # Warmup: 10 iterations, 1 s each
-178] # Measurement: 10 iterations, 1 s each
-178] # Timeout: 10 min per iteration
-178] # Threads: 1 thread, will synchronize iterations
-178] # Benchmark mode: Throughput, ops/time
-178] # Benchmark: runtime.ReadBenchmark.circeJsoniterBridge
-178] 
-178] # Run progress: 12.50% complete, ETA 00:02:24
-178] # Fork: 1 of 1
-178] # Warmup Iteration   1: 77693.294 ops/s
-178] # Warmup Iteration   2: 116135.490 ops/s
-178] # Warmup Iteration   3: 117671.221 ops/s
-178] # Warmup Iteration   4: 115636.942 ops/s
-178] # Warmup Iteration   5: 115532.933 ops/s
-178] # Warmup Iteration   6: 115400.732 ops/s
-178] # Warmup Iteration   7: 116158.171 ops/s
-178] # Warmup Iteration   8: 115893.571 ops/s
-178] # Warmup Iteration   9: 115308.549 ops/s
-178] # Warmup Iteration  10: 115378.974 ops/s
-178] Iteration   1: 115942.704 ops/s
-178] Iteration   2: 117323.188 ops/s
-178] Iteration   3: 117440.462 ops/s
-178] Iteration   4: 116682.816 ops/s
-178] Iteration   5: 117357.651 ops/s
-178] Iteration   6: 117812.370 ops/s
-178] Iteration   7: 117286.770 ops/s
-178] Iteration   8: 117625.837 ops/s
-178] Iteration   9: 117657.404 ops/s
-178] Iteration  10: 117389.400 ops/s
-178] 
-178] 
-178] Result "runtime.ReadBenchmark.circeJsoniterBridge":
-178]   117251.860 ±(99.9%) 832.389 ops/s [Average]
-178]   (min, avg, max) = (115942.704, 117251.860, 117812.370), stdev = 550.574
-178]   CI (99.9%): [116419.471, 118084.249] (assumes normal distribution)
-178] 
-178] 
-178] # JMH version: 1.37
-178] # VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
-178] # VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
-178] # VM options: -Xms512m -Xmx512m
-178] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
-178] # Warmup: 10 iterations, 1 s each
-178] # Measurement: 10 iterations, 1 s each
-178] # Timeout: 10 min per iteration
-178] # Threads: 1 thread, will synchronize iterations
-178] # Benchmark mode: Throughput, ops/time
-178] # Benchmark: runtime.ReadBenchmark.jsoniterScala
-178] 
-178] # Run progress: 25.00% complete, ETA 00:02:03
-178] # Fork: 1 of 1
-178] # Warmup Iteration   1: 284913.955 ops/s
-178] # Warmup Iteration   2: 387819.890 ops/s
-178] # Warmup Iteration   3: 388204.691 ops/s
-178] # Warmup Iteration   4: 390268.717 ops/s
-178] # Warmup Iteration   5: 390012.858 ops/s
-178] # Warmup Iteration   6: 387364.402 ops/s
-178] # Warmup Iteration   7: 389213.389 ops/s
-178] # Warmup Iteration   8: 386780.975 ops/s
-178] # Warmup Iteration   9: 389810.394 ops/s
-178] # Warmup Iteration  10: 387049.151 ops/s
-178] Iteration   1: 385591.969 ops/s
-178] Iteration   2: 388232.119 ops/s
-178] Iteration   3: 387326.184 ops/s
-178] Iteration   4: 385410.267 ops/s
-178] Iteration   5: 385038.499 ops/s
-178] Iteration   6: 388542.997 ops/s
-178] Iteration   7: 389223.113 ops/s
-178] Iteration   8: 386779.709 ops/s
-178] Iteration   9: 387829.896 ops/s
-178] Iteration  10: 387725.249 ops/s
-178] 
-178] 
-178] Result "runtime.ReadBenchmark.jsoniterScala":
-178]   387170.000 ±(99.9%) 2154.602 ops/s [Average]
-178]   (min, avg, max) = (385038.499, 387170.000, 389223.113), stdev = 1425.136
-178]   CI (99.9%): [385015.398, 389324.602] (assumes normal distribution)
-178] 
-178] 
-178] # JMH version: 1.37
-178] # VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
-178] # VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
-178] # VM options: -Xms512m -Xmx512m
-178] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
-178] # Warmup: 10 iterations, 1 s each
-178] # Measurement: 10 iterations, 1 s each
-178] # Timeout: 10 min per iteration
-178] # Threads: 1 thread, will synchronize iterations
-178] # Benchmark mode: Throughput, ops/time
-178] # Benchmark: runtime.ReadBenchmark.sanelyJsoniter
-178] 
-178] # Run progress: 37.50% complete, ETA 00:01:42
-178] # Fork: 1 of 1
-178] # Warmup Iteration   1: 292502.979 ops/s
-178] # Warmup Iteration   2: 388538.465 ops/s
-178] # Warmup Iteration   3: 382234.629 ops/s
-178] # Warmup Iteration   4: 393364.506 ops/s
-178] # Warmup Iteration   5: 387835.524 ops/s
-178] # Warmup Iteration   6: 382117.192 ops/s
-178] # Warmup Iteration   7: 384951.818 ops/s
-178] # Warmup Iteration   8: 384344.787 ops/s
-178] # Warmup Iteration   9: 382940.110 ops/s
-178] # Warmup Iteration  10: 384088.452 ops/s
-177/178] ./mill benchmark-jmh.runJmh -wi 10 -i 10 -f 1 -r 1 -w 1 120s
-178] benchmark-jmh.runJmh 73s
-178] Iteration   1: 385031.804 ops/s
-178] Iteration   2: 384547.903 ops/s
-178] Iteration   3: 383180.017 ops/s
-178] Iteration   4: 382741.624 ops/s
-178] Iteration   5: 384857.672 ops/s
-178] Iteration   6: 383126.048 ops/s
-178] Iteration   7: 384918.622 ops/s
-178] Iteration   8: 379573.124 ops/s
-178] Iteration   9: 384499.381 ops/s
-178] Iteration  10: 382946.865 ops/s
-178] 
-178] 
-178] Result "runtime.ReadBenchmark.sanelyJsoniter":
-178]   383542.306 ±(99.9%) 2510.919 ops/s [Average]
-178]   (min, avg, max) = (379573.124, 383542.306, 385031.804), stdev = 1660.817
-178]   CI (99.9%): [381031.387, 386053.225] (assumes normal distribution)
-178] 
-178] 
-178] # JMH version: 1.37
-178] # VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
-178] # VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
-178] # VM options: -Xms512m -Xmx512m
-178] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
-178] # Warmup: 10 iterations, 1 s each
-178] # Measurement: 10 iterations, 1 s each
-178] # Timeout: 10 min per iteration
-178] # Threads: 1 thread, will synchronize iterations
-178] # Benchmark mode: Throughput, ops/time
-178] # Benchmark: runtime.WriteBenchmark.circeJsoniterBridge
-178] 
-178] # Run progress: 50.00% complete, ETA 00:01:22
-178] # Fork: 1 of 1
-178] # Warmup Iteration   1: 51571.951 ops/s
-178] # Warmup Iteration   2: 74715.153 ops/s
-178] # Warmup Iteration   3: 74728.148 ops/s
-178] # Warmup Iteration   4: 75999.412 ops/s
-178] # Warmup Iteration   5: 76522.345 ops/s
-178] # Warmup Iteration   6: 76179.964 ops/s
-178] # Warmup Iteration   7: 76340.906 ops/s
-178] # Warmup Iteration   8: 76240.199 ops/s
-178] # Warmup Iteration   9: 76700.974 ops/s
-178] # Warmup Iteration  10: 76495.969 ops/s
-178] Iteration   1: 76007.425 ops/s
-178] Iteration   2: 76264.118 ops/s
-178] Iteration   3: 75862.231 ops/s
-178] Iteration   4: 76352.978 ops/s
-178] Iteration   5: 75965.487 ops/s
-178] Iteration   6: 76516.215 ops/s
-178] Iteration   7: 76472.255 ops/s
-178] Iteration   8: 76484.151 ops/s
-178] Iteration   9: 76282.698 ops/s
-178] Iteration  10: 76463.439 ops/s
-178] 
-178] 
-178] Result "runtime.WriteBenchmark.circeJsoniterBridge":
-178]   76267.100 ±(99.9%) 363.320 ops/s [Average]
-178]   (min, avg, max) = (75862.231, 76267.100, 76516.215), stdev = 240.313
-178]   CI (99.9%): [75903.780, 76630.419] (assumes normal distribution)
-178] 
-178] 
-178] # JMH version: 1.37
-178] # VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
-178] # VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
-178] # VM options: -Xms512m -Xmx512m
-178] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
-178] # Warmup: 10 iterations, 1 s each
-178] # Measurement: 10 iterations, 1 s each
-178] # Timeout: 10 min per iteration
-178] # Threads: 1 thread, will synchronize iterations
-178] # Benchmark mode: Throughput, ops/time
-178] # Benchmark: runtime.WriteBenchmark.circePrinter
-178] 
-178] # Run progress: 62.50% complete, ETA 00:01:01
-178] # Fork: 1 of 1
-178] # Warmup Iteration   1: 46260.442 ops/s
-178] # Warmup Iteration   2: 63935.140 ops/s
-178] # Warmup Iteration   3: 62568.549 ops/s
-178] # Warmup Iteration   4: 64955.631 ops/s
-178] # Warmup Iteration   5: 64598.321 ops/s
-178] # Warmup Iteration   6: 65001.485 ops/s
-178] # Warmup Iteration   7: 64372.201 ops/s
-178] # Warmup Iteration   8: 64468.215 ops/s
-178] # Warmup Iteration   9: 63997.410 ops/s
-178] # Warmup Iteration  10: 64784.272 ops/s
-178] Iteration   1: 65194.955 ops/s
-178] Iteration   2: 64825.215 ops/s
-178] Iteration   3: 64881.285 ops/s
-178] Iteration   4: 64375.234 ops/s
-178] Iteration   5: 64572.446 ops/s
-178] Iteration   6: 64747.399 ops/s
-178] Iteration   7: 64760.941 ops/s
-178] Iteration   8: 65166.634 ops/s
-178] Iteration   9: 64372.553 ops/s
-178] Iteration  10: 64543.198 ops/s
-178] 
-178] 
-178] Result "runtime.WriteBenchmark.circePrinter":
-178]   64743.986 ±(99.9%) 436.853 ops/s [Average]
-178]   (min, avg, max) = (64372.553, 64743.986, 65194.955), stdev = 288.951
-178]   CI (99.9%): [64307.133, 65180.839] (assumes normal distribution)
-178] 
-178] 
-178] # JMH version: 1.37
-178] # VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
-178] # VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
-178] # VM options: -Xms512m -Xmx512m
-178] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
-178] # Warmup: 10 iterations, 1 s each
-178] # Measurement: 10 iterations, 1 s each
-178] # Timeout: 10 min per iteration
-178] # Threads: 1 thread, will synchronize iterations
-178] # Benchmark mode: Throughput, ops/time
-178] # Benchmark: runtime.WriteBenchmark.jsoniterScala
-178] 
-178] # Run progress: 75.00% complete, ETA 00:00:41
-178] # Fork: 1 of 1
-178] # Warmup Iteration   1: 344777.493 ops/s
-178] # Warmup Iteration   2: 603346.093 ops/s
-178] # Warmup Iteration   3: 605125.720 ops/s
-178] # Warmup Iteration   4: 606723.536 ops/s
-178] # Warmup Iteration   5: 609108.750 ops/s
-178] # Warmup Iteration   6: 610354.121 ops/s
-178] # Warmup Iteration   7: 605606.830 ops/s
-178] # Warmup Iteration   8: 608640.810 ops/s
-178] # Warmup Iteration   9: 602104.242 ops/s
-177/178] ./mill benchmark-jmh.runJmh -wi 10 -i 10 -f 1 -r 1 -w 1 180s
-178] benchmark-jmh.runJmh 133s
-178] # Warmup Iteration  10: 608872.799 ops/s
-178] Iteration   1: 604556.671 ops/s
-178] Iteration   2: 604201.468 ops/s
-178] Iteration   3: 606543.131 ops/s
-178] Iteration   4: 607264.664 ops/s
-178] Iteration   5: 607297.697 ops/s
-178] Iteration   6: 605561.539 ops/s
-178] Iteration   7: 607984.408 ops/s
-178] Iteration   8: 606388.514 ops/s
-178] Iteration   9: 602714.523 ops/s
-178] Iteration  10: 606963.504 ops/s
-178] 
-178] 
-178] Result "runtime.WriteBenchmark.jsoniterScala":
-178]   605947.612 ±(99.9%) 2513.335 ops/s [Average]
-178]   (min, avg, max) = (602714.523, 605947.612, 607984.408), stdev = 1662.415
-178]   CI (99.9%): [603434.277, 608460.947] (assumes normal distribution)
-178] 
-178] 
-178] # JMH version: 1.37
-178] # VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
-178] # VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
-178] # VM options: -Xms512m -Xmx512m
-178] # Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
-178] # Warmup: 10 iterations, 1 s each
-178] # Measurement: 10 iterations, 1 s each
-178] # Timeout: 10 min per iteration
-178] # Threads: 1 thread, will synchronize iterations
-178] # Benchmark mode: Throughput, ops/time
-178] # Benchmark: runtime.WriteBenchmark.sanelyJsoniter
-178] 
-178] # Run progress: 87.50% complete, ETA 00:00:20
-178] # Fork: 1 of 1
-178] # Warmup Iteration   1: 360541.724 ops/s
-178] # Warmup Iteration   2: 528445.322 ops/s
-178] # Warmup Iteration   3: 536263.804 ops/s
-178] # Warmup Iteration   4: 530357.655 ops/s
-178] # Warmup Iteration   5: 531516.101 ops/s
-178] # Warmup Iteration   6: 534449.712 ops/s
-178] # Warmup Iteration   7: 533701.347 ops/s
-178] # Warmup Iteration   8: 532412.401 ops/s
-178] # Warmup Iteration   9: 533361.149 ops/s
-178] # Warmup Iteration  10: 533156.099 ops/s
-178] Iteration   1: 528773.177 ops/s
-178] Iteration   2: 532605.029 ops/s
-178] Iteration   3: 531975.974 ops/s
-178] Iteration   4: 533763.628 ops/s
-178] Iteration   5: 534076.395 ops/s
-178] Iteration   6: 533689.219 ops/s
-178] Iteration   7: 535302.259 ops/s
-178] Iteration   8: 534417.686 ops/s
-178] Iteration   9: 531686.540 ops/s
-178] Iteration  10: 534871.763 ops/s
-178] 
-178] 
-178] Result "runtime.WriteBenchmark.sanelyJsoniter":
-178]   533116.167 ±(99.9%) 2925.156 ops/s [Average]
-178]   (min, avg, max) = (528773.177, 533116.167, 535302.259), stdev = 1934.810
-178]   CI (99.9%): [530191.011, 536041.323] (assumes normal distribution)
-178] 
-178] 
-178] # Run complete. Total time: 00:02:44
-178] 
-178] REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
-178] why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
-178] experiments, perform baseline and negative tests that provide experimental control, make sure
-178] the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
-178] Do not assume the numbers tell you what you want them to tell.
-178] 
-178] NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
-178] extra caution when trusting the results, look into the generated code to check the benchmark still
-178] works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
-178] different JVMs are already problematic, the performance difference caused by different Blackhole
-178] modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
-178] 
-178] Benchmark                            Mode  Cnt       Score      Error  Units
-178] ReadBenchmark.circeJawn             thrpt   10   89856.884 ± 1240.638  ops/s
-178] ReadBenchmark.circeJsoniterBridge   thrpt   10  117251.860 ±  832.389  ops/s
-178] ReadBenchmark.jsoniterScala         thrpt   10  387170.000 ± 2154.602  ops/s
-178] ReadBenchmark.sanelyJsoniter        thrpt   10  383542.306 ± 2510.919  ops/s
-178] WriteBenchmark.circeJsoniterBridge  thrpt   10   76267.100 ±  363.320  ops/s
-178] WriteBenchmark.circePrinter         thrpt   10   64743.986 ±  436.853  ops/s
-178] WriteBenchmark.jsoniterScala        thrpt   10  605947.612 ± 2513.335  ops/s
-178] WriteBenchmark.sanelyJsoniter       thrpt   10  533116.167 ± 2925.156  ops/s
-178/178, SUCCESS] ./mill benchmark-jmh.runJmh -wi 10 -i 10 -f 1 -r 1 -w 1 211s
+
+Result "runtime.ReadBenchmark.circeJawn":
+89856.884 ±(99.9%) 1240.638 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.ReadBenchmark.circeJsoniterBridge
+
+# Run progress: 12.50% complete, ETA 00:02:24
+# Fork: 1 of 1
+# Warmup Iteration   1: 77693.294 ops/s
+# Warmup Iteration   2: 116135.490 ops/s
+# Warmup Iteration   3: 117671.221 ops/s
+# Warmup Iteration   4: 115636.942 ops/s
+# Warmup Iteration   5: 115532.933 ops/s
+# Warmup Iteration   6: 115400.732 ops/s
+# Warmup Iteration   7: 116158.171 ops/s
+# Warmup Iteration   8: 115893.571 ops/s
+# Warmup Iteration   9: 115308.549 ops/s
+# Warmup Iteration  10: 115378.974 ops/s
+Iteration   1: 115942.704 ops/s
+Iteration   2: 117323.188 ops/s
+Iteration   3: 117440.462 ops/s
+Iteration   4: 116682.816 ops/s
+Iteration   5: 117357.651 ops/s
+Iteration   6: 117812.370 ops/s
+Iteration   7: 117286.770 ops/s
+Iteration   8: 117625.837 ops/s
+Iteration   9: 117657.404 ops/s
+Iteration  10: 117389.400 ops/s
+
+
+Result "runtime.ReadBenchmark.circeJsoniterBridge":
+117251.860 ±(99.9%) 832.389 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.ReadBenchmark.jsoniterScala
+
+# Run progress: 25.00% complete, ETA 00:02:03
+# Fork: 1 of 1
+# Warmup Iteration   1: 284913.955 ops/s
+# Warmup Iteration   2: 387819.890 ops/s
+# Warmup Iteration   3: 388204.691 ops/s
+# Warmup Iteration   4: 390268.717 ops/s
+# Warmup Iteration   5: 390012.858 ops/s
+# Warmup Iteration   6: 387364.402 ops/s
+# Warmup Iteration   7: 389213.389 ops/s
+# Warmup Iteration   8: 386780.975 ops/s
+# Warmup Iteration   9: 389810.394 ops/s
+# Warmup Iteration  10: 387049.151 ops/s
+Iteration   1: 385591.969 ops/s
+Iteration   2: 388232.119 ops/s
+Iteration   3: 387326.184 ops/s
+Iteration   4: 385410.267 ops/s
+Iteration   5: 385038.499 ops/s
+Iteration   6: 388542.997 ops/s
+Iteration   7: 389223.113 ops/s
+Iteration   8: 386779.709 ops/s
+Iteration   9: 387829.896 ops/s
+Iteration  10: 387725.249 ops/s
+
+
+Result "runtime.ReadBenchmark.jsoniterScala":
+387170.000 ±(99.9%) 2154.602 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.ReadBenchmark.sanelyJsoniter
+
+# Run progress: 37.50% complete, ETA 00:01:42
+# Fork: 1 of 1
+# Warmup Iteration   1: 292502.979 ops/s
+# Warmup Iteration   2: 388538.465 ops/s
+# Warmup Iteration   3: 382234.629 ops/s
+# Warmup Iteration   4: 393364.506 ops/s
+# Warmup Iteration   5: 387835.524 ops/s
+# Warmup Iteration   6: 382117.192 ops/s
+# Warmup Iteration   7: 384951.818 ops/s
+# Warmup Iteration   8: 384344.787 ops/s
+# Warmup Iteration   9: 382940.110 ops/s
+# Warmup Iteration  10: 384088.452 ops/s
+Iteration   1: 385031.804 ops/s
+Iteration   2: 384547.903 ops/s
+Iteration   3: 383180.017 ops/s
+Iteration   4: 382741.624 ops/s
+Iteration   5: 384857.672 ops/s
+Iteration   6: 383126.048 ops/s
+Iteration   7: 384918.622 ops/s
+Iteration   8: 379573.124 ops/s
+Iteration   9: 384499.381 ops/s
+Iteration  10: 382946.865 ops/s
+
+
+Result "runtime.ReadBenchmark.sanelyJsoniter":
+383542.306 ±(99.9%) 2510.919 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.WriteBenchmark.circeJsoniterBridge
+
+# Run progress: 50.00% complete, ETA 00:01:22
+# Fork: 1 of 1
+# Warmup Iteration   1: 51571.951 ops/s
+# Warmup Iteration   2: 74715.153 ops/s
+# Warmup Iteration   3: 74728.148 ops/s
+# Warmup Iteration   4: 75999.412 ops/s
+# Warmup Iteration   5: 76522.345 ops/s
+# Warmup Iteration   6: 76179.964 ops/s
+# Warmup Iteration   7: 76340.906 ops/s
+# Warmup Iteration   8: 76240.199 ops/s
+# Warmup Iteration   9: 76700.974 ops/s
+# Warmup Iteration  10: 76495.969 ops/s
+Iteration   1: 76007.425 ops/s
+Iteration   2: 76264.118 ops/s
+Iteration   3: 75862.231 ops/s
+Iteration   4: 76352.978 ops/s
+Iteration   5: 75965.487 ops/s
+Iteration   6: 76516.215 ops/s
+Iteration   7: 76472.255 ops/s
+Iteration   8: 76484.151 ops/s
+Iteration   9: 76282.698 ops/s
+Iteration  10: 76463.439 ops/s
+
+
+Result "runtime.WriteBenchmark.circeJsoniterBridge":
+76267.100 ±(99.9%) 363.320 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.WriteBenchmark.circePrinter
+
+# Run progress: 62.50% complete, ETA 00:01:01
+# Fork: 1 of 1
+# Warmup Iteration   1: 46260.442 ops/s
+# Warmup Iteration   2: 63935.140 ops/s
+# Warmup Iteration   3: 62568.549 ops/s
+# Warmup Iteration   4: 64955.631 ops/s
+# Warmup Iteration   5: 64598.321 ops/s
+# Warmup Iteration   6: 65001.485 ops/s
+# Warmup Iteration   7: 64372.201 ops/s
+# Warmup Iteration   8: 64468.215 ops/s
+# Warmup Iteration   9: 63997.410 ops/s
+# Warmup Iteration  10: 64784.272 ops/s
+Iteration   1: 65194.955 ops/s
+Iteration   2: 64825.215 ops/s
+Iteration   3: 64881.285 ops/s
+Iteration   4: 64375.234 ops/s
+Iteration   5: 64572.446 ops/s
+Iteration   6: 64747.399 ops/s
+Iteration   7: 64760.941 ops/s
+Iteration   8: 65166.634 ops/s
+Iteration   9: 64372.553 ops/s
+Iteration  10: 64543.198 ops/s
+
+
+Result "runtime.WriteBenchmark.circePrinter":
+64743.986 ±(99.9%) 436.853 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.WriteBenchmark.jsoniterScala
+
+# Run progress: 75.00% complete, ETA 00:00:41
+# Fork: 1 of 1
+# Warmup Iteration   1: 344777.493 ops/s
+# Warmup Iteration   2: 603346.093 ops/s
+# Warmup Iteration   3: 605125.720 ops/s
+# Warmup Iteration   4: 606723.536 ops/s
+# Warmup Iteration   5: 609108.750 ops/s
+# Warmup Iteration   6: 610354.121 ops/s
+# Warmup Iteration   7: 605606.830 ops/s
+# Warmup Iteration   8: 608640.810 ops/s
+# Warmup Iteration   9: 602104.242 ops/s
+# Warmup Iteration  10: 608872.799 ops/s
+Iteration   1: 604556.671 ops/s
+Iteration   2: 604201.468 ops/s
+Iteration   3: 606543.131 ops/s
+Iteration   4: 607264.664 ops/s
+Iteration   5: 607297.697 ops/s
+Iteration   6: 605561.539 ops/s
+Iteration   7: 607984.408 ops/s
+Iteration   8: 606388.514 ops/s
+Iteration   9: 602714.523 ops/s
+Iteration  10: 606963.504 ops/s
+
+
+Result "runtime.WriteBenchmark.jsoniterScala":
+605947.612 ±(99.9%) 2513.335 ops/s [Average]
+
+
+# JMH version: 1.37
+# VM version: JDK 21.0.9, OpenJDK 64-Bit Server VM, 21.0.9+10-LTS
+# VM invoker: /home/runner/.cache/coursier/arc/https/cdn.azul.com/zulu/bin/zulu21.46.19-ca-jdk21.0.9-linux_x64.tar.gz/zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java
+# VM options: -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 10 iterations, 1 s each
+# Measurement: 10 iterations, 1 s each
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: runtime.WriteBenchmark.sanelyJsoniter
+
+# Run progress: 87.50% complete, ETA 00:00:20
+# Fork: 1 of 1
+# Warmup Iteration   1: 360541.724 ops/s
+# Warmup Iteration   2: 528445.322 ops/s
+# Warmup Iteration   3: 536263.804 ops/s
+# Warmup Iteration   4: 530357.655 ops/s
+# Warmup Iteration   5: 531516.101 ops/s
+# Warmup Iteration   6: 534449.712 ops/s
+# Warmup Iteration   7: 533701.347 ops/s
+# Warmup Iteration   8: 532412.401 ops/s
+# Warmup Iteration   9: 533361.149 ops/s
+# Warmup Iteration  10: 533156.099 ops/s
+Iteration   1: 528773.177 ops/s
+Iteration   2: 532605.029 ops/s
+Iteration   3: 531975.974 ops/s
+Iteration   4: 533763.628 ops/s
+Iteration   5: 534076.395 ops/s
+Iteration   6: 533689.219 ops/s
+Iteration   7: 535302.259 ops/s
+Iteration   8: 534417.686 ops/s
+Iteration   9: 531686.540 ops/s
+Iteration  10: 534871.763 ops/s
+
+
+Result "runtime.WriteBenchmark.sanelyJsoniter":
+533116.167 ±(99.9%) 2925.156 ops/s [Average]
+
+
+# Run complete. Total time: 00:02:44
+
+
+
+Benchmark                            Mode  Cnt       Score      Error  Units
+ReadBenchmark.circeJawn             thrpt   10   89856.884 ± 1240.638  ops/s
+ReadBenchmark.circeJsoniterBridge   thrpt   10  117251.860 ±  832.389  ops/s
+ReadBenchmark.jsoniterScala         thrpt   10  387170.000 ± 2154.602  ops/s
+ReadBenchmark.sanelyJsoniter        thrpt   10  383542.306 ± 2510.919  ops/s
+WriteBenchmark.circeJsoniterBridge  thrpt   10   76267.100 ±  363.320  ops/s
+WriteBenchmark.circePrinter         thrpt   10   64743.986 ±  436.853  ops/s
+WriteBenchmark.jsoniterScala        thrpt   10  605947.612 ± 2513.335  ops/s
+WriteBenchmark.sanelyJsoniter       thrpt   10  533116.167 ± 2925.156  ops/s
 ```
 </details>
 
