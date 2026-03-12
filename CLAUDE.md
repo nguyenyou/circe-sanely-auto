@@ -13,7 +13,7 @@ Drop-in replacement for circe's auto/semi-auto/configured derivation. Scala 3.8.
 
 ## Build Commands
 
-Mill 1.1.2. Run from repo root:
+Mill 1.1.3. Run from repo root:
 
 ```bash
 ./mill sanely.jvm.compile       # compile (JVM)
