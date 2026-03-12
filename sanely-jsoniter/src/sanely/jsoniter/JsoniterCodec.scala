@@ -60,6 +60,15 @@ object JsoniterCodec:
       given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withSnakeCaseMemberNames.withDropNullValues
       new WithSnakeCaseAndDefaultsDropNull[A](SanelyJsoniterConfigured.derived[A])
 
+  final class WithDefaultsAndTypeName[A](inner: JsonValueCodec[A]) extends JsonValueCodec[A]:
+    def decodeValue(in: JsonReader, default: A): A = inner.decodeValue(in, default)
+    def encodeValue(x: A, out: JsonWriter): Unit = inner.encodeValue(x, out)
+    def nullValue: A = inner.nullValue
+  object WithDefaultsAndTypeName:
+    inline def derived[A](using inline m: Mirror.Of[A]): WithDefaultsAndTypeName[A] =
+      given JsoniterConfiguration = JsoniterConfiguration.default.withDefaults.withDiscriminator("__typename__")
+      new WithDefaultsAndTypeName[A](SanelyJsoniterConfigured.derived[A])
+
   final class Enum[A](inner: JsonValueCodec[A]) extends JsonValueCodec[A]:
     def decodeValue(in: JsonReader, default: A): A = inner.decodeValue(in, default)
     def encodeValue(x: A, out: JsonWriter): Unit = inner.encodeValue(x, out)
