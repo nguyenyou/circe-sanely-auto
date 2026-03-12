@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.21.0] - 2026-03-12
+
+### sanely-jsoniter
+
+#### Performance
+- **Inline `Option[prim]` and `List[prim]` writes** — the macro now generates inline write code for `Option[T]` and `List[T]` where `T` is a directly-writable primitive (Int, Long, Float, Double, Boolean, Short, Byte, Char, String, BigDecimal, BigInt). Instead of dispatching through `codecs(idx).encodeValue(...)` (virtual call), the generated code writes values directly: `if _o.isDefined then out.writeVal(_o.get) else out.writeNull()` for Option, and a while-loop with `out.writeVal(_c.head)` for List. Eliminates ~8 virtual dispatches per `ApiResponse` encode in the benchmark payload.
+- **Write throughput**: 1,194,849 ± 15,503 ops/s (+21% vs jsoniter-scala native, up from +19% in v0.20.0)
+- **Read throughput**: 753,375 ± 11,453 ops/s (+10% vs jsoniter-scala native)
+- **Allocation**: 1,432 B/op (no regression vs v0.20.0)
+
+#### Changed
+- Applied inline container writes to all three macro write paths: `tryDirectWriteTerm` (non-configured), `tryDirectWrite` (configured), and `tryDirectWriteDropNull` (configured drop-null)
+
 ## [0.20.0] - 2026-03-11
 
 ### Added

@@ -55,7 +55,7 @@ Shared runners are noisier than dedicated hardware. Absolute times are ~3x slowe
 The configured speedup (1.4x on CI vs 2.2x locally) is compressed by CI noise — sanely's σ is 1.26s on a 4.6s mean (27% CoV), while circe-generic's σ is 0.25s (4% CoV). The speedup is real but smaller workloads are harder to measure reliably on shared runners. Full CI results: [BENCHMARK.md](BENCHMARK.md).
 </details>
 
-### Runtime — 5.6x faster reads, 8.9x faster writes
+### Runtime — 5.6x faster reads, 9.0x faster writes
 
 ~1.4 KB JSON payload, nested products, sealed traits, optional fields. JMH (1 fork, 5 warmup + 5 measurement iterations of 1s each):
 
@@ -63,10 +63,10 @@ The configured speedup (1.4x on CI vs 2.2x locally) is compressed by CI noise �
 |---|---|---|---|---|
 | **circe + jawn** (baseline) | 133,568 ± 1,334 | 1.0x | 132,620 ± 2,162 | 1.0x |
 | **circe + jsoniter bridge** | 208,474 ± 3,217 | 1.6x | 125,410 ± 1,816 | 0.9x |
-| **sanely-jsoniter** | **753,142 ± 9,490** | **5.6x** | **1,179,652 ± 17,232** | **8.9x** |
-| jsoniter-scala native | 689,629 ± 18,244 | 5.2x | 987,963 ± 1,954 | 7.4x |
+| **sanely-jsoniter** | **753,375 ± 11,453** | **5.6x** | **1,194,849 ± 15,503** | **9.0x** |
+| jsoniter-scala native | 686,731 ± 13,820 | 5.1x | 989,189 ± 15,742 | 7.5x |
 
-sanely-jsoniter **surpasses jsoniter-scala native** — **+9% reads, +19% writes** — on Apple Silicon, while remaining competitive on x86. Both dramatically outperform circe-jawn.
+sanely-jsoniter **surpasses jsoniter-scala native** — **+10% reads, +21% writes** — on Apple Silicon, while remaining competitive on x86. Both dramatically outperform circe-jawn.
 
 ### Compile-time cost of adding sanely-jsoniter
 
@@ -89,7 +89,7 @@ The jsoniter codec derivation adds negligible compile time — under 50ms for 19
 | **sanely-jsoniter** | **~370K** | **4.1x** | **~378K** | **6.5x** |
 | jsoniter-scala native | ~362K | 4.0x | ~422K | 7.3x |
 
-On CI (x86), jsoniter-scala is ~11% faster on writes while sanely-jsoniter is ~2% faster on reads. On Apple Silicon (M3 Max), sanely-jsoniter leads on both axes. The performance difference between the two is small and architecture-dependent — both are in the same league. Full CI results: [BENCHMARK.md](BENCHMARK.md).
+On CI (x86), jsoniter-scala is slightly faster on writes while sanely-jsoniter is slightly faster on reads. On Apple Silicon (M3 Max), sanely-jsoniter leads on both axes (+10% reads, +21% writes). The performance difference between the two is small and architecture-dependent — both are in the same league. Full CI results: [BENCHMARK.md](BENCHMARK.md).
 </details>
 
 <details>
@@ -114,7 +114,7 @@ Swap one dependency, change one import:
 
 ```diff
 - mvn"io.circe::circe-generic:0.14.x"
-+ mvn"io.github.nguyenyou::circe-sanely-auto:0.20.0"
++ mvn"io.github.nguyenyou::circe-sanely-auto:0.21.0"
 ```
 
 ```diff
@@ -129,7 +129,7 @@ That's it. Same JSON format, same API, same behavior. Everything else stays the 
 For HTTP hot paths where runtime throughput matters, [sanely-jsoniter](sanely-jsoniter/) generates `JsonValueCodec[T]` instances that skip the `Json` tree entirely — bytes go directly to domain objects:
 
 ```scala
-mvn"io.github.nguyenyou::sanely-jsoniter:0.20.0"
+mvn"io.github.nguyenyou::sanely-jsoniter:0.21.0"
 ```
 
 ```scala
@@ -191,6 +191,7 @@ The macro generates optimized codec bodies using TASTy API:
 - **Typed local variables** — `var _0: Int = 0; var _1: String = null` instead of `Array[Any]`, keeping primitives unboxed on the stack during the decode loop
 - **Hash-based field dispatch** — for types with > 8 fields, `(in.charBufToHashCode(l): @switch) match { ... }` with compile-time pre-computed hashes; small types keep a linear if-else chain
 - **Direct primitive read/write calls** — `in.readInt()`, `out.writeVal(x.age)` instead of virtual dispatch through `codec.decodeValue()`/`codec.encodeValue()` for primitive fields
+- **Inline container-of-primitive writes** — `Option[String]`, `List[Int]`, etc. are written inline (`if _o.isDefined then out.writeVal(_o.get) else out.writeNull()`) instead of dispatching through container codecs, eliminating virtual calls for the most common container patterns
 - **Direct constructor call** — `new P(_f0, _f1, ...)` instead of `mirror.fromProduct(ArrayProduct(Array(...)))`, eliminating primitive boxing and two intermediate allocations per product decode
 - **Branchless product encoding** — every field is unconditionally written in a straight-line sequence: write-key, write-value, write-key, write-value. No per-field conditional checks
 
@@ -199,7 +200,7 @@ This brings sanely-jsoniter to **surpass jsoniter-scala native** on both reads a
 <details>
 <summary>Why sanely-jsoniter is competitive with jsoniter-scala native</summary>
 
-**Writes**: jsoniter-scala's default configuration (`transientNone`, `transientEmpty`, `transientDefault` all enabled) generates per-field conditional branches. sanely-jsoniter writes every field unconditionally — the circe format requires `null` for `None` and always includes all fields. The macro emits a branchless straight-line sequence. On some architectures (e.g. Apple Silicon), this gives sanely-jsoniter an edge; on others (e.g. x86 CI runners), jsoniter-scala is ~11% faster on writes. The difference is small and architecture-dependent.
+**Writes**: jsoniter-scala's default configuration (`transientNone`, `transientEmpty`, `transientDefault` all enabled) generates per-field conditional branches. sanely-jsoniter writes every field unconditionally — the circe format requires `null` for `None` and always includes all fields. The macro emits a branchless straight-line sequence with inline expansion for `Option[prim]` and `List[prim]` writes (no virtual dispatch for common container patterns). On Apple Silicon, this gives sanely-jsoniter a +21% edge; on x86 CI runners, the difference is smaller and architecture-dependent.
 
 **Reads**: Both use the same direct constructor pattern (`new P(f0, f1, ...)`), typed locals, and hash-based field dispatch. sanely-jsoniter's simpler field semantics (no transient/default field skipping, no `transientEmpty` checks during decode) means fewer branches in the hot loop. Performance is within a few percent of each other.
 </details>
@@ -210,7 +211,7 @@ circe-sanely-auto provides the same packages and APIs as circe-generic:
 
 | Before | After |
 |---|---|
-| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.20.0"` |
+| `mvn"io.circe::circe-generic:0.14.x"` | `mvn"io.github.nguyenyou::circe-sanely-auto:0.21.0"` |
 | `import io.circe.generic.auto._` | `import io.circe.generic.auto.given` |
 | `import io.circe.generic.semiauto._` | `import io.circe.generic.semiauto.*` (unchanged) |
 
