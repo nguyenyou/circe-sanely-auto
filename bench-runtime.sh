@@ -4,8 +4,11 @@ set -euo pipefail
 WARMUP=${1:-5}
 ITERATIONS=${2:-5}
 
+RESULTS_DIR="results/runtime"
+mkdir -p "$RESULTS_DIR"
+
 echo "Building runtime benchmark..."
 ./mill benchmark-runtime.compile 2>/dev/null 1>/dev/null
 
 echo ""
-./mill benchmark-runtime.run "$WARMUP" "$ITERATIONS"
+./mill benchmark-runtime.run "$WARMUP" "$ITERATIONS" 2>&1 | tee "$RESULTS_DIR/runtime.txt"

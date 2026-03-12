@@ -32,18 +32,20 @@ the zinc compilation worker. Use `collapsed` format for the analysis script,
 and optionally also generate an HTML flame graph for visual inspection.
 
 ```bash
+mkdir -p results/jvm-profile
+
 # Clean compilation cache first
 rm -rf out/benchmark/sanely
 
 # Capture collapsed stacks (for analysis script)
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/profile-collapsed.txt,collapsed" \
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=results/jvm-profile/profile-collapsed.txt,collapsed" \
   ./mill --no-server benchmark.sanely.compile
 
 # Capture HTML flame graph (for visual inspection)
 rm -rf out/benchmark/sanely
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/flamegraph.html" \
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=results/jvm-profile/flamegraph.html" \
   ./mill --no-server benchmark.sanely.compile
-open /tmp/flamegraph.html
+open results/jvm-profile/flamegraph.html
 ```
 
 Important: `JAVA_TOOL_OPTIONS` is picked up by ALL JVMs the process spawns
@@ -54,13 +56,13 @@ and will miss the actual Scala compiler.
 
 ```bash
 # Full report
-python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt
+python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py results/jvm-profile/profile-collapsed.txt
 
 # Focus on compiler internals only
-python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt --focus compiler
+python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py results/jvm-profile/profile-collapsed.txt --focus compiler
 
 # JSON for programmatic use
-python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt --json
+python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py results/jvm-profile/profile-collapsed.txt --json
 ```
 
 ### 3. Interpret the results
@@ -100,16 +102,17 @@ For the full picture, run both profilers:
 
 ```bash
 # Both at once:
+mkdir -p results/jvm-profile results/macro-profile-auto
 rm -rf out/benchmark/sanely
 SANELY_PROFILE=true \
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=/tmp/profile-collapsed.txt,collapsed" \
-  ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/full-profile.txt
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=cpu,file=results/jvm-profile/profile-collapsed.txt,collapsed" \
+  ./mill --no-server benchmark.sanely.compile 2>&1 | tee results/macro-profile-auto/raw.txt
 
 # Analyze JVM level:
-python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py /tmp/profile-collapsed.txt
+python .claude/skills/jvm-profile/scripts/analyze_jvm_profile.py results/jvm-profile/profile-collapsed.txt
 
 # Analyze macro level:
-python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/full-profile.txt
+python .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-auto/raw.txt
 ```
 
 ## Optimization decision tree

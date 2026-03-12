@@ -23,13 +23,14 @@ expansion prints timing data to stderr. This has zero cost when disabled.
 
 ```bash
 # Auto derivation benchmark (~300 types)
-SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/sanely-profile-output.txt
+mkdir -p results/macro-profile-auto
+rm -rf out/benchmark/sanely
+SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee results/macro-profile-auto/raw.txt
 
 # Configured derivation benchmark (~230 types)
-SANELY_PROFILE=true ./mill --no-server benchmark.configured.compile 2>&1 | tee /tmp/sanely-profile-output.txt
-
-# Just the library (unit test types)
-SANELY_PROFILE=true ./mill --no-server sanely.jvm.test 2>&1 | tee /tmp/sanely-profile-output.txt
+mkdir -p results/macro-profile-configured
+rm -rf out/benchmark-configured/sanely
+SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee results/macro-profile-configured/raw.txt
 ```
 
 Use `--no-server` so Mill doesn't reuse a cached compilation.
@@ -38,16 +39,16 @@ Use `--no-server` so Mill doesn't reuse a cached compilation.
 
 ```bash
 # Full report
-python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt
+python .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-auto/raw.txt
 
 # Top 20 slowest, sorted by summonIgnoring time
-python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --top 20 --sort summonIgnoring
+python .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-auto/raw.txt --top 20 --sort summonIgnoring
 
 # Only Decoder expansions
-python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --kind Decoder
+python .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-auto/raw.txt --kind Decoder
 
 # JSON output for programmatic use
-python .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/sanely-profile-output.txt --json
+python .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-auto/raw.txt --json
 ```
 
 ### 3. Interpret the results

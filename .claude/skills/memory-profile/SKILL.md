@@ -50,14 +50,16 @@ Uses async-profiler with `event=alloc` to capture where the compiler
 allocates objects. This shows allocation pressure, not retained heap.
 
 ```bash
+mkdir -p results/memory-profile
+
 # Profile sanely
 rm -rf out/benchmark/sanely
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=alloc,file=/tmp/alloc-sanely.txt,collapsed" \
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=alloc,file=results/memory-profile/alloc-sanely.txt,collapsed" \
   ./mill --no-server benchmark.sanely.compile
 
 # Profile circe-generic
 rm -rf out/benchmark/generic
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=alloc,file=/tmp/alloc-generic.txt,collapsed" \
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=alloc,file=results/memory-profile/alloc-generic.txt,collapsed" \
   ./mill --no-server benchmark.generic.compile
 ```
 
@@ -65,29 +67,30 @@ JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfil
 
 ```bash
 # Single profile
-python3 .claude/skills/memory-profile/scripts/analyze_memory.py /tmp/alloc-sanely.txt
+python3 .claude/skills/memory-profile/scripts/analyze_memory.py results/memory-profile/alloc-sanely.txt
 
 # Compare two profiles (our library vs baseline)
 python3 .claude/skills/memory-profile/scripts/analyze_memory.py \
-  /tmp/alloc-sanely.txt --compare /tmp/alloc-generic.txt \
+  results/memory-profile/alloc-sanely.txt --compare results/memory-profile/alloc-generic.txt \
   --labels sanely circe-generic
 
 # JSON output
 python3 .claude/skills/memory-profile/scripts/analyze_memory.py \
-  /tmp/alloc-sanely.txt --compare /tmp/alloc-generic.txt --json
+  results/memory-profile/alloc-sanely.txt --compare results/memory-profile/alloc-generic.txt --json
 
 # Focus on compiler allocations only
 python3 .claude/skills/memory-profile/scripts/analyze_memory.py \
-  /tmp/alloc-sanely.txt --focus compiler
+  results/memory-profile/alloc-sanely.txt --focus compiler
 ```
 
 ### 4. Allocation flame graph (visual)
 
 ```bash
+mkdir -p results/memory-profile
 rm -rf out/benchmark/sanely
-JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=alloc,file=/tmp/alloc-flamegraph.html" \
+JAVA_TOOL_OPTIONS="-agentpath:$(brew --prefix async-profiler)/lib/libasyncProfiler.dylib=start,event=alloc,file=results/memory-profile/alloc-flamegraph.html" \
   ./mill --no-server benchmark.sanely.compile
-open /tmp/alloc-flamegraph.html
+open results/memory-profile/alloc-flamegraph.html
 ```
 
 ## Interpreting results

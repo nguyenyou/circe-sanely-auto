@@ -26,7 +26,7 @@ python3 .claude/skills/bytecode-impact/scripts/analyze_bytecode.py \
 
 ```bash
 python3 .claude/skills/bytecode-impact/scripts/analyze_bytecode.py \
-  /tmp/classes-after /tmp/classes-before \
+  results/bytecode-impact/classes-after results/bytecode-impact/classes-before \
   --labels "With Change" "Without Change"
 ```
 
@@ -41,7 +41,8 @@ rm -rf out/benchmark/sanely
 
 Copy or note the classes directory:
 ```bash
-cp -r out/benchmark/sanely/compile.dest/classes /tmp/classes-after
+mkdir -p results/bytecode-impact
+cp -r out/benchmark/sanely/compile.dest/classes results/bytecode-impact/classes-after
 ```
 
 ### Step 2: Temporarily revert the change and recompile (the "before" state)
@@ -52,7 +53,7 @@ Edit the source to revert (e.g., force `lazy val` for all types), recompile the 
 ./mill sanely.jvm.compile
 rm -rf out/benchmark/sanely
 ./mill benchmark.sanely.compile
-cp -r out/benchmark/sanely/compile.dest/classes /tmp/classes-before
+cp -r out/benchmark/sanely/compile.dest/classes results/bytecode-impact/classes-before
 ```
 
 Then restore the original code and recompile again.
@@ -61,7 +62,7 @@ Then restore the original code and recompile again.
 
 ```bash
 python3 .claude/skills/bytecode-impact/scripts/analyze_bytecode.py \
-  /tmp/classes-after /tmp/classes-before \
+  results/bytecode-impact/classes-after results/bytecode-impact/classes-before \
   --labels "With Change" "Without Change"
 ```
 
@@ -109,7 +110,7 @@ Save full disassembly for manual grep/inspection:
 ```bash
 python3 .claude/skills/bytecode-impact/scripts/analyze_bytecode.py \
   out/benchmark/sanely/compile.dest/classes \
-  --dump-javap /tmp/javap-full.txt
+  --dump-javap results/bytecode-impact/javap-full.txt
 ```
 
 ## Interpreting Results

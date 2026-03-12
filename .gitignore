@@ -4,4 +4,6 @@ out/
 .idea/
 .local/
 __pycache__/
+results/*
+!results/.gitkeep
 CLAUDE.local.md

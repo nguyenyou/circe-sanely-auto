@@ -450,14 +450,16 @@ Built-in compile-time profiling via `SANELY_PROFILE=true` tracks where time is s
 
 ```bash
 # Profile auto derivation (~350 types)
+mkdir -p results/macro-profile-auto
 rm -rf out/benchmark/sanely
-SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee /tmp/profile.txt
-python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
+SANELY_PROFILE=true ./mill --no-server benchmark.sanely.compile 2>&1 | tee results/macro-profile-auto/raw.txt
+python3 .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-auto/raw.txt
 
 # Profile configured derivation (~230 types)
+mkdir -p results/macro-profile-configured
 rm -rf out/benchmark-configured/sanely
-SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee /tmp/profile.txt
-python3 .claude/skills/macro-profile/scripts/analyze_profile.py /tmp/profile.txt
+SANELY_PROFILE=true ./mill --no-server benchmark-configured.sanely.compile 2>&1 | tee results/macro-profile-configured/raw.txt
+python3 .claude/skills/macro-profile/scripts/analyze_profile.py results/macro-profile-configured/raw.txt
 ```
 
 #### Auto derivation (398 expansions, 2.5s total macro time)
