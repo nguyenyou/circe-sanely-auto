@@ -1,6 +1,6 @@
 <p align="center">
   <picture>
-    <img alt="sanely-zero — Rei the Zero Swift" src="mascot/rei.png" width="900">
+    <img alt="sanely-zero — Rei the Zero Swift" src="mascot/Rei.png" width="900">
   </picture>
 </p>
 
